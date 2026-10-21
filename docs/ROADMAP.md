@@ -1,4 +1,4 @@
-# Paisa Pulse roadmap
+# Drip roadmap
 
 Where the app is (v0.2.0): on-device budget, bank SMS import on Android (HDFC / ICICI / SBI / Axis / Kotak), backfill from a chosen date, CSV import, demo mode. No server and no internet permission.
 

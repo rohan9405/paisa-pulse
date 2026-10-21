@@ -145,11 +145,11 @@ function Brand({ small }: { small?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2">
       <span className={cx("grid place-items-center rounded-xl bg-lime text-ink-950", small ? "h-8 w-8" : "h-9 w-9")}>
-        <svg width="18" height="18" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 36h10l6-16 10 28 7-18h19" />
+        <svg width="18" height="18" viewBox="0 0 64 64" fill="currentColor">
+          <path d="M32 4C32 4 12 26 12 42a20 20 0 0 0 40 0C52 26 32 4 32 4Z" />
         </svg>
       </span>
-      <span className={cx("font-bold tracking-tight", small ? "text-base" : "text-lg")}>paisa pulse</span>
+      <span className={cx("font-bold tracking-tight", small ? "text-base" : "text-lg")}>drip</span>
     </Link>
   );
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Private LAN install page for the Paisa Pulse APK, behind an unguessable URL.
+"""Private LAN install page for the Drip APK, behind an unguessable URL.
 
     python3 android/install.py      # phone and Mac on the same Wi-Fi
 
@@ -33,15 +33,15 @@ def main():
     args = parser.parse_args()
     key = secrets.token_urlsafe(18)
     page = f"""<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Install Paisa Pulse</title><link rel="icon" href="/{key}/icon.svg">
+<title>Install Drip</title><link rel="icon" href="/{key}/icon.svg">
 <style>body{{background:#07070a;color:#e8e8ef;font:18px system-ui;max-width:550px;padding:30px;margin:auto;line-height:1.6}}
 h1{{color:#c6ff3d;margin:12px 0 0}}a.dl{{display:block;padding:15px;border-radius:12px;text-align:center;background:#c6ff3d;color:#07070a;font-weight:700;text-decoration:none}}
 li{{margin:12px 0}}.muted{{color:#8b8b9e;font-size:15px}}</style>
-<img src="/{key}/icon.svg" width="72" height="72" alt=""><h1>Paisa Pulse</h1><p>How much can I spend today?</p>
+<img src="/{key}/icon.svg" width="72" height="72" alt=""><h1>Drip</h1><p>How much can I spend today?</p>
 <a class="dl" href="/{key}/PaisaPulse.apk">Download for Android</a>
 <ol><li>Open the downloaded APK. If Android asks, allow this browser to install apps.</li>
 <li>If Play Protect warns about an unknown app, choose <b>More details → Install anyway</b>.</li>
-<li>Open Paisa Pulse and tap <b>Allow</b> for SMS. That's the only permission it asks for.</li>
+<li>Open Drip and tap <b>Allow</b> for SMS. That's the only permission it asks for.</li>
 <li>Set up your budget. Bank SMS from your tracking start date onwards come in automatically.</li></ol>
 <p class="muted">SMS are read and parsed on the phone only; the app has no internet permission. Android 8+ · phone and Mac on the same Wi-Fi.</p>"""
 

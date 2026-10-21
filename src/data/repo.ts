@@ -259,7 +259,7 @@ export async function exportAll(db: FinanceDB, mode: AppMode) {
 export async function importBackup(db: FinanceDB, data: unknown) {
   const d = data as Awaited<ReturnType<typeof exportAll>>;
   if (!d || d.format !== EXPORT_FORMAT || !Array.isArray(d.txns) || !Array.isArray(d.plans) || !d.profile) {
-    throw new Error("This file isn't a Paisa Pulse backup.");
+    throw new Error("This file isn't a Drip backup.");
   }
   for (const t of d.txns) {
     if (!t.id || typeof t.date !== "string" || !Number.isSafeInteger(t.amountPaise)) throw new Error("Backup contains an invalid transaction; nothing was restored.");

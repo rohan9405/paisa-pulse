@@ -117,7 +117,7 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <p className="mt-8 text-center text-xs text-ink-400">Paisa Pulse · tracking since {formatDay(profile.trackingStart, { year: true })} · no analytics, no external AI</p>
+      <p className="mt-8 text-center text-xs text-ink-400">Drip · tracking since {formatDay(profile.trackingStart, { year: true })} · no analytics, no external AI</p>
       <Toast message={toast} onDone={() => setToast(null)} />
     </div>
   );
@@ -358,10 +358,10 @@ function DataPanel({ onToast }: { onToast: (s: string) => void }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <button className="btn-ghost" onClick={async () => download(`paisa-pulse-${mode}-${stamp}.json`, JSON.stringify(await exportAll(db, mode), null, 2), "application/json")} data-testid="export-json">
+        <button className="btn-ghost" onClick={async () => download(`drip-${mode}-${stamp}.json`, JSON.stringify(await exportAll(db, mode), null, 2), "application/json")} data-testid="export-json">
           Export backup (JSON)
         </button>
-        <button className="btn-ghost" onClick={() => download(`paisa-pulse-${mode}-transactions-${stamp}.csv`, txnsToCsv(data.txns), "text/csv")}>
+        <button className="btn-ghost" onClick={() => download(`drip-${mode}-transactions-${stamp}.csv`, txnsToCsv(data.txns), "text/csv")}>
           Export transactions (CSV)
         </button>
         <label className="btn-ghost cursor-pointer">
@@ -476,7 +476,7 @@ function AutoBackup({ onToast }: { onToast: (s: string) => void }) {
       ) : (
         <>
           <div>
-            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “Paisa Pulse” folder in Documents, or Google Drive) and a copy is saved there every day.
+            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “Drip” folder in Documents, or Google Drive) and a copy is saved there every day.
           </div>
           <button className="btn-primary text-sm" onClick={() => files.chooseBackupFolder()}>
             Choose backup folder

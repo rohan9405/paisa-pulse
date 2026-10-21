@@ -1,4 +1,4 @@
-# Paisa Pulse
+# Drip
 
 **"How much can I spend today, and where is my money going?"**: a mobile-first, on-device daily budget for India.
 
@@ -50,7 +50,7 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 ### Your data across updates
 
 - **Updates keep everything**: transactions, tags/rules, settings and the SMS read position. App data stays on the phone across updates. The build refuses any APK that couldn't install over the existing app (wrong signing key or a lower version), so you never have to uninstall to update.
-- **Turn on automatic backup** (Settings → Your data → *Choose backup folder*, e.g. a new "Paisa Pulse" folder in Documents, or Google Drive). A full backup is written there every day (last 14 kept). It lives outside the app, so it survives uninstalling or *Clear data*.
+- **Turn on automatic backup** (Settings → Your data → *Choose backup folder*, e.g. a new "Drip" folder in Documents, or Google Drive). A full backup is written there every day (last 14 kept). It lives outside the app, so it survives uninstalling or *Clear data*.
 - **New phone or reinstall:** on the welcome screen tap **Have a backup? Restore it** and pick the latest file. After a reinstall, choose the backup folder again in Settings.
 
 ## How bank SMS import works

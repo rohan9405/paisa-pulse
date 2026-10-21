@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Paisa Pulse Android app: static Next.js export inside a WebView shell.
+"""Build the Drip Android app: static Next.js export inside a WebView shell.
 
 Uses the Android SDK tools directly (aapt2, javac, d8, zipalign, apksigner); no
 Gradle and no third-party Android libraries. Output: android/build/PaisaPulse.apk.
