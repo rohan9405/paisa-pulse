@@ -27,7 +27,7 @@ export class FinanceDB extends Dexie {
       connections: "providerId",
       imports: "id, importedAt",
     });
-    // v2 (Drip 0.4): account balances from SMS. Adds a table; existing data is untouched.
+    // v2 (drip 0.4): account balances from SMS. Adds a table; existing data is untouched.
     this.version(2).stores({ accounts: "id" });
   }
 }

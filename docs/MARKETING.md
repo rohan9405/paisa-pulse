@@ -1,8 +1,8 @@
-# Drip marketing
+# drip marketing
 
 Ideas for the brand, store listing and in-app voice. Nothing here is shipped yet unless noted.
 
-## Why "Drip"
+## Why "drip"
 
 - **Gen Z meaning:** drip = style, swag. Cool without trying too hard.
 - **Literal meaning:** money drips out every day, and the app drip-feeds you a daily allowance. One number for today, refreshed at midnight.
@@ -11,10 +11,10 @@ It stands out and still says what the app does.
 
 ## Tagline
 
-- **Drip: your money, one day at a time.** (primary)
+- **drip: your money, one day at a time.** (primary)
 - How much can I spend today? (the question the app answers; already the page title)
-- Your bank texts you. Drip listens. (for the auto-SMS angle)
-- Private by default. Drip never leaves your phone. (for the privacy angle)
+- Your bank texts you. drip listens. (for the auto-SMS angle)
+- Private by default. drip never leaves your phone. (for the privacy angle)
 
 ## Icon (shipped)
 
@@ -29,7 +29,7 @@ Short, a little cheeky, Gen Z without being cringe. Roast the spending, never th
 | Moment | Copy |
 | --- | --- |
 | Home, today's number | Today's drip: ₹840 |
-| Under budget | Drip intact 💧 |
+| Under budget | drip intact 💧 |
 | Under budget, big day | Ate and left no crumbs 💅 |
 | Over budget | You're leaking 💀 |
 | Over budget, food delivery | Not you spending ₹600 on Zomato again 💀 |
@@ -41,12 +41,12 @@ Short, a little cheeky, Gen Z without being cringe. Roast the spending, never th
 
 ## Store listing draft
 
-**Title:** Drip: Daily Budget
+**Title:** drip: Daily Budget
 
 **Short description:** One number a day. Bank SMS tracked automatically, on your phone.
 
 **Long description:**
-Drip answers one question: how much can I spend today?
+drip answers one question: how much can I spend today?
 Bills and savings come off first. The rest becomes a daily drip that refills at midnight. Spend less and it rolls over. Spend more and later days quietly patch the leak.
 Your bank's transaction SMS are read on the phone, so spending shows up without typing. No server, no internet permission, no analytics.
 
@@ -59,4 +59,4 @@ Your bank's transaction SMS are read on the phone, so spending shows up without 
 
 ## Name backups
 
-If "Drip" is taken on the Play Store: **DripDaily** or **Drip ₹**. Other names considered: Kharcha Check, Aaj, Gullak, Roz, Runway.
+If "drip" is taken on the Play Store: **DripDaily** or **drip ₹**. Other names considered: Kharcha Check, Aaj, Gullak, Roz, Runway.

@@ -263,7 +263,7 @@ public class MainActivity extends Activity {
         unlockOk = ok;
         unlockFail = fail;
         if (Build.VERSION.SDK_INT >= 28) {
-            BiometricPrompt.Builder b = new BiometricPrompt.Builder(this).setTitle("Unlock Drip").setSubtitle("Use your fingerprint or screen lock");
+            BiometricPrompt.Builder b = new BiometricPrompt.Builder(this).setTitle("Unlock drip").setSubtitle("Use your fingerprint or screen lock");
             if (Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
             else b.setDeviceCredentialAllowed(true);
             b.build().authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
@@ -278,7 +278,7 @@ public class MainActivity extends Activity {
                 }
             });
         } else {
-            Intent i = km.createConfirmDeviceCredentialIntent("Unlock Drip", null);
+            Intent i = km.createConfirmDeviceCredentialIntent("Unlock drip", null);
             if (i == null) finishAuth(true);
             else startActivityForResult(i, UNLOCK_REQUEST);
         }

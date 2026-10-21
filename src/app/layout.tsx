@@ -8,7 +8,7 @@ const sans = Space_Grotesk({ subsets: ["latin"], variable: "--font-sans", displa
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Drip — how much can I spend today?",
+  title: "drip — how much can I spend today?",
   description: "A private, on-device daily budget for India.",
   icons: { icon: "/favicon.svg" },
 };

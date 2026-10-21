@@ -155,7 +155,7 @@ export default function SettingsPage() {
       )}
 
       <p className="mt-8 text-center text-xs text-ink-400">
-        Drip · tracking since {formatDay(profile.trackingStart, { year: true })}
+        drip · tracking since {formatDay(profile.trackingStart, { year: true })}
         {sms?.lastSyncAt ? ` · SMS read ${new Date(sms.lastSyncAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}` : ""} · no analytics, no external AI
       </p>
       <Toast message={toast} onDone={() => setToast(null)} />
@@ -231,7 +231,7 @@ function AppLock({ prefs, onToast }: { prefs: Prefs; onToast: (s: string) => voi
     <Toggle
       icon="🔒"
       title="Fingerprint lock"
-      hint={canLock ? "Unlock with fingerprint or your phone's PIN when opening Drip, and after a minute away." : "Set up a fingerprint or screen lock on your phone first."}
+      hint={canLock ? "Unlock with fingerprint or your phone's PIN when opening drip, and after a minute away." : "Set up a fingerprint or screen lock on your phone first."}
       checked={on}
       disabled={!canLock}
       onChange={(next) => device.setAppLock(next)}
@@ -682,7 +682,7 @@ function AutoBackup({ onToast }: { onToast: (s: string) => void }) {
       ) : (
         <>
           <div>
-            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “Drip” folder in Documents, or Google
+            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “drip” folder in Documents, or Google
             Drive) and a copy is saved there every day.
           </div>
           <button className="btn-primary text-sm" onClick={() => files.chooseBackupFolder()}>
