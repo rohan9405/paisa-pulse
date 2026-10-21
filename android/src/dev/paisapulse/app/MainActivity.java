@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -23,9 +25,14 @@ import java.util.Map;
  * Every request to that origin is answered from the APK; nothing is fetched.
  */
 public class MainActivity extends Activity {
+    // The page's origin is where WebView keeps its IndexedDB. Never change it (or the
+    // package name): an update with a different origin would start with empty storage.
     static final String HOST = "paisapulse.local";
     static final int SMS_REQUEST = 1;
+    static final int PICK_REQUEST = 2;
     private WebView web;
+    private FilesBridge files;
+    private ValueCallback<Uri[]> pickCallback;
 
     @Override
     protected void onCreate(Bundle saved) {
@@ -42,6 +49,23 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(false);
         web.addJavascriptInterface(new SmsBridge(this), "PaisaSms");
+        files = new FilesBridge(this);
+        web.addJavascriptInterface(files, "PaisaFiles");
+        // Needed for <input type=file> (CSV import, backup restore) and confirm() dialogs.
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (pickCallback != null) pickCallback.onReceiveValue(null);
+                pickCallback = callback;
+                try {
+                    startActivityForResult(params.createIntent(), PICK_REQUEST);
+                } catch (Exception e) {
+                    pickCallback = null;
+                    return false;
+                }
+                return true;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
@@ -117,8 +141,24 @@ public class MainActivity extends Activity {
         return "application/octet-stream";
     }
 
-    private void emit(String event) {
-        if (web != null) web.evaluateJavascript("window.dispatchEvent(new Event('" + event + "'))", null);
+    @Override
+    protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        Uri uri = result == RESULT_OK && data != null ? data.getData() : null;
+        if (code == PICK_REQUEST && pickCallback != null) {
+            pickCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
+            pickCallback = null;
+        } else if (code == FilesBridge.SAVE_REQUEST) {
+            files.onSaveResult(uri);
+        } else if (code == FilesBridge.FOLDER_REQUEST) {
+            files.onFolderResult(uri);
+        }
+    }
+
+    void emit(String event) {
+        runOnUiThread(() -> {
+            if (web != null) web.evaluateJavascript("window.dispatchEvent(new Event('" + event + "'))", null);
+        });
     }
 
     @Override

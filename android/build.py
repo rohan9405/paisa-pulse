@@ -7,12 +7,17 @@ Gradle and no third-party Android libraries. Output: android/build/PaisaPulse.ap
     python3 android/build.py               # rebuild web + APK
     python3 android/build.py --skip-web    # reuse the last web export
 
-Keep android/paisa.keystore: an update only installs over the phone's copy if
-it's signed with the same key.
+Updates must never cost the user their data, so the build refuses anything that
+couldn't install over the existing app:
+- the signing key must match the pinned certificate (android/signing-cert.sha256);
+  a missing android/paisa.keystore is an error, not a cue to make a new one;
+- versionCode can never go below the last build (android/last-version-code).
+Keep a copy of android/paisa.keystore somewhere safe.
 """
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,6 +28,8 @@ SOURCE = ROOT / "android"
 OUT = SOURCE / "build"
 WEB = ROOT / ".next-android"
 KEY = SOURCE / "paisa.keystore"
+PIN = SOURCE / "signing-cert.sha256"
+LAST_CODE = SOURCE / "last-version-code"
 
 # Optional machine-specific paths (git-ignored), e.g.
 # {"build_tools": ".../build-tools/35.0.0", "platform": ".../platforms/android-35/android.jar", "java": ".../Contents/Home"}
@@ -50,11 +57,13 @@ def main():
     parser.add_argument("--platform", default=d["platform"])
     parser.add_argument("--java", default=d["java"], help="JDK home (17+)")
     parser.add_argument("--skip-web", action="store_true")
+    parser.add_argument("--new-key", action="store_true", help="first build only: create a signing key and pin it")
     args = parser.parse_args()
     if not args.java:
         raise SystemExit("Set JAVA_HOME, pass --java, or add \"java\" to android/local.json.")
     tools, java = Path(args.build_tools), Path(args.java)
     env = {**os.environ, "JAVA_HOME": str(java), "PATH": f"{java}/bin:{os.environ['PATH']}"}
+    check_update_safety(args.new_key)
 
     if not args.skip_web:
         shutil.rmtree(WEB, ignore_errors=True)
@@ -84,15 +93,40 @@ def main():
             apk.write(f, "assets/web/" + f.relative_to(WEB).as_posix())
 
     run(tools / "zipalign", "-f", "4", OUT / "unsigned.apk", OUT / "aligned.apk")
-    if not KEY.exists():
+    if args.new_key and not KEY.exists():
         run(java / "bin/keytool", "-genkeypair", "-keystore", KEY, "-storepass", "android", "-keypass", "android",
             "-alias", "paisa", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Paisa Pulse Local")
         KEY.chmod(0o600)
     apk = OUT / "PaisaPulse.apk"
     run(tools / "apksigner", "sign", "--ks", KEY, "--ks-key-alias", "paisa", "--ks-pass", "pass:android",
         "--out", apk, OUT / "aligned.apk", env=env)
-    run(tools / "apksigner", "verify", apk, env=env)
-    print("Built and verified:", apk)
+    certs = subprocess.run([str(tools / "apksigner"), "verify", "--print-certs", str(apk)], check=True, env=env, capture_output=True, text=True).stdout
+    digest = next(l.split(":")[-1].strip() for l in certs.splitlines() if "certificate SHA-256 digest" in l)
+    if not PIN.exists():
+        PIN.write_text(digest + "\n")
+    elif PIN.read_text().strip() != digest:
+        apk.unlink()
+        raise SystemExit(f"Signed with the wrong key ({digest}); expected {PIN.read_text().strip()}. This APK could not update the installed app.")
+    LAST_CODE.write_text(str(version_code()) + "\n")
+    print("Built and verified:", apk, f"(versionCode {version_code()}, key {digest[:12]}…)")
+
+
+def version_code() -> int:
+    return int(re.search(r'android:versionCode="(\d+)"', (SOURCE / "AndroidManifest.xml").read_text()).group(1))
+
+
+def check_update_safety(new_key: bool):
+    if not KEY.exists() and not new_key:
+        raise SystemExit(
+            "android/paisa.keystore is missing. Restore it from your backup: an APK signed with any other key can't "
+            "update the installed app, and uninstalling to get around that deletes all of its data. "
+            "Use --new-key only for the very first build."
+        )
+    if new_key and PIN.exists():
+        raise SystemExit("A signing certificate is already pinned; refusing to create a new key.")
+    last = int(LAST_CODE.read_text()) if LAST_CODE.exists() else 0
+    if version_code() < last:
+        raise SystemExit(f"versionCode {version_code()} is lower than the last build ({last}); Android won't install a downgrade over the app.")
 
 
 if __name__ == "__main__":

@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { planForDate, poolSummary } from "@/lib/budget";
 import { CATEGORIES } from "@/lib/categorize";
-import { formatDay } from "@/lib/dates";
+import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
 import type { Profile, TxnKind } from "@/lib/types";
 import { deleteDatabase } from "@/data/db";
 import { PROVIDERS } from "@/data/providers/registry";
 import { smsBridge, syncSms } from "@/data/providers/sms";
+import { backupNow, filesBridge, lastBackupAt, saveFile } from "@/data/backup";
 import { addPlanVersion, exportAll, importBackup, recategorizeAll, saveRule, seedDemo, txnsToCsv } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
 import { CommitmentList, type CommitmentDraft, draftFromCommitment, validateDrafts } from "@/components/CommitmentEditor";
@@ -344,21 +345,18 @@ function DataPanel({ onToast }: { onToast: (s: string) => void }) {
   const [restoreErr, setRestoreErr] = useState<string | null>(null);
   if (!data || !db || !mode) return null;
 
-  const download = (name: string, body: string, type: string) => {
-    const url = URL.createObjectURL(new Blob([body], { type }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  const stamp = new Date().toISOString().slice(0, 10);
+  const download = saveFile;
+  const stamp = toISTKey();
 
   return (
     <Card className="space-y-4 text-sm">
-      <div className="rounded-2xl bg-amber/[0.07] p-3 text-amber">
-        🔒 Everything lives in this browser's storage (IndexedDB) — no server, no analytics, no AI upload. <b>That also means it's not a backup:</b> clearing site data, private windows or a new device will lose it. Export regularly.
-      </div>
+      {filesBridge() ? (
+        <AutoBackup onToast={onToast} />
+      ) : (
+        <div className="rounded-2xl bg-amber/[0.07] p-3 text-amber">
+          🔒 Everything lives in this browser's storage (IndexedDB) — no server, no analytics, no AI upload. <b>That also means it's not a backup:</b> clearing site data, private windows or a new device will lose it. Export regularly.
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" onClick={async () => download(`paisa-pulse-${mode}-${stamp}.json`, JSON.stringify(await exportAll(db, mode), null, 2), "application/json")} data-testid="export-json">
           Export backup (JSON)
@@ -431,6 +429,60 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
     <div className="flex justify-between">
       <span className={strong ? "font-semibold" : "text-ink-400"}>{label}</span>
       <span className={cx("num", strong && "font-bold")}>{value}</span>
+    </div>
+  );
+}
+
+function AutoBackup({ onToast }: { onToast: (s: string) => void }) {
+  const { db, mode } = useBudget();
+  const files = filesBridge();
+  const [folder, setFolder] = useState(() => files?.backupFolder() ?? "");
+  const [last, setLast] = useState(lastBackupAt);
+  useEffect(() => {
+    const onFolder = async () => {
+      setFolder(files?.backupFolder() ?? "");
+      if (db && mode && (await backupNow(db, mode))) setLast(lastBackupAt());
+    };
+    const saved = () => onToast("Saved");
+    const failed = () => onToast("Couldn't save the file");
+    window.addEventListener("paisa-backup-folder", onFolder);
+    window.addEventListener("paisa-file-saved", saved);
+    window.addEventListener("paisa-file-save-failed", failed);
+    return () => {
+      window.removeEventListener("paisa-backup-folder", onFolder);
+      window.removeEventListener("paisa-file-saved", saved);
+      window.removeEventListener("paisa-file-save-failed", failed);
+    };
+  }, [files, db, mode, onToast]);
+  if (!files || !db || !mode) return null;
+
+  return (
+    <div className={cx("space-y-2 rounded-2xl p-3", folder ? "bg-lime/[0.06]" : "bg-amber/[0.07] text-amber")} data-testid="auto-backup">
+      {folder ? (
+        <>
+          <div>
+            ✅ <b>Automatic backup is on.</b> A copy is saved to <b>{folder}</b> every day (last 14 days kept), outside the app, so it survives updates, uninstalling or clearing app data.
+          </div>
+          <div className="text-xs text-ink-400">{last ? `Last backup ${new Date(last).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}` : "No backup yet"}</div>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-ghost text-xs" onClick={async () => onToast((await backupNow(db, mode)) ? (setLast(lastBackupAt()), "Backed up") : "Backup failed: choose the folder again")}>
+              Back up now
+            </button>
+            <button className="btn-ghost text-xs" onClick={() => files.chooseBackupFolder()}>
+              Change folder
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “Paisa Pulse” folder in Documents, or Google Drive) and a copy is saved there every day.
+          </div>
+          <button className="btn-primary text-sm" onClick={() => files.chooseBackupFolder()}>
+            Choose backup folder
+          </button>
+        </>
+      )}
     </div>
   );
 }

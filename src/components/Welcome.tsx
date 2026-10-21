@@ -3,11 +3,32 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useStore } from "@/data/store";
+import { getDB } from "@/data/db";
+import { importBackup } from "@/data/repo";
 
 export function Welcome() {
   const { setMode } = useStore();
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+
+  const [restoreErr, setRestoreErr] = useState<string | null>(null);
+
+  // After a reinstall or a new phone: bring everything back from an automatic or exported backup.
+  const restore = async (f: File | undefined) => {
+    if (!f) return;
+    setRestoreErr(null);
+    setBusy("restore");
+    try {
+      const db = getDB("personal");
+      await db.open();
+      await importBackup(db, JSON.parse(await f.text()));
+      await setMode("personal");
+      router.replace("/");
+    } catch (e) {
+      setRestoreErr(e instanceof Error ? e.message : "Couldn't restore that file");
+      setBusy(null);
+    }
+  };
 
   const go = async (m: "demo" | "personal") => {
     setBusy(m);
@@ -42,6 +63,11 @@ export function Welcome() {
           {busy === "demo" ? "Loading demo…" : "Explore the demo 🎭"}
         </button>
         <p className="text-center text-xs text-ink-400">Demo uses fictional transactions and is stored separately from your personal data.</p>
+        <label className="block cursor-pointer pt-1 text-center text-sm font-semibold text-lime" data-testid="welcome-restore">
+          {busy === "restore" ? "Restoring…" : "Have a backup? Restore it"}
+          <input type="file" accept="application/json,.json" className="sr-only" disabled={!!busy} onChange={(e) => restore(e.target.files?.[0])} />
+        </label>
+        {restoreErr && <p className="text-center text-xs text-coral">{restoreErr}</p>}
       </div>
     </div>
   );

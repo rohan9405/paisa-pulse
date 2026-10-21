@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { useAppData, useStore } from "@/data/store";
 import { useSmsSync } from "@/data/useSmsSync";
+import { useAutoBackup } from "@/data/useAutoBackup";
 import { QuickAddSheet } from "./QuickAdd";
 import { Onboarding } from "./Onboarding";
 import { Welcome } from "./Welcome";
@@ -29,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { ready, mode, setMode, db } = useStore();
   const data = useAppData();
   useSmsSync(mode === "personal" && data?.profile ? db : null);
+  useAutoBackup(data?.profile ? db : null, mode);
   const pathname = usePathname();
   const router = useRouter();
   const [qa, setQa] = useState<{ open: boolean; date?: string }>({ open: false });

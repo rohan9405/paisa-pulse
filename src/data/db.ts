@@ -15,6 +15,9 @@ export class FinanceDB extends Dexie {
 
   constructor(name: string) {
     super(name);
+    // Schema changes must never lose data across app updates: keep every existing
+    // version() call, add the next one with an .upgrade() that migrates rows, and
+    // add any new table to exportAll / importBackup (tests/unit/backup.test.ts checks).
     this.version(1).stores({
       profile: "id",
       plans: "id, effectiveFrom",

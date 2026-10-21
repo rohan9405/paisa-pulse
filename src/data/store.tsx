@@ -62,6 +62,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    // Ask the browser/WebView not to evict our IndexedDB under storage pressure.
+    navigator.storage?.persist?.().catch(() => {});
     const m = readMode();
     (async () => {
       if (m) {

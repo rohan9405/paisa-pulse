@@ -47,7 +47,11 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 2. **Set up my budget**: income, bills & savings, and the **tracking start date**. Bank SMS from that date onwards are imported.
 3. Need older history later? Settings → Tracking → move **Tracking start** earlier and save; the app reads your SMS back to that date.
 
-Updates install over the existing app and keep your data, as long as they're signed with the same key.
+### Your data across updates
+
+- **Updates keep everything**: transactions, tags/rules, settings and the SMS read position. App data stays on the phone across updates. The build refuses any APK that couldn't install over the existing app (wrong signing key or a lower version), so you never have to uninstall to update.
+- **Turn on automatic backup** (Settings → Your data → *Choose backup folder*, e.g. a new "Paisa Pulse" folder in Documents, or Google Drive). A full backup is written there every day (last 14 kept). It lives outside the app, so it survives uninstalling or *Clear data*.
+- **New phone or reinstall:** on the welcome screen tap **Have a backup? Restore it** and pick the latest file. After a reinstall, choose the backup folder again in Settings.
 
 ## How bank SMS import works
 
@@ -87,7 +91,12 @@ python3 android/build.py   # → android/build/PaisaPulse.apk
 
 No Gradle: the script builds a static export of the web app (`NEXT_STATIC_EXPORT=1`), then calls the Android SDK tools directly (aapt2, javac, d8, zipalign, apksigner). Point it at your SDK and JDK with `ANDROID_BUILD_TOOLS` (a `build-tools/35.0.0` folder), `ANDROID_JAR` (`platforms/android-35/android.jar`) and `JAVA_HOME` (JDK 17+), or put the three paths in a git-ignored `android/local.json` (`build_tools`, `platform`, `java`).
 
-The shell (`android/src`) is a WebView that serves the export from the APK on a private `https://paisapulse.local` origin and exposes the SMS inbox as `window.PaisaSms` (read-only). The first build creates `android/paisa.keystore`. **Keep it safe and out of git**: updates only install over an existing copy when signed with the same key.
+The shell (`android/src`) is a WebView that serves the export from the APK on a private `https://paisapulse.local` origin (never change it: the app's storage belongs to that origin), exposes the SMS inbox as `window.PaisaSms` (read-only) and file saving / the backup folder as `window.PaisaFiles`.
+
+Update safety, enforced by `build.py`:
+- The APK must be signed by the certificate pinned in `android/signing-cert.sha256`. If `android/paisa.keystore` is missing the build stops rather than making a new key. **Keep the keystore safe and out of git.** Only the very first build uses `--new-key`.
+- `versionCode` (in `android/AndroidManifest.xml`) can't go below the last build; bump it for each release.
+- Database changes must add a new Dexie `version()` with an upgrade step and never drop data; `tests/unit/backup.test.ts` fails if a table is missing from the backup.
 
 To serve the APK on your LAN with a QR code: `python3 android/install.py`. Note that Play Protect still blocks browser installs (see above).
 
@@ -133,7 +142,7 @@ tests/unit, tests/e2e
 - **Demo mode** is labelled on every screen and uses deterministic, fictional Indian transactions tagged `providerId: "demo"`. It lives in its own IndexedDB database (`paisa-pulse-demo`) and never reads SMS.
 - **Personal mode** (`paisa-pulse-personal`) holds manual entries, CSV imports and, in the Android app, bank SMS.
 - No server, no analytics, no external AI calls. Fonts are self-hosted at build time. The Android app has no internet permission.
-- **Local storage is not a backup.** Clearing app data, uninstalling or switching devices loses it, so export from Settings.
+- **Turn on automatic backup in the Android app.** In a browser, data lives only in that browser: export from Settings.
 - The app never asks for bank passwords, PINs or OTPs.
 
 ## Not implemented yet

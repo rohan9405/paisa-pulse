@@ -246,6 +246,7 @@ export async function exportAll(db: FinanceDB, mode: AppMode) {
     txns: await db.txns.toArray(),
     rules: await db.rules.toArray(),
     imports: await db.imports.toArray(),
+    connections: await db.connections.toArray(),
   };
 }
 
@@ -257,13 +258,18 @@ export async function importBackup(db: FinanceDB, data: unknown) {
   for (const t of d.txns) {
     if (!t.id || typeof t.date !== "string" || !Number.isSafeInteger(t.amountPaise)) throw new Error("Backup contains an invalid transaction; nothing was restored.");
   }
-  await db.transaction("rw", [db.profile, db.plans, db.txns, db.rules, db.imports], async () => {
+  await db.transaction("rw", [db.profile, db.plans, db.txns, db.rules, db.imports, db.connections], async () => {
     await Promise.all([db.profile.clear(), db.plans.clear(), db.txns.clear(), db.rules.clear(), db.imports.clear()]);
     await db.profile.put(d.profile!);
     await db.plans.bulkPut(d.plans);
     await db.txns.bulkPut(d.txns);
     await db.rules.bulkPut(d.rules ?? []);
     await db.imports.bulkPut(d.imports ?? []);
+    // Older backups have no connections; then SMS sync rescans from the tracking start (duplicates are skipped).
+    if (d.connections) {
+      await db.connections.clear();
+      await db.connections.bulkPut(d.connections);
+    }
   });
   await ensureRules(db);
 }
