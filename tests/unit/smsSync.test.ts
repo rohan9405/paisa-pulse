@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { FinanceDB } from "@/data/db";
 import { syncSms } from "@/data/providers/sms";
-import { deleteTxn, ensureRules, updateTxn } from "@/data/repo";
+import { deleteTxn, ensureRules, setPrefs, updateTxn } from "@/data/repo";
 import type { RawSms } from "@/lib/sms";
 
 const at = (day: string, hour = 12) => Date.parse(`${day}T${String(hour).padStart(2, "0")}:00:00+05:30`);
@@ -104,5 +104,23 @@ describe("SMS sync", () => {
     // Second pass: nothing re-read, nothing added.
     expect(await syncSms(db)).toBe(0);
     expect(await db.txns.count()).toBe(3);
+  });
+
+  it("keeps the latest balance per account, and forgets them when turned off", async () => {
+    const hdfc = (id: string, day: string, hour: number, bal: string): RawSms => ({ id, address: "VM-HDFCBK", body: `Sent Rs.100.00 From HDFC Bank A/C *1234 To SWIGGY. Avl bal Rs.${bal}`, date: at(day, hour) });
+    installBridge([hdfc("1", "2026-10-02", 9, "5,000.00"), hdfc("2", "2026-10-02", 18, "4,900.00")]);
+    await start("2026-10-01");
+    await syncSms(db);
+    expect(await db.accounts.toArray()).toEqual([expect.objectContaining({ id: "HDFC-1234", kind: "account", balancePaise: 4_900_00 })]);
+
+    await setPrefs(db, { balances: false });
+    expect(await db.accounts.count()).toBe(0);
+    await syncSms(db);
+    expect(await db.accounts.count()).toBe(0);
+
+    await setPrefs(db, { balances: true }); // re-reads once to find them again
+    await syncSms(db);
+    expect((await db.accounts.get("HDFC-1234"))?.balancePaise).toBe(4_900_00);
+    expect(await db.txns.count()).toBe(2); // no duplicates from the re-read
   });
 });

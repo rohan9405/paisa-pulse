@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useId, useRef } from "react";
+import { haptic } from "@/data/device";
 import { formatINR, type FormatOptions } from "@/lib/money";
 
 export function cx(...xs: (string | false | null | undefined)[]) {
@@ -161,6 +162,7 @@ export function ProgressBar({ value, tone = "lime" }: { value: number; tone?: "l
 export function Toast({ message, onDone, action }: { message: string | null; onDone: () => void; action?: { label: string; onClick: () => void } }) {
   useEffect(() => {
     if (!message) return;
+    haptic("success");
     const t = window.setTimeout(onDone, 4000);
     return () => window.clearTimeout(t);
   }, [message, onDone]);

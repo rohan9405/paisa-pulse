@@ -4,8 +4,8 @@
  * read and parsed on the device; nothing is uploaded anywhere.
  */
 import { autoLinkRefund } from "@/lib/match";
-import { type RawSms, smsToCandidate } from "@/lib/sms";
-import type { Transaction } from "@/lib/types";
+import { type RawSms, parseBalance, smsToCandidate } from "@/lib/sms";
+import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
 import { type FinanceDB, uid } from "../db";
 
 export interface SmsBridge {
@@ -36,7 +36,7 @@ export function smsBridge(): SmsBridge | null {
 
 const PAGE = 500;
 /** Bump when the parser learns new message formats: the next sync re-reads the inbox once. */
-export const SMS_PARSER_VERSION = 2;
+export const SMS_PARSER_VERSION = 3;
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -84,6 +84,8 @@ async function doSync(db: FinanceDB): Promise<number> {
   const batchId = uid("sms-");
   const created: Transaction[] = [];
   const corrected: Transaction[] = [];
+  const readBalances = profile.prefs?.balances ?? DEFAULT_PREFS.balances;
+  const balances = new Map<string, Account>();
 
   try {
     for (const [after, before] of ranges) {
@@ -92,6 +94,11 @@ async function doSync(db: FinanceDB): Promise<number> {
         const page = JSON.parse(bridge.list(cursor, PAGE)) as SmsPage;
         for (const sms of page.messages) {
           if (sms.date >= before) break;
+          if (readBalances) {
+            const b = parseBalance(sms);
+            const id = b && `${b.bank}-${b.last4}`;
+            if (b && id && sms.date >= (balances.get(id)?.asOf ?? 0)) balances.set(id, { id, bank: b.bank, last4: b.last4, kind: b.kind, balancePaise: b.balancePaise, asOf: sms.date });
+          }
           if (sms.date <= startOfTracking) continue;
           const c = smsToCandidate(sms, rules);
           if (!c || dismissed.has(c.fingerprint)) continue;
@@ -134,9 +141,13 @@ async function doSync(db: FinanceDB): Promise<number> {
     throw e;
   }
 
-  await db.transaction("rw", [db.txns, db.connections], async () => {
+  await db.transaction("rw", [db.txns, db.connections, db.accounts], async () => {
     if (created.length) await db.txns.bulkAdd(created);
     if (corrected.length) await db.txns.bulkPut(corrected);
+    for (const a of balances.values()) {
+      const known = await db.accounts.get(a.id);
+      if (!known || known.asOf <= a.asOf) await db.accounts.put(a);
+    }
     await db.connections.put({
       ...conn,
       providerId: "sms",

@@ -6,7 +6,7 @@ import { DEFAULT_RULES, categorize, detectMethod } from "@/lib/categorize";
 import { type CandidateRow, fingerprint } from "@/lib/csv";
 import { autoLinkRefund } from "@/lib/match";
 import type { DateKey } from "@/lib/dates";
-import type { AppMode, BudgetPlan, CategoryRule, Commitment, ImportBatch, Profile, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
+import type { AppMode, BudgetPlan, CategoryRule, Commitment, ImportBatch, Prefs, Profile, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
 import { type FinanceDB, uid } from "./db";
 import { generateDemoData } from "./providers/demo";
 
@@ -253,6 +253,7 @@ export async function exportAll(db: FinanceDB, mode: AppMode) {
     rules: await db.rules.toArray(),
     imports: await db.imports.toArray(),
     connections: await db.connections.toArray(),
+    accounts: await db.accounts.toArray(),
   };
 }
 
@@ -264,7 +265,7 @@ export async function importBackup(db: FinanceDB, data: unknown) {
   for (const t of d.txns) {
     if (!t.id || typeof t.date !== "string" || !Number.isSafeInteger(t.amountPaise)) throw new Error("Backup contains an invalid transaction; nothing was restored.");
   }
-  await db.transaction("rw", [db.profile, db.plans, db.txns, db.rules, db.imports, db.connections], async () => {
+  await db.transaction("rw", [db.profile, db.plans, db.txns, db.rules, db.imports, db.connections, db.accounts], async () => {
     await Promise.all([db.profile.clear(), db.plans.clear(), db.txns.clear(), db.rules.clear(), db.imports.clear()]);
     await db.profile.put(d.profile!);
     await db.plans.bulkPut(d.plans);
@@ -276,6 +277,8 @@ export async function importBackup(db: FinanceDB, data: unknown) {
       await db.connections.clear();
       await db.connections.bulkPut(d.connections);
     }
+    await db.accounts.clear();
+    await db.accounts.bulkPut(d.accounts ?? []);
   });
   await ensureRules(db);
 }
@@ -291,4 +294,13 @@ export function txnsToCsv(txns: Transaction[]): string {
     .sort((a, b) => (a.date < b.date ? -1 : 1))
     .map((t) => [t.date, (t.amountPaise / 100).toFixed(2), t.kind, t.merchant, t.category, t.method, t.note, t.source.providerId, t.commitmentId, t.refundOf].map(esc).join(","));
   return [head.join(","), ...lines].join("\n");
+}
+
+export async function setPrefs(db: FinanceDB, patch: Partial<Prefs>) {
+  const p = await db.profile.get("me");
+  if (!p) return;
+  await db.profile.update("me", { prefs: { ...p.prefs, ...patch } });
+  // Balances off: forget the ones already read. Back on: re-read the inbox once to find them again.
+  if (patch.balances === false) await db.accounts.clear();
+  if (patch.balances === true) await db.connections.update("sms", { parserVersion: 0 });
 }

@@ -6,6 +6,8 @@ import { type ComponentType, createContext, type ReactNode, useCallback, useCont
 import { useAppData, useStore } from "@/data/store";
 import { useSmsSync } from "@/data/useSmsSync";
 import { useAutoBackup } from "@/data/useAutoBackup";
+import { haptic, setHapticsEnabled } from "@/data/device";
+import { DEFAULT_PREFS } from "@/lib/types";
 import { QuickAddSheet } from "./QuickAdd";
 import { Onboarding } from "./Onboarding";
 import { Welcome } from "./Welcome";
@@ -31,6 +33,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const data = useAppData();
   useSmsSync(mode === "personal" && data?.profile ? db : null);
   useAutoBackup(data?.profile ? db : null, mode);
+  const hapticsPref = data?.profile?.prefs?.haptics ?? DEFAULT_PREFS.haptics;
+  useEffect(() => setHapticsEnabled(hapticsPref), [hapticsPref]);
+  // One light tap for every button, link, tab and toggle, instead of wiring each one.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest?.("button, a, summary, label, [role=tab], input[type=checkbox]")) haptic("tap");
+    };
+    document.addEventListener("click", onClick, { capture: true });
+    return () => document.removeEventListener("click", onClick, { capture: true });
+  }, []);
   const pathname = usePathname();
   const router = useRouter();
   const [qa, setQa] = useState<{ open: boolean; date?: string }>({ open: false });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_RULES } from "@/lib/categorize";
-import { bankForSender, parseBankSms, smsToCandidate } from "@/lib/sms";
+import { bankForSender, parseBalance, parseBankSms, smsToCandidate } from "@/lib/sms";
 import type { CategoryRule } from "@/lib/types";
 
 const rules: CategoryRule[] = DEFAULT_RULES.map((r, i) => ({ ...r, id: `b${i}` }));
@@ -37,7 +37,7 @@ describe("HDFC", () => {
 
   it("card spend", () => {
     const c = smsToCandidate(sms("AD-HDFCBK", "Spent Rs.1,499.00 On HDFC Bank Card 4321 At AMAZON PAY INDIA On 2026-10-20:14:28:09 Bal Rs.48,501.00 Not You? Call 18002586161"), rules)!;
-    expect(c).toMatchObject({ amountPaise: 1_499_00, kind: "expense", merchant: "Amazon Pay India", category: "Shopping", method: "card" });
+    expect(c).toMatchObject({ amountPaise: 1_499_00, kind: "expense", merchant: "Amazon Pay", category: "Shopping", method: "card" });
   });
 
   it("credit alert from a VPA", () => {
@@ -64,7 +64,7 @@ describe("ICICI", () => {
 
   it("credit card spend", () => {
     const c = smsToCandidate(sms("VM-ICICIT", "INR 2,340.00 spent using ICICI Bank Card XX9876 on 20-Oct-26 on UBER INDIA. Avl Limit: INR 1,45,660.00. If not you, call 1800 2662/SMS BLOCK 9876 to 9215676766"), rules)!;
-    expect(c).toMatchObject({ amountPaise: 2_340_00, merchant: "Uber India", category: "Transport", method: "card" });
+    expect(c).toMatchObject({ amountPaise: 2_340_00, merchant: "Uber", category: "Transport", method: "card" });
   });
 
   it("refund credit", () => {
@@ -133,5 +133,33 @@ describe("fingerprints", () => {
     const c = smsToCandidate(sms("VK-SBIUPI", "A/C X1234 debited by 121.0 on date 20Oct26 trf to BLINKIT Refno 629377778889"), rules)!;
     expect(a.fingerprint).toBe(b.fingerprint);
     expect(a.fingerprint).not.toBe(c.fingerprint);
+  });
+});
+
+describe("balances", () => {
+  it.each([
+    ["VM-HDFCBK", "Update! INR 85,000.00 deposited in HDFC Bank A/c XX1234 on 01-OCT-26 for NEFT Cr. Avl bal INR 1,02,345.00", { bank: "HDFC", last4: "1234", kind: "account", balancePaise: 1_02_345_00 }],
+    ["VM-HDFCBK", "Avl bal in your HDFC Bank A/c XX1234 is Rs.48,000.00 as on 20-10-26.", { last4: "1234", kind: "account", balancePaise: 48_000_00 }],
+    ["BP-ATMSBI", "Rs.2000 withdrawn at SBI ATM from A/cX1234 on 20Oct26. Available Balance Rs.10500.", { bank: "SBI", kind: "account", balancePaise: 10_500_00 }],
+    ["VM-ICICIT", "INR 2,340.00 spent using ICICI Bank Card XX9876 on 21-Oct-26 on UBER INDIA. Avl Limit: INR 1,45,660.00.", { bank: "ICICI", last4: "9876", kind: "card", balancePaise: 1_45_660_00 }],
+  ])("%s: %s", (address, body, expected) => {
+    expect(parseBalance({ address, body })).toMatchObject(expected);
+  });
+
+  it("ignores messages without a balance, OTPs and unknown senders", () => {
+    expect(parseBalance({ address: "VM-HDFCBK", body: "Sent Rs.250.00 From HDFC Bank A/C *1234 To SWIGGY On 21/10/26" })).toBeNull();
+    expect(parseBalance({ address: "VM-HDFCBK", body: "OTP 123456 for txn. Avl bal Rs.1,000 in A/c XX1234" })).toBeNull();
+    expect(parseBalance({ address: "+919800000000", body: "Avl bal in A/c XX1234 is Rs.48,000.00" })).toBeNull();
+  });
+});
+
+describe("merchant names", () => {
+  it.each([
+    ["Spent Rs.9,450.00 On HDFC Bank Card 4321 At MAKEMYTRIP INDI On 2026-10-21", "MakeMyTrip"],
+    ["Spent Rs.499.00 On HDFC Bank Card 4321 At AMAZON PAY INDIA PRIVA On 2026-10-21", "Amazon Pay"],
+    ["Spent Rs.299.00 On HDFC Bank Card 4321 At BUNDL TECHNOLOGIES PVT On 2026-10-21", "Swiggy"],
+    ["Spent Rs.99.00 On HDFC Bank Card 4321 At CHAI POINT PVT LTD On 2026-10-21", "Chai Point"],
+  ])("%s → %s", (body, name) => {
+    expect(smsToCandidate(sms("VM-HDFCBK", body), rules)!.merchant).toBe(name);
   });
 });

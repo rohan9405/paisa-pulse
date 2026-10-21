@@ -1,124 +1,309 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { planForDate, poolSummary } from "@/lib/budget";
 import { CATEGORIES } from "@/lib/categorize";
 import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
-import type { Profile, TxnKind } from "@/lib/types";
+import { DEFAULT_PREFS, type Prefs, type Profile, type TxnKind } from "@/lib/types";
 import { deleteDatabase } from "@/data/db";
 import { PROVIDERS } from "@/data/providers/registry";
 import { smsBridge, syncSms } from "@/data/providers/sms";
 import { backupNow, filesBridge, lastBackupAt, saveFile } from "@/data/backup";
-import { addPlanVersion, exportAll, importBackup, recategorizeAll, saveRule, seedDemo, txnsToCsv } from "@/data/repo";
+import { addPlanVersion, exportAll, importBackup, recategorizeAll, saveRule, seedDemo, setPrefs, txnsToCsv } from "@/data/repo";
+import { deviceBridge } from "@/data/device";
 import { useBudget } from "@/data/useBudget";
 import { CommitmentList, type CommitmentDraft, draftFromCommitment, validateDrafts } from "@/components/CommitmentEditor";
-import { AmountInput, Card, Field, Money, PageHeader, Pill, SectionTitle, Toast, cx } from "@/components/ui";
+import { AmountInput, Card, Field, Money, PageHeader, Pill, Segmented, Toast, cx } from "@/components/ui";
 import { useStore } from "@/data/store";
+
+type Tab = "budget" | "data" | "app";
+const TABS: { value: Tab; label: string }[] = [
+  { value: "budget", label: "Budget" },
+  { value: "data", label: "Data" },
+  { value: "app", label: "App" },
+];
 
 export default function SettingsPage() {
   const { data, derived, today, db, mode } = useBudget();
   const { setMode } = useStore();
   const router = useRouter();
   const [toast, setToast] = useState<string | null>(null);
+  // The tab lives in the URL hash so back/forward and reloads keep it.
+  const [tab, setTabState] = useState<Tab>("budget");
+  useEffect(() => {
+    const h = window.location.hash.slice(1);
+    if (TABS.some((t) => t.value === h)) setTabState(h as Tab);
+  }, []);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    window.history.replaceState(null, "", `#${t}`);
+  };
 
   if (!data || !derived || !data.profile) return null;
   const { profile, plans } = data;
+  const prefs = { ...DEFAULT_PREFS, ...profile.prefs };
+  const pool = derived.pool;
+  const userRules = data.rules.filter((r) => !r.builtIn).length;
+  const sms = data.connections.find((c) => c.providerId === "sms");
 
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader title="Settings" subtitle={mode === "demo" ? "Demo mode — changes affect fictional data only" : "Personal mode"} />
+      <div className="sticky top-0 z-20 -mx-4 mb-4 bg-ink-950/90 px-4 py-2 backdrop-blur md:static md:mx-0 md:bg-transparent md:px-0">
+        <Segmented value={tab} onChange={setTab} options={TABS} className="w-full" />
+      </div>
 
-      <BudgetEditor key={derived.plan?.id ?? "none"} />
-
-      <SectionTitle>Tracking</SectionTitle>
-      <TrackingEditor key={`${profile.trackingStart}|${profile.openingAdjustmentPaise}`} profile={profile} onSaved={(n) => setToast(n ? `Saved · ${n} earlier transactions read from SMS` : "Tracking settings saved")} />
-
-      <SectionTitle>Plan history</SectionTitle>
-      <Card className="space-y-2 text-sm">
-        {[...plans]
-          .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1))
-          .map((p) => {
-            const s = poolSummary(p);
-            const active = planForDate(plans, today)?.id === p.id;
-            return (
-              <div key={p.id} className="flex items-center justify-between">
-                <span>
-                  From {formatDay(p.effectiveFrom, { year: true })} {active && <Pill tone="lime">current</Pill>} {p.effectiveFrom > today && <Pill tone="sky">scheduled</Pill>}
-                </span>
-                <span className="num text-ink-300">{s.hasBudget ? `${formatINR(s.poolPaise)}/mo pool` : "tracking only"}</span>
-              </div>
-            );
-          })}
-      </Card>
-
-      <SectionTitle>Categorisation rules</SectionTitle>
-      <RulesEditor onToast={setToast} />
-
-      <SectionTitle>Data sources</SectionTitle>
-      <Card className="space-y-3">
-        {PROVIDERS.filter((p) => (mode === "demo" ? p.id !== "manual" && p.id !== "csv" : p.id !== "demo")).map((p) => {
-          const c = data.connections.find((x) => x.providerId === p.id);
-          const bridge = p.id === "sms" ? smsBridge() : null;
-          const status = p.id === "sms" && !bridge ? "android_only" : (c?.status ?? (p.available ? "disconnected" : "not_available"));
-          return (
-            <div key={p.id} className="flex items-start justify-between gap-3 text-sm" data-testid={`provider-${p.id}`}>
-              <div className="min-w-0">
-                <div className="font-semibold">{p.name}</div>
-                <div className="text-xs text-ink-400">{p.description}</div>
-                {c?.lastSyncAt && (
-                  <div className="mt-0.5 text-xs text-ink-400">
-                    Last activity {new Date(c.lastSyncAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}
-                    {c.lastCount !== undefined && ` · ${c.lastCount} txns`}
-                  </div>
-                )}
-                {c?.lastError && <div className="text-xs text-coral">Error: {c.lastError}</div>}
-                {bridge && !bridge.hasPermission() && (
-                  <button className="btn-ghost mt-1 text-xs" onClick={() => bridge.requestPermission()}>
-                    Allow SMS access
-                  </button>
-                )}
-                {bridge && bridge.hasPermission() && db && (
-                  <button className="btn-ghost mt-1 text-xs" onClick={() => syncSms(db).then((n) => setToast(n ? `${n} new from SMS` : "No new bank SMS"))}>
-                    Check now
-                  </button>
-                )}
-              </div>
-              <Pill tone={status === "connected" ? "lime" : status === "error" ? "coral" : "default"}>
-                {status === "not_available" ? "coming later" : status === "android_only" ? "Android app only" : status}
-              </Pill>
+      {tab === "budget" && (
+        <Group>
+          <Section icon="💰" title="Monthly budget" summary={pool.hasBudget ? `${formatINR(pool.poolPaise)}/mo to spend` : "Tracking only"} defaultOpen>
+            <BudgetEditor key={derived.plan?.id ?? "none"} />
+          </Section>
+          <Section icon="📅" title="Tracking start" summary={`Since ${formatDay(profile.trackingStart, { year: true })}`}>
+            <TrackingEditor
+              key={`${profile.trackingStart}|${profile.openingAdjustmentPaise}`}
+              profile={profile}
+              onSaved={(n) => setToast(n ? `Saved · ${n} earlier transactions read from SMS` : "Tracking settings saved")}
+            />
+          </Section>
+          <Section icon="🏷️" title="Categorisation rules" summary={userRules ? `${userRules} of yours + built-ins` : "Built-in rules"}>
+            <RulesEditor onToast={setToast} />
+          </Section>
+          <Section icon="🕘" title="Plan history" summary={`${plans.length} version${plans.length === 1 ? "" : "s"}`}>
+            <div className="space-y-2 text-sm">
+              {[...plans]
+                .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1))
+                .map((p) => {
+                  const s = poolSummary(p);
+                  const active = planForDate(plans, today)?.id === p.id;
+                  return (
+                    <div key={p.id} className="flex items-center justify-between">
+                      <span>
+                        From {formatDay(p.effectiveFrom, { year: true })} {active && <Pill tone="lime">current</Pill>} {p.effectiveFrom > today && <Pill tone="sky">scheduled</Pill>}
+                      </span>
+                      <span className="num text-ink-300">{s.hasBudget ? `${formatINR(s.poolPaise)}/mo pool` : "tracking only"}</span>
+                    </div>
+                  );
+                })}
             </div>
-          );
-        })}
-        <p className="text-xs text-ink-400">We never ask for bank passwords, PINs or OTPs. Bank SMS are read and parsed on this phone only; OTPs, offers and failed transactions are ignored.</p>
-      </Card>
+          </Section>
+        </Group>
+      )}
 
-      <SectionTitle>Notifications</SectionTitle>
-      <Card className="text-sm text-ink-300">
-        🔔 Morning briefing and evening report are in-app only for now. Scheduled push notifications aren't implemented yet.
-      </Card>
+      {tab === "data" && (
+        <>
+          <Group>
+            <BankSms onToast={setToast} />
+            {smsBridge() && mode === "personal" && (
+              <Toggle
+                icon="🏦"
+                title="Read account balances"
+                hint={'Shows the "Avl bal" from bank SMS on Today. Off also forgets balances already read.'}
+                checked={prefs.balances}
+                onChange={async (on) => db && (await setPrefs(db, { balances: on }), on && (await syncSms(db)), setToast(on ? "Balances on" : "Balances off and cleared"))}
+              />
+            )}
+            <Section icon="🔌" title="Other sources" summary={mode === "demo" ? "Demo data" : "Manual entry, CSV import"}>
+              <Sources />
+            </Section>
+          </Group>
+          <Group>
+            <Section icon="💾" title="Backup & export" summary={backupSummary(mode)} defaultOpen={!!filesBridge() && !filesBridge()!.backupFolder()}>
+              <DataPanel part="backup" onToast={setToast} />
+            </Section>
+            <Section icon="🗑️" title="Delete data" summary={`All ${mode} data on this device`}>
+              <DataPanel part="danger" onToast={setToast} />
+            </Section>
+          </Group>
+        </>
+      )}
 
-      <SectionTitle>Your data</SectionTitle>
-      <DataPanel onToast={setToast} />
+      {tab === "app" && (
+        <>
+          <Group>
+            <AppLock prefs={prefs} onToast={setToast} />
+            <Toggle
+              icon="📳"
+              title="Haptic feedback"
+              hint="Light taps on buttons and confirmations. Follows your phone's vibration settings."
+              checked={prefs.haptics}
+              onChange={async (on) => db && (await setPrefs(db, { haptics: on }))}
+            />
+          </Group>
+          <Group>
+            <Section icon="🔔" title="Notifications" summary="In-app briefings">
+              <p className="text-sm text-ink-300">Morning and night briefs are in the Briefing tab for now. Scheduled notifications are on the roadmap.</p>
+            </Section>
+            <Section icon="🎭" title="Mode" summary={mode === "demo" ? "Demo (fictional data)" : "Personal"}>
+              <div className="space-y-3 text-sm">
+                <p className="text-ink-300">Demo and personal data are stored in separate databases and never mix.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn-ghost" onClick={() => setMode(mode === "demo" ? "personal" : "demo").then(() => router.replace("/"))}>
+                    Switch to {mode === "demo" ? "personal" : "demo"} mode
+                  </button>
+                  {mode === "demo" && db && (
+                    <button className="btn-ghost" onClick={async () => (await seedDemo(db, today), setToast("Demo data regenerated"))}>
+                      Reset demo data
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Section>
+          </Group>
+        </>
+      )}
 
-      <SectionTitle>Mode</SectionTitle>
-      <Card className="space-y-3 text-sm">
-        <p className="text-ink-300">Demo and personal data are stored in separate databases and never mix.</p>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-ghost" onClick={() => setMode(mode === "demo" ? "personal" : "demo").then(() => router.replace("/"))}>
-            Switch to {mode === "demo" ? "personal" : "demo"} mode
-          </button>
-          {mode === "demo" && db && (
-            <button className="btn-ghost" onClick={async () => (await seedDemo(db, today), setToast("Demo data regenerated"))}>
-              Reset demo data
-            </button>
-          )}
-        </div>
-      </Card>
-
-      <p className="mt-8 text-center text-xs text-ink-400">Drip · tracking since {formatDay(profile.trackingStart, { year: true })} · no analytics, no external AI</p>
+      <p className="mt-8 text-center text-xs text-ink-400">
+        Drip · tracking since {formatDay(profile.trackingStart, { year: true })}
+        {sms?.lastSyncAt ? ` · SMS read ${new Date(sms.lastSyncAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}` : ""} · no analytics, no external AI
+      </p>
       <Toast message={toast} onDone={() => setToast(null)} />
+    </div>
+  );
+}
+
+function backupSummary(mode: string | null) {
+  const files = filesBridge();
+  if (!files) return "Export or restore a file";
+  if (mode !== "personal") return "Personal mode only";
+  if (!files.backupFolder()) return "⚠️ Automatic backup is off";
+  const last = lastBackupAt();
+  return `Daily to ${files.backupFolder()}${last ? ` · ${new Date(last).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}` : ""}`;
+}
+
+/** A rounded group of rows. */
+function Group({ children }: { children: ReactNode }) {
+  return <div className="settings-group mb-4 divide-y divide-white/5 overflow-hidden rounded-3xl border border-white/5 bg-ink-900">{children}</div>;
+}
+
+/** Collapsible row: the summary shows the current state, so most of the time there's no need to open it. */
+function Section({ icon, title, summary, defaultOpen, children }: { icon: string; title: string; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  return (
+    <details className="group" open={defaultOpen}>
+      <summary className="flex min-h-[60px] cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <span className="text-lg">{icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">{title}</span>
+          {summary && <span className="block truncate text-xs text-ink-400">{summary}</span>}
+        </span>
+        <span className="text-ink-400 transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="settings-body px-4 pb-4">{children}</div>
+    </details>
+  );
+}
+
+function Toggle({ icon, title, hint, checked, disabled, onChange }: { icon: string; title: string; hint?: ReactNode; checked: boolean; disabled?: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label className={cx("flex min-h-[60px] items-center gap-3 px-4 py-3", disabled ? "opacity-50" : "cursor-pointer")}>
+      <span className="text-lg">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{title}</span>
+        {hint && <span className="block text-xs text-ink-400">{hint}</span>}
+      </span>
+      <input type="checkbox" role="switch" className="peer sr-only" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span
+        aria-hidden
+        className="relative h-7 w-12 shrink-0 rounded-full bg-ink-700 transition-colors after:absolute after:left-1 after:top-1 after:h-5 after:w-5 after:rounded-full after:bg-ink-300 after:transition-transform peer-checked:bg-lime peer-checked:after:translate-x-5 peer-checked:after:bg-ink-950 peer-focus-visible:ring-2 peer-focus-visible:ring-lime/60"
+      />
+    </label>
+  );
+}
+
+function AppLock({ prefs, onToast }: { prefs: Prefs; onToast: (s: string) => void }) {
+  const { db } = useBudget();
+  const device = deviceBridge();
+  const [on, setOn] = useState(() => device?.appLockEnabled() ?? false);
+  useEffect(() => {
+    const done = async () => {
+      const enabled = device?.appLockEnabled() ?? false;
+      setOn(enabled);
+      if (db) await setPrefs(db, { appLock: enabled });
+      onToast(enabled ? "App lock on" : "App lock off");
+    };
+    window.addEventListener("paisa-applock", done);
+    return () => window.removeEventListener("paisa-applock", done);
+  }, [device, db, onToast]);
+  if (!device) return <Toggle icon="🔒" title="Fingerprint lock" hint="Android app only." checked={prefs.appLock} disabled onChange={() => {}} />;
+  const canLock = device.canLock();
+  return (
+    <Toggle
+      icon="🔒"
+      title="Fingerprint lock"
+      hint={canLock ? "Unlock with fingerprint or your phone's PIN when opening Drip, and after a minute away." : "Set up a fingerprint or screen lock on your phone first."}
+      checked={on}
+      disabled={!canLock}
+      onChange={(next) => device.setAppLock(next)}
+    />
+  );
+}
+
+/** Bank SMS status: always visible on the Data tab. */
+function BankSms({ onToast }: { onToast: (s: string) => void }) {
+  const { data, db, mode } = useBudget();
+  if (!data) return null;
+  const bridge = smsBridge();
+  const c = data.connections.find((x) => x.providerId === "sms");
+  const status = !bridge ? "Android app only" : mode !== "personal" ? "Personal mode only" : !bridge.hasPermission() ? "SMS access needed" : c?.status === "error" ? "Error" : "On";
+  return (
+    <div className="flex min-h-[60px] items-start gap-3 px-4 py-3" data-testid="provider-sms">
+      <span className="text-lg">✉️</span>
+      <div className="min-w-0 flex-1 text-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-semibold">Bank SMS</span>
+          <Pill tone={status === "On" ? "lime" : status === "Error" ? "coral" : "default"}>{status}</Pill>
+        </div>
+        <div className="text-xs text-ink-400">
+          HDFC, ICICI, SBI, Axis and Kotak alerts, read on this phone only. OTPs, offers and failed payments are ignored.
+          {c?.lastSyncAt && ` Last read ${new Date(c.lastSyncAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}.`}
+        </div>
+        {c?.lastError && <div className="text-xs text-coral">{c.lastError}</div>}
+        {bridge && mode === "personal" && (
+          <div className="mt-2 flex gap-2">
+            {!bridge.hasPermission() ? (
+              <button className="btn-ghost min-h-[36px] text-xs" onClick={() => bridge.requestPermission()}>
+                Allow SMS access
+              </button>
+            ) : (
+              db && (
+                <button className="btn-ghost min-h-[36px] text-xs" onClick={() => syncSms(db).then((n) => onToast(n ? `${n} new from SMS` : "No new bank SMS"))}>
+                  Check now
+                </button>
+              )
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Sources() {
+  const { data, mode } = useBudget();
+  if (!data) return null;
+  return (
+    <div className="space-y-3">
+      {PROVIDERS.filter((p) => p.id !== "sms" && (mode === "demo" ? p.id !== "manual" && p.id !== "csv" : p.id !== "demo")).map((p) => {
+        const c = data.connections.find((x) => x.providerId === p.id);
+        const status = c?.status ?? (p.available ? "disconnected" : "not_available");
+        return (
+          <div key={p.id} className="flex items-start justify-between gap-3 text-sm" data-testid={`provider-${p.id}`}>
+            <div className="min-w-0">
+              <div className="font-semibold">{p.name}</div>
+              <div className="text-xs text-ink-400">{p.description}</div>
+              {c?.lastSyncAt && (
+                <div className="mt-0.5 text-xs text-ink-400">
+                  Last activity {new Date(c.lastSyncAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}
+                  {c.lastCount !== undefined && ` · ${c.lastCount} txns`}
+                </div>
+              )}
+            </div>
+            <Pill tone={status === "connected" ? "lime" : status === "error" ? "coral" : "default"}>{status === "not_available" ? "coming later" : status}</Pill>
+          </div>
+        );
+      })}
+      <p className="text-xs text-ink-400">We never ask for bank passwords, PINs or OTPs.</p>
     </div>
   );
 }
@@ -168,7 +353,7 @@ function BudgetEditor() {
     return (
       <Card className="space-y-2 text-sm" data-testid="budget-summary">
         <div className="flex items-center justify-between">
-          <span className="font-semibold">Monthly budget</span>
+          <span className="text-ink-400">{pool.hasBudget ? "Current plan" : "No budget set"}</span>
           <button className="btn-ghost min-h-[36px] text-xs" onClick={() => setEditing(true)} data-testid="edit-budget">
             Change budget
           </button>
@@ -209,7 +394,8 @@ function BudgetEditor() {
       </Field>
       {!trackOnly && (
         <p className="text-sm text-ink-300">
-          New pool: <Money paise={preview.poolPaise} className="font-semibold" />/month
+          New pool: <Money paise={preview.poolPaise} className="font-semibold" />
+          /month
           {preview.shortfallPaise > 0 && <span className="text-coral"> · exceeds income by {formatINR(preview.shortfallPaise)}</span>}
         </p>
       )}
@@ -277,14 +463,21 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
 
   const add = async () => {
     if (!pattern.trim()) return;
-    await saveRule(db, { pattern: pattern.trim().toLowerCase(), category: kind === "transfer" ? "Transfers" : kind === "investment" ? "Investments" : category, kind: kind || undefined, priority: 10 });
+    await saveRule(db, {
+      pattern: pattern.trim().toLowerCase(),
+      category: kind === "transfer" ? "Transfers" : kind === "investment" ? "Investments" : category,
+      kind: kind || undefined,
+      priority: 10,
+    });
     setPattern("");
     onToast("Rule added");
   };
 
   return (
     <Card className="space-y-3">
-      <p className="text-xs text-ink-400">If a merchant or narration contains the text, it gets that category. Your rules beat built-ins. Use “Own transfer” for your other accounts (e.g. “sbi xx1234”).</p>
+      <p className="text-xs text-ink-400">
+        If a merchant or narration contains the text, it gets that category. Your rules beat built-ins. Use “Own transfer” for your other accounts (e.g. “sbi xx1234”).
+      </p>
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
         <input className="input text-sm" placeholder="Contains… e.g. chai point" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Rule text" />
         <select className="input text-sm" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Rule category" disabled={kind === "transfer" || kind === "investment"}>
@@ -336,7 +529,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   );
 }
 
-function DataPanel({ onToast }: { onToast: (s: string) => void }) {
+function DataPanel({ part, onToast }: { part: "backup" | "danger"; onToast: (s: string) => void }) {
   const { data, db, mode } = useBudget();
   const { setMode } = useStore();
   const router = useRouter();
@@ -350,76 +543,87 @@ function DataPanel({ onToast }: { onToast: (s: string) => void }) {
 
   return (
     <Card className="space-y-4 text-sm">
-      {filesBridge() ? (
-        <AutoBackup onToast={onToast} />
-      ) : (
-        <div className="rounded-2xl bg-amber/[0.07] p-3 text-amber">
-          🔒 Everything lives in this browser's storage (IndexedDB) — no server, no analytics, no AI upload. <b>That also means it's not a backup:</b> clearing site data, private windows or a new device will lose it. Export regularly.
+      {part === "backup" && (
+        <>
+          {filesBridge() ? (
+            <AutoBackup onToast={onToast} />
+          ) : (
+            <div className="rounded-2xl bg-amber/[0.07] p-3 text-amber">
+              🔒 Everything lives in this browser's storage (IndexedDB) — no server, no analytics, no AI upload. <b>That also means it's not a backup:</b> clearing site data, private windows or a new
+              device will lose it. Export regularly.
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn-ghost"
+              onClick={async () => download(`drip-${mode}-${stamp}.json`, JSON.stringify(await exportAll(db, mode), null, 2), "application/json")}
+              data-testid="export-json"
+            >
+              Export backup (JSON)
+            </button>
+            <button className="btn-ghost" onClick={() => download(`drip-${mode}-transactions-${stamp}.csv`, txnsToCsv(data.txns), "text/csv")}>
+              Export transactions (CSV)
+            </button>
+            <label className="btn-ghost cursor-pointer">
+              Restore backup…
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="sr-only"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!f) return;
+                  setRestoreErr(null);
+                  try {
+                    const json = JSON.parse(await f.text());
+                    if (!window.confirm(`Replace all ${mode} data with the backup from ${json.exportedAt ?? "this file"}?`)) return;
+                    await importBackup(db, json);
+                    onToast("Backup restored");
+                  } catch (err) {
+                    setRestoreErr(err instanceof Error ? err.message : "Couldn't restore that file");
+                  }
+                }}
+              />
+            </label>
+          </div>
+          {restoreErr && <p className="text-coral">{restoreErr}</p>}
+        </>
+      )}
+
+      {part === "danger" && (
+        <div>
+          {!asking ? (
+            <button className="btn-danger" onClick={() => setAsking(true)} data-testid="delete-start">
+              Delete all {mode} data…
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p>
+                This permanently deletes {data.txns.length} transactions, your budget and rules from this browser. Type <b className="text-coral">DELETE</b> to confirm.
+              </p>
+              <input className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" data-testid="delete-confirm-input" />
+              <div className="flex gap-2">
+                <button className="btn-ghost flex-1" onClick={() => (setAsking(false), setConfirm(""))}>
+                  Cancel
+                </button>
+                <button
+                  className={cx("btn-danger flex-1", confirm === "DELETE" && "bg-coral text-ink-950")}
+                  disabled={confirm !== "DELETE"}
+                  data-testid="delete-confirm"
+                  onClick={async () => {
+                    await deleteDatabase(mode);
+                    await setMode(null);
+                    router.replace("/");
+                  }}
+                >
+                  Delete forever
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-ghost" onClick={async () => download(`drip-${mode}-${stamp}.json`, JSON.stringify(await exportAll(db, mode), null, 2), "application/json")} data-testid="export-json">
-          Export backup (JSON)
-        </button>
-        <button className="btn-ghost" onClick={() => download(`drip-${mode}-transactions-${stamp}.csv`, txnsToCsv(data.txns), "text/csv")}>
-          Export transactions (CSV)
-        </button>
-        <label className="btn-ghost cursor-pointer">
-          Restore backup…
-          <input
-            type="file"
-            accept="application/json,.json"
-            className="sr-only"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (!f) return;
-              setRestoreErr(null);
-              try {
-                const json = JSON.parse(await f.text());
-                if (!window.confirm(`Replace all ${mode} data with the backup from ${json.exportedAt ?? "this file"}?`)) return;
-                await importBackup(db, json);
-                onToast("Backup restored");
-              } catch (err) {
-                setRestoreErr(err instanceof Error ? err.message : "Couldn't restore that file");
-              }
-            }}
-          />
-        </label>
-      </div>
-      {restoreErr && <p className="text-coral">{restoreErr}</p>}
-
-      <div className="border-t border-white/5 pt-4">
-        {!asking ? (
-          <button className="btn-danger" onClick={() => setAsking(true)} data-testid="delete-start">
-            Delete all {mode} data…
-          </button>
-        ) : (
-          <div className="space-y-2">
-            <p>
-              This permanently deletes {data.txns.length} transactions, your budget and rules from this browser. Type <b className="text-coral">DELETE</b> to confirm.
-            </p>
-            <input className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" data-testid="delete-confirm-input" />
-            <div className="flex gap-2">
-              <button className="btn-ghost flex-1" onClick={() => (setAsking(false), setConfirm(""))}>
-                Cancel
-              </button>
-              <button
-                className={cx("btn-danger flex-1", confirm === "DELETE" && "bg-coral text-ink-950")}
-                disabled={confirm !== "DELETE"}
-                data-testid="delete-confirm"
-                onClick={async () => {
-                  await deleteDatabase(mode);
-                  await setMode(null);
-                  router.replace("/");
-                }}
-              >
-                Delete forever
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
     </Card>
   );
 }
@@ -463,7 +667,9 @@ function AutoBackup({ onToast }: { onToast: (s: string) => void }) {
           <div>
             ✅ <b>Automatic backup is on.</b> A copy is saved to <b>{folder}</b> every day (last 14 days kept), outside the app, so it survives updates, uninstalling or clearing app data.
           </div>
-          <div className="text-xs text-ink-400">{last ? `Last backup ${new Date(last).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}` : "No backup yet"}</div>
+          <div className="text-xs text-ink-400">
+            {last ? `Last backup ${new Date(last).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}` : "No backup yet"}
+          </div>
           <div className="flex flex-wrap gap-2">
             <button className="btn-ghost text-xs" onClick={async () => onToast((await backupNow(db, mode)) ? (setLast(lastBackupAt()), "Backed up") : "Backup failed: choose the folder again")}>
               Back up now
@@ -476,7 +682,8 @@ function AutoBackup({ onToast }: { onToast: (s: string) => void }) {
       ) : (
         <>
           <div>
-            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “Drip” folder in Documents, or Google Drive) and a copy is saved there every day.
+            ⚠️ <b>Turn on automatic backup.</b> App updates keep your data, but uninstalling or clearing app data deletes it. Pick a folder once (e.g. a new “Drip” folder in Documents, or Google
+            Drive) and a copy is saved there every day.
           </div>
           <button className="btn-primary text-sm" onClick={() => files.chooseBackupFolder()}>
             Choose backup folder

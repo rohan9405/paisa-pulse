@@ -42,6 +42,31 @@ export interface Profile {
    * transaction (e.g. rent paid before tracking began). Key: `${commitmentId}@${MonthKey}`.
    */
   manuallyPaid: string[];
+  /** App preferences; missing keys use the defaults in DEFAULT_PREFS. */
+  prefs?: Partial<Prefs>;
+}
+
+export interface Prefs {
+  /** Read "Avl bal" / "Avl limit" from bank SMS and show balances. */
+  balances: boolean;
+  /** Ask for fingerprint / screen lock when opening the Android app. */
+  appLock: boolean;
+  /** Light haptic taps on buttons and confirmations. */
+  haptics: boolean;
+}
+
+export const DEFAULT_PREFS: Prefs = { balances: true, appLock: false, haptics: true };
+
+/** Latest known balance of a bank account or available limit of a card, from SMS. */
+export interface Account {
+  /** `${bank}-${last digits}` */
+  id: string;
+  bank: string;
+  last4: string;
+  kind: "account" | "card";
+  balancePaise: Paise;
+  /** When the SMS carrying this balance arrived (epoch ms). */
+  asOf: number;
 }
 
 /**

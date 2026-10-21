@@ -2,10 +2,22 @@ package dev.paisapulse.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.KeyguardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Typeface;
+import android.hardware.biometrics.BiometricPrompt;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.os.SystemClock;
+import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -30,9 +42,17 @@ public class MainActivity extends Activity {
     static final String HOST = "paisapulse.local";
     static final int SMS_REQUEST = 1;
     static final int PICK_REQUEST = 2;
+    static final int UNLOCK_REQUEST = 5;
+    /** Back in the app within this long after leaving it: no need to unlock again. */
+    private static final long RELOCK_AFTER_MS = 60_000;
     private WebView web;
     private FilesBridge files;
     private ValueCallback<Uri[]> pickCallback;
+    private TextView lockCover;
+    private boolean unlocked;
+    private boolean authenticating;
+    private long stoppedAt;
+    private Runnable unlockOk, unlockFail;
 
     @Override
     protected void onCreate(Bundle saved) {
@@ -51,6 +71,7 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new SmsBridge(this), "PaisaSms");
         files = new FilesBridge(this);
         web.addJavascriptInterface(files, "PaisaFiles");
+        web.addJavascriptInterface(new DeviceBridge(this), "PaisaDevice");
         // Needed for <input type=file> (CSV import, backup restore) and confirm() dialogs.
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -85,7 +106,20 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        setContentView(web);
+        // App lock: a cover over the page until the fingerprint / screen lock is confirmed.
+        lockCover = new TextView(this);
+        lockCover.setText("🔒\n\nDrip is locked\nTap to unlock");
+        lockCover.setGravity(Gravity.CENTER);
+        lockCover.setTextColor(0xffe8e8ef);
+        lockCover.setTextSize(18);
+        lockCover.setTypeface(Typeface.DEFAULT_BOLD);
+        lockCover.setBackgroundColor(0xff07070a);
+        lockCover.setOnClickListener(v -> unlock());
+        lockCover.setVisibility(lockEnabled() ? View.VISIBLE : View.GONE);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(web);
+        root.addView(lockCover);
+        setContentView(root);
         if (saved != null) web.restoreState(saved);
         else web.loadUrl("https://" + HOST + "/");
 
@@ -152,6 +186,8 @@ public class MainActivity extends Activity {
             files.onSaveResult(uri);
         } else if (code == FilesBridge.FOLDER_REQUEST) {
             files.onFolderResult(uri);
+        } else if (code == UNLOCK_REQUEST) {
+            finishAuth(result == RESULT_OK);
         }
     }
 
@@ -171,12 +207,95 @@ public class MainActivity extends Activity {
         super.onResume();
         web.onResume();
         emit("paisa-resume");
+        if (lockEnabled() && !unlocked) unlock();
     }
 
     @Override
     protected void onPause() {
         web.onPause();
+        // Hide amounts in the recent-apps preview while locked.
+        if (lockEnabled() && !authenticating) lockCover.setVisibility(View.VISIBLE);
         super.onPause();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (stoppedAt > 0 && SystemClock.elapsedRealtime() - stoppedAt > RELOCK_AFTER_MS) unlocked = false;
+        if (unlocked) lockCover.setVisibility(View.GONE);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (!authenticating) stoppedAt = SystemClock.elapsedRealtime();
+    }
+
+    // ---- app lock & haptics (see DeviceBridge)
+
+    boolean lockEnabled() {
+        return getSharedPreferences("device", 0).getBoolean("appLock", false);
+    }
+
+    void setLockEnabled(boolean on) {
+        getSharedPreferences("device", 0).edit().putBoolean("appLock", on).apply();
+        unlocked = true;
+        lockCover.setVisibility(View.GONE);
+    }
+
+    private void unlock() {
+        if (authenticating) return;
+        authenticate(() -> {
+            unlocked = true;
+            lockCover.setVisibility(View.GONE);
+        }, () -> lockCover.setVisibility(View.VISIBLE));
+    }
+
+    /** Fingerprint, face or the phone's PIN / pattern / password. */
+    void authenticate(Runnable ok, Runnable fail) {
+        if (authenticating) return;
+        KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        if (km == null || !km.isDeviceSecure()) {
+            fail.run();
+            return;
+        }
+        authenticating = true;
+        unlockOk = ok;
+        unlockFail = fail;
+        if (Build.VERSION.SDK_INT >= 28) {
+            BiometricPrompt.Builder b = new BiometricPrompt.Builder(this).setTitle("Unlock Drip").setSubtitle("Use your fingerprint or screen lock");
+            if (Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+            else b.setDeviceCredentialAllowed(true);
+            b.build().authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                    finishAuth(true);
+                }
+
+                @Override
+                public void onAuthenticationError(int code, CharSequence message) {
+                    finishAuth(false);
+                }
+            });
+        } else {
+            Intent i = km.createConfirmDeviceCredentialIntent("Unlock Drip", null);
+            if (i == null) finishAuth(true);
+            else startActivityForResult(i, UNLOCK_REQUEST);
+        }
+    }
+
+    private void finishAuth(boolean ok) {
+        authenticating = false;
+        Runnable r = ok ? unlockOk : unlockFail;
+        unlockOk = unlockFail = null;
+        if (r != null) r.run();
+    }
+
+    void haptic(String kind) {
+        int c = HapticFeedbackConstants.KEYBOARD_TAP;
+        if ("success".equals(kind)) c = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.CONTEXT_CLICK;
+        else if ("error".equals(kind)) c = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.REJECT : HapticFeedbackConstants.LONG_PRESS;
+        web.performHapticFeedback(c);
     }
 
     @Override

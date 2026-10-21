@@ -9,6 +9,7 @@
 import { type DateKey, toISTKey } from "./dates";
 import { type Paise, parseAmountToPaise } from "./money";
 import { categorize, detectMethod, extractMerchant } from "./categorize";
+import { cleanMerchantName } from "./merchants";
 import type { CategoryRule, PaymentMethod, TxnKind } from "./types";
 
 export interface RawSms {
@@ -108,6 +109,32 @@ export function parseBankSms(sms: Pick<RawSms, "address" | "body">): ParsedSms |
   };
 }
 
+export interface ParsedBalance {
+  bank: Bank;
+  last4: string;
+  kind: "account" | "card";
+  balancePaise: Paise;
+}
+
+/**
+ * "Avl bal INR 1,02,345.00", "Bal Rs.48,501.00", "Avl Limit: INR 1,45,660.00",
+ * "Avl bal in your HDFC Bank A/c XX1234 is Rs.48,000.00". Works on transaction
+ * alerts and balance-only messages alike; needs the account/card digits.
+ */
+export function parseBalance(sms: Pick<RawSms, "address" | "body">): ParsedBalance | null {
+  const bank = bankForSender(sms.address);
+  if (!bank) return null;
+  const body = sms.body.replace(/\s+/g, " ").trim();
+  if (NOT_A_TXN[0].test(body) || NOT_A_TXN[4].test(body)) return null; // OTPs, offers
+  const m = body.match(/\b(?:avl|avbl|avail(?:able)?|clear|closing)?\.?\s*(bal(?:ance)?|lmt|limit)\b.{0,60}?(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  const last4 = findAccount(body);
+  if (!m || !last4) return null;
+  const balancePaise = parseAmountToPaise(m[2]);
+  if (balancePaise === null) return null;
+  const card = /lmt|limit/i.test(m[1]) || (/\bcard\b/i.test(body) && !/\b(a\/c|acct|account)\b/i.test(body));
+  return { bank, last4, kind: card ? "card" : "account", balancePaise };
+}
+
 /** First money amount that isn't a balance or limit. Handles "Rs.1,234.50", "INR 500", "₹99", and SBI's "debited by 250.0". */
 function findAmount(body: string): Paise | null {
   const re = /(?:(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?))|(?:\b(?:debited|credited) by\s+(?:rs\.?\s*|inr\s*|₹\s*)?([\d,]+(?:\.\d{1,2})?))/gi;
@@ -121,7 +148,8 @@ function findAmount(body: string): Paise | null {
 }
 
 function findAccount(body: string): string | undefined {
-  const m = body.match(/\b(?:a\/c|acct|account|card)\b(?:\s*(?:no\.?|number|ending(?:\s*with)?|xx|x|\*)+)?[\s:.*x]*(\d{3,6})\b/i);
+  // "A/c XX1234", "A/cX1234" (SBI), "Acct XX567", "Card ending 4321", "A/C *1234"
+  const m = body.match(/\b(?:a\/c|acct|account|card)(?:\s*(?:no\.?|number|ending(?:\s*with)?))?[\s:.*x]*(\d{3,6})\b/i);
   return m?.[1];
 }
 
@@ -171,16 +199,12 @@ function cleanCounterparty(raw: string): string | undefined {
   const vpa = raw.match(/^([\w.\-]+)@[\w]+$/);
   if (vpa) {
     const local = vpa[1].replace(/^(paytmqr|paytm|q\d+|bharatpe|gpay|pay)[.\-]?/i, "").replace(/[\d._\-]+/g, " ").trim();
-    return local.length >= 3 ? titleCase(local) : undefined;
+    return local.length >= 3 ? cleanMerchantName(local) : undefined;
   }
   // "WWW MYNTRA COM" → "Myntra"
   const s = raw.replace(/\*+/g, " ").replace(/\s+/g, " ").trim().replace(/^www[.\s]+/i, "").replace(/[.\s]+(com|in|co[.\s]in|net)$/i, "");
   if (!/[a-z]/i.test(s)) return undefined;
-  return titleCase(s.slice(0, 40));
-}
-
-function titleCase(s: string) {
-  return s.toLowerCase().replace(/(^|[\s.&])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+  return cleanMerchantName(s.slice(0, 40));
 }
 
 export interface SmsCandidate {

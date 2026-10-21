@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Transaction } from "@/lib/types";
+import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Transaction } from "@/lib/types";
 
 /**
  * Demo and personal data live in two completely separate IndexedDB databases,
@@ -12,6 +12,7 @@ export class FinanceDB extends Dexie {
   rules!: Table<CategoryRule, string>;
   connections!: Table<ProviderConnection, string>;
   imports!: Table<ImportBatch, string>;
+  accounts!: Table<Account, string>;
 
   constructor(name: string) {
     super(name);
@@ -26,6 +27,8 @@ export class FinanceDB extends Dexie {
       connections: "providerId",
       imports: "id, importedAt",
     });
+    // v2 (Drip 0.4): account balances from SMS. Adds a table; existing data is untouched.
+    this.version(2).stores({ accounts: "id" });
   }
 }
 
