@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #07070a;
+  color: #f4f4f7;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+@layer components {
+  .card {
+    @apply rounded-3xl border border-white/[0.06] bg-ink-850 p-4;
+  }
+  .btn {
+    @apply inline-flex min-h-[44px] select-none items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-lime text-ink-950 hover:bg-lime-dim;
+  }
+  .btn-ghost {
+    @apply btn bg-white/[0.06] text-white hover:bg-white/[0.1];
+  }
+  .btn-danger {
+    @apply btn bg-coral/15 text-coral hover:bg-coral/25;
+  }
+  .input {
+    @apply min-h-[44px] w-full rounded-2xl border border-white/[0.08] bg-ink-900 px-3.5 text-[15px] text-white outline-none placeholder:text-ink-400 focus:border-lime/60 focus:ring-2 focus:ring-lime/20;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wider text-ink-400;
+  }
+  .chip {
+    @apply inline-flex min-h-[36px] items-center gap-1.5 whitespace-nowrap rounded-full border border-white/[0.08] px-3 text-[13px] font-medium text-ink-300 transition active:scale-95;
+  }
+  .chip-on {
+    @apply border-lime/50 bg-lime/10 text-lime;
+  }
+  .num {
+    @apply font-mono tabular-nums tracking-tight;
+  }
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.6;
+}
+
+select.input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8b9e' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+@keyframes pop {
+  0% { transform: scale(0.96); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-pop { animation: pop 0.18s ease-out; }
+
+@keyframes slideup {
+  0% { transform: translateY(24px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-slideup { animation: slideup 0.22s cubic-bezier(0.2, 0.9, 0.3, 1); }
