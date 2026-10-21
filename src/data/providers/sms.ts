@@ -35,6 +35,8 @@ export function smsBridge(): SmsBridge | null {
 }
 
 const PAGE = 500;
+/** Bump when the parser learns new message formats: the next sync re-reads the inbox once. */
+export const SMS_PARSER_VERSION = 2;
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -62,22 +64,26 @@ async function doSync(db: FinanceDB): Promise<number> {
   }
 
   const startOfTracking = istMidnight(profile.trackingStart) - 1;
+  const from = conn?.syncedFrom;
+  // A newer parser re-reads everything already scanned once, to pick up messages it used to miss.
+  const reread = !!from && (conn?.parserVersion ?? 1) < SMS_PARSER_VERSION;
   // Each range scans messages received in (after, before).
   const ranges: [number, number][] = [];
-  const from = conn?.syncedFrom;
-  if (!from) ranges.push([startOfTracking, Infinity]);
+  if (!from || reread) ranges.push([Math.min(startOfTracking, from ? istMidnight(from) - 1 : startOfTracking), Infinity]);
   else {
-    // Only the newly uncovered days, so transactions you deleted after the first scan don't come back.
     if (profile.trackingStart < from) ranges.push([startOfTracking, istMidnight(from)]);
     ranges.push([Math.max(Number(conn?.cursor ?? 0), startOfTracking), Infinity]);
   }
   let cursor = 0;
   const rules = await db.rules.toArray();
   const existing = await db.txns.toArray();
-  const seenFp = new Set(existing.map((t) => t.fingerprint).filter(Boolean));
-  const seenRef = new Set(existing.map((t) => t.source.externalRef).filter(Boolean));
+  const byFp = new Map(existing.filter((t) => t.fingerprint).map((t) => [t.fingerprint!, t]));
+  const byRef = new Map(existing.filter((t) => t.source.externalRef).map((t) => [t.source.externalRef!, t]));
+  // Transactions you deleted are never brought back.
+  const dismissed = new Set(conn?.dismissed ?? []);
   const batchId = uid("sms-");
   const created: Transaction[] = [];
+  const corrected: Transaction[] = [];
 
   try {
     for (const [after, before] of ranges) {
@@ -86,8 +92,20 @@ async function doSync(db: FinanceDB): Promise<number> {
         const page = JSON.parse(bridge.list(cursor, PAGE)) as SmsPage;
         for (const sms of page.messages) {
           if (sms.date >= before) break;
+          if (sms.date <= startOfTracking) continue;
           const c = smsToCandidate(sms, rules);
-          if (!c || seenFp.has(c.fingerprint) || (c.reference && seenRef.has(c.reference))) continue;
+          if (!c || dismissed.has(c.fingerprint)) continue;
+          const already = byFp.get(c.fingerprint) ?? (c.reference ? byRef.get(c.reference) : undefined);
+          if (already) {
+            // Read before: only fix how it was classified, and never override your own edits.
+            const untouched = already.source.providerId === "sms" && already.updatedAt === already.createdAt;
+            if (reread && untouched && (already.kind !== c.kind || already.category !== c.category || already.merchant !== c.merchant)) {
+              let t: Transaction = { ...already, kind: c.kind, category: c.category, merchant: c.merchant, method: c.method };
+              if (t.kind === "refund" && !t.refundOf) t = { ...t, ...autoLinkRefund(t, [...existing, ...created]) };
+              corrected.push(t);
+            }
+            continue;
+          }
           const now = Date.now();
           let t: Transaction = {
             id: uid("t-"),
@@ -104,8 +122,8 @@ async function doSync(db: FinanceDB): Promise<number> {
           };
           if (t.kind === "refund") t = { ...t, ...autoLinkRefund(t, [...existing, ...created, t]) };
           created.push(t);
-          seenFp.add(c.fingerprint);
-          if (c.reference) seenRef.add(c.reference);
+          byFp.set(c.fingerprint, t);
+          if (c.reference) byRef.set(c.reference, t);
         }
         cursor = Math.max(cursor, page.until);
         if (!page.more || cursor >= before) break;
@@ -118,14 +136,17 @@ async function doSync(db: FinanceDB): Promise<number> {
 
   await db.transaction("rw", [db.txns, db.connections], async () => {
     if (created.length) await db.txns.bulkAdd(created);
+    if (corrected.length) await db.txns.bulkPut(corrected);
     await db.connections.put({
+      ...conn,
       providerId: "sms",
       status: "connected",
       lastSyncAt: Date.now(),
       lastCount: created.length || conn?.lastCount,
       lastError: undefined,
-      cursor: String(cursor),
+      cursor: String(Math.max(cursor, Number(conn?.cursor ?? 0))),
       syncedFrom: from && from < profile.trackingStart ? from : profile.trackingStart,
+      parserVersion: SMS_PARSER_VERSION,
     });
   });
   return created.length;

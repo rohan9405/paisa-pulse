@@ -54,6 +54,8 @@ export interface ParsedSms {
   /** Credit-card bill payments (either side) — moving money between your own accounts. */
   cardBillPayment: boolean;
   refund: boolean;
+  /** Money moved into UPI Lite. Lite payments themselves send no bank SMS, so the top-up is counted as the spend. */
+  upiLiteTopUp: boolean;
 }
 
 /** Messages that mention money but aren't a completed transaction. */
@@ -75,7 +77,9 @@ export function parseBankSms(sms: Pick<RawSms, "address" | "body">): ParsedSms |
   const body = sms.body.replace(/\s+/g, " ").trim();
   if (NOT_A_TXN.some((re) => re.test(body))) return null;
 
-  const d = body.search(DEBIT);
+  // "UPI LITE top-up amounting to Rs 1850.00 is successful" has no debit wording at all.
+  const upiLiteTopUp = /\bupi\s*lite\b/i.test(body) && /\b(top-?\s?up|topped up|add(ed)? money|loaded)\b/i.test(body);
+  const d = upiLiteTopUp ? 0 : body.search(DEBIT);
   const c = body.search(CREDIT);
   if (d < 0 && c < 0) return null;
   // ICICI: "Acct XX1 debited for Rs 250 ...; SWIGGY credited." — whichever comes first wins.
@@ -100,6 +104,7 @@ export function parseBankSms(sms: Pick<RawSms, "address" | "body">): ParsedSms |
     method: findMethod(body, isCard),
     cardBillPayment,
     refund,
+    upiLiteTopUp,
   };
 }
 
@@ -121,7 +126,7 @@ function findAccount(body: string): string | undefined {
 }
 
 function findReference(body: string): string | undefined {
-  const m = body.match(/\b(?:upi\s*ref(?:erence)?|ref(?:erence)?|refno|rrn|txn\s*(?:id|no)|upi)\b[\s:.#-]*(?:no\.?|number|id)?[\s:.#-]*(\d{6,})/i);
+  const m = body.match(/\b(?:upi\s*ref(?:erence)?|ref(?:erence)?|refno|rrn|txn\s*(?:id|no)|upi)\b[\s:.#-]*(?:no\.?|number|id)?[\s:.#-]*(?:is\s+)?(\d{6,})/i);
   return m?.[1];
 }
 
@@ -168,7 +173,8 @@ function cleanCounterparty(raw: string): string | undefined {
     const local = vpa[1].replace(/^(paytmqr|paytm|q\d+|bharatpe|gpay|pay)[.\-]?/i, "").replace(/[\d._\-]+/g, " ").trim();
     return local.length >= 3 ? titleCase(local) : undefined;
   }
-  const s = raw.replace(/\*+/g, " ").replace(/\s+/g, " ").trim();
+  // "WWW MYNTRA COM" → "Myntra"
+  const s = raw.replace(/\*+/g, " ").replace(/\s+/g, " ").trim().replace(/^www[.\s]+/i, "").replace(/[.\s]+(com|in|co[.\s]in|net)$/i, "");
   if (!/[a-z]/i.test(s)) return undefined;
   return titleCase(s.slice(0, 40));
 }
@@ -195,17 +201,20 @@ export interface SmsCandidate {
 export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate | null {
   const p = parseBankSms(sms);
   if (!p) return null;
-  const merchant = p.counterparty ?? (p.method === "cash" ? "ATM cash" : `${p.bank} ${p.direction === "out" ? "debit" : "credit"}`);
+  const merchant = p.upiLiteTopUp ? "UPI Lite top-up" : (p.counterparty ?? (p.method === "cash" ? "ATM cash" : `${p.bank} ${p.direction === "out" ? "debit" : "credit"}`));
   const rule = categorize(`${merchant} ${sms.body}`, rules);
 
   let kind: TxnKind = p.direction === "out" ? "expense" : "income";
   // Same precedence as CSV import (csv.ts validateRows).
   if (rule?.kind && (rule.kind === "transfer" || (p.direction === "out" && rule.kind !== "income" && rule.kind !== "refund") || (p.direction === "in" && rule.kind === "income"))) kind = rule.kind;
   if (p.refund) kind = "refund";
+  // Money back from a shop or service (e.g. "credited … from WWW MYNTRA COM") is a refund, not income.
+  if (p.direction === "in" && rule && !rule.kind && rule.category !== "Income") kind = "refund";
   // Paying a card bill: the card spends were already counted when they happened.
   if (p.cardBillPayment) kind = "transfer";
 
-  const category = kind === "transfer" ? "Transfers" : kind === "refund" ? "Refunds" : kind === "income" && !rule ? "Income" : (rule?.category ?? "Other");
+  let category = kind === "transfer" ? "Transfers" : kind === "refund" ? "Refunds" : kind === "income" && !rule ? "Income" : (rule?.category ?? "Other");
+  if (p.upiLiteTopUp) [kind, category] = ["expense", "Bills & Utilities"];
 
   return {
     date: toISTKey(sms.date),

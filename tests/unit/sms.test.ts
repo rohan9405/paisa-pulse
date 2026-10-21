@@ -73,6 +73,23 @@ describe("ICICI", () => {
   });
 });
 
+describe("ICICI, real messages", () => {
+  it("UPI Lite top-up counts as a Bills & Utilities expense", () => {
+    const c = smsToCandidate(sms("JD-ICICIT-S", "UPI LITE top-up amounting to Rs 1850.00 is successful. Your ref no. is 512345678901-ICICI Bank."), rules)!;
+    expect(c).toMatchObject({ amountPaise: 1_850_00, direction: "out", kind: "expense", category: "Bills & Utilities", merchant: "UPI Lite top-up", method: "upi", reference: "512345678901" });
+  });
+
+  it("money back from a merchant is a refund, with a clean name", () => {
+    const c = smsToCandidate(sms("JD-ICICIT-S", "Dear Customer, Acct XX901 is credited with Rs 499.00 on 30-Sep-26 from WWW MYNTRA COM. UPI:598765432101-ICICI Bank."), rules)!;
+    expect(c).toMatchObject({ amountPaise: 499_00, direction: "in", kind: "refund", category: "Refunds", merchant: "Myntra", reference: "598765432101" });
+  });
+
+  it("money from a person stays income", () => {
+    const c = smsToCandidate(sms("JD-ICICIT-S", "Dear Customer, Acct XX901 is credited with Rs 500.00 on 30-Sep-26 from RAHUL KUMAR. UPI:598765439999-ICICI Bank."), rules)!;
+    expect(c).toMatchObject({ kind: "income", merchant: "Rahul Kumar" });
+  });
+});
+
 describe("SBI", () => {
   it("UPI debit without a currency symbol", () => {
     const c = smsToCandidate(sms("VK-SBIUPI", "Dear UPI user A/C X1234 debited by 120.0 on date 20Oct26 trf to BLINKIT Refno 629377778888. If not u? call 1800111109. -SBI"), rules)!;

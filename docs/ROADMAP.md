@@ -49,7 +49,7 @@ While the app is open, a check runs every 60 s. Today each check loads every tra
 - Investments stay out of "spent today" and get their own line in Stats.
 
 ### 4. Messages the parser misses · M
-- **UPI Lite top-ups** (decided): every top-up counts as an **expense** in **Bills & Utilities**. UPI Lite payments themselves send no bank SMS, so the top-up is the only record of that money.
+- ✅ **0.3.1:** UPI Lite top-ups are read as an **expense** in **Bills & Utilities** (Lite payments themselves send no SMS). Money credited from a shop or service ("from WWW MYNTRA COM") is a **refund**, not income, with a clean merchant name. A parser upgrade re-reads the inbox once: it adds missed messages, corrects unedited old ones, and never brings back deleted ones.
 - **Sample messages needed:** paste a few missed SMS (the top-up one included) and they become test cases. Likely causes are an unrecognised sender ID, or wording without "debited / spent / sent" (e.g. "Rs 2000 **added to UPI Lite**").
 - **"Couldn't read" inbox:** bank-sender SMS that mention an amount but didn't parse are listed in Settings → Bank SMS ("3 messages not understood"), with **Add as expense / Ignore**. Nothing gets lost silently.
 

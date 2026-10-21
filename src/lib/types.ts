@@ -116,6 +116,10 @@ export interface ProviderConnection {
   cursor?: string;
   /** SMS: earliest tracking start already scanned; moving the start before it triggers a backfill. */
   syncedFrom?: string;
+  /** SMS: parser version that last read the inbox; an older one triggers a one-time re-read. */
+  parserVersion?: number;
+  /** SMS: fingerprints of imported transactions you deleted, so a re-read never brings them back. */
+  dismissed?: string[];
 }
 
 export interface ImportBatch {

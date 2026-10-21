@@ -128,11 +128,17 @@ export async function updateTxn(db: FinanceDB, id: string, patch: Partial<Transa
 }
 
 export async function deleteTxn(db: FinanceDB, id: string) {
-  await db.transaction("rw", db.txns, async () => {
+  await db.transaction("rw", [db.txns, db.connections], async () => {
+    const t = await db.txns.get(id);
     // Refunds pointing at this expense become unmatched and need review.
     const refunds = await db.txns.where("refundOf").equals(id).toArray();
     for (const r of refunds) await db.txns.update(r.id, { refundOf: undefined, needsReview: true, reviewReason: "Original expense was deleted" });
     await db.txns.delete(id);
+    // Remember deleted SMS transactions so re-reading the inbox never brings them back.
+    if (t?.source.providerId === "sms" && t.fingerprint) {
+      const conn = await db.connections.get("sms");
+      await db.connections.put({ ...conn, providerId: "sms", status: conn?.status ?? "connected", dismissed: [...(conn?.dismissed ?? []), t.fingerprint] });
+    }
   });
 }
 
