@@ -3,62 +3,71 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { outgoingsInRange } from "@/lib/budget";
-import { diffDays, formatDay, istHour, startOfMonth, startOfWeek } from "@/lib/dates";
+import { addDays, diffDays, formatDay, istHour, startOfMonth, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
-import { VIBE_COPY, badges, level, recoveryPlan, vibe } from "@/lib/insights";
+import { VIBE_COPY, level, recoveryPlan, vibe } from "@/lib/insights";
+import { monthPace, usualDailySpend, weeklyInsight } from "@/lib/overview";
 import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
 import { useBudget } from "@/data/useBudget";
 import { useQuickAdd } from "@/components/AppShell";
+import { InsightCard, PaceCard, SyncPill } from "@/components/Overview";
 import { TxnEditor } from "@/components/TxnEditor";
 import { TxnRow } from "@/components/TxnRow";
-import { Card, EmptyState, Money, Pill, ProgressBar, SectionTitle, cx } from "@/components/ui";
+import { Card, EmptyState, Money, ProgressBar, SectionTitle, cx } from "@/components/ui";
+
+const LATEST = 4;
 
 export default function TodayPage() {
   const { data, derived, today } = useBudget();
   const { open } = useQuickAdd();
   const [editing, setEditing] = useState<Transaction | null>(null);
 
-  const todays = useMemo(() => (data?.txns ?? []).filter((t) => t.date === today).sort((a, b) => b.createdAt - a.createdAt), [data, today]);
+  // Newest first: today's and recent transactions, whatever their source.
+  const latest = useMemo(
+    () =>
+      [...(data?.txns ?? [])]
+        .filter((t) => t.date <= today)
+        .sort((a, b) => (a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1))
+        .slice(0, LATEST),
+    [data, today],
+  );
   if (!data || !derived) return null;
   const { ledger, pool, statuses } = derived;
-  const v = vibe(ledger);
-  const copy = VIBE_COPY[v];
   const row = ledger.todayRow;
-  const startOfDay = row.carriedInPaise + row.allocationPaise;
-  const ratio = startOfDay > 0 ? Math.max(0, ledger.availablePaise) / startOfDay : 0;
-  const rec = recoveryPlan(ledger, today);
-  const lv = level(ledger);
   const hour = istHour();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const name = data.profile?.name?.replace(/\s*\(demo\)$/, "");
+  const sms = data.connections.find((c) => c.providerId === "sms");
+  const newFromSms = data.txns.filter((t) => t.source.providerId === "sms" && Date.now() - t.source.importedAt < 24 * 3600_000).length;
   const reviewCount = data.txns.filter((t) => t.needsReview).length;
   const dueSoon = statuses.filter((s) => s.state !== "paid" && diffDays(today, s.dueDate) <= 7);
   const commitmentName = (id?: string) => derived.plan?.commitments.find((c) => c.id === id)?.name;
+  const rec = ledger.hasBudget ? recoveryPlan(ledger, today) : null;
+  const pace = monthPace(ledger, today);
+  const insight = ledger.started ? weeklyInsight(data.txns, data.plans, today) : null;
+  const showBalances = (data.profile?.prefs?.balances ?? DEFAULT_PREFS.balances) && data.accounts.length > 0;
+  const lv = level(ledger);
+  // Tracking mode compares with the same stretch of last month.
+  const lastMonthStart = startOfMonth(addDays(startOfMonth(today), -1));
+  const lastMonthByNow = ledger.hasBudget ? undefined : outgoingsInRange(data.txns, data.plans, lastMonthStart, addDays(lastMonthStart, pace.dayOfMonth - 1)).discretionaryPaise;
 
   return (
     <div className="md:grid md:grid-cols-[1.1fr_1fr] md:gap-6">
       <div>
-        <div className="mb-4 mt-3 md:mt-0">
-          <p className="text-sm text-ink-400">
+        <div className="mb-4 mt-3 flex items-center justify-between gap-2 md:mt-0">
+          <p className="truncate text-sm text-ink-400">
             {greeting}
             {name ? `, ${name}` : ""} · {formatDay(today, { weekday: true })}
           </p>
+          <SyncPill connection={sms} />
         </div>
 
         {!ledger.started ? (
           <EmptyState emoji="⏳" title={`Tracking starts ${formatDay(data.profile!.trackingStart, { weekday: true })}`} body="Your daily allowance starts accruing on that date." />
         ) : ledger.hasBudget ? (
-          <HeroBudget available={ledger.availablePaise} ratio={ratio} vibe={copy} over={v === "over"} />
+          <HeroBudget available={ledger.availablePaise} base={row.allocationPaise} carried={row.carriedInPaise} spent={row.spentPaise} line={VIBE_COPY[vibe(ledger)].line} />
         ) : (
-          <HeroTracking spentToday={row.spentPaise} week={outgoingsInRange(data.txns, data.plans, startOfWeek(today), today).discretionaryPaise} month={outgoingsInRange(data.txns, data.plans, startOfMonth(today), today).discretionaryPaise} />
-        )}
-
-        {ledger.started && ledger.hasBudget && (
-          <div className="mt-3 grid grid-cols-3 gap-2" data-testid="today-breakdown">
-            <Stat label="Today's base" paise={row.allocationPaise} />
-            <Stat label="Carried in" paise={row.carriedInPaise} tone={row.carriedInPaise < 0 ? "coral" : "default"} signed />
-            <Stat label="Spent today" paise={row.spentPaise} tone={row.spentPaise > startOfDay ? "coral" : "default"} testId="spent-today" />
-          </div>
+          <HeroTracking spent={row.spentPaise} usual={usualDailySpend(ledger, today)} week={outgoingsInRange(data.txns, data.plans, startOfWeek(today), today).discretionaryPaise} />
         )}
 
         {pool.shortfallPaise > 0 && (
@@ -72,7 +81,9 @@ export default function TodayPage() {
         )}
         {rec && (
           <Card className="mt-3 border-coral/30 bg-coral/[0.07] text-sm">
-            <b className="text-coral">Deficit {formatPaise(rec.deficitPaise)}.</b>{" "}
+            <b className="text-coral">
+              Deficit <Money paise={rec.deficitPaise} />.
+            </b>{" "}
             {rec.daysLeft > 0 ? (
               <>
                 Spend about <Money paise={rec.perDayCutPaise} /> less than your base for the next {rec.daysLeft} days to clear it this month.
@@ -83,185 +94,156 @@ export default function TodayPage() {
           </Card>
         )}
 
-        <button className="btn-primary mt-4 h-14 w-full text-base md:hidden" onClick={() => open()} data-testid="today-add">
-          + Add expense
-        </button>
-
-        {ledger.hasBudget && ledger.started && (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Card className="flex items-center gap-3 py-3">
-              <span className="text-3xl">🔥</span>
-              <div>
-                <div className="num text-xl font-bold" data-testid="streak">{ledger.streak}</div>
-                <div className="text-xs text-ink-400">day streak</div>
-              </div>
-            </Card>
-            <Card className="py-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-bold">Lvl {lv.level}</span>
-                <span className="num text-xs text-ink-400">{lv.xp} XP</span>
-              </div>
-              <div className="mt-2">
-                <ProgressBar value={lv.progress} tone="violet" />
-              </div>
-              <div className="mt-1 text-[11px] text-ink-400">+10 XP per under-budget day</div>
-            </Card>
+        {ledger.started && (
+          <div className="mt-3">
+            <PaceCard pace={pace} hasBudget={ledger.hasBudget} lastMonthByNowPaise={lastMonthByNow} />
+          </div>
+        )}
+        {insight && (
+          <div className="mt-3">
+            <InsightCard insight={insight} />
           </div>
         )}
       </div>
 
       <div>
-        {(reviewCount > 0 || dueSoon.length > 0) && <SectionTitle>Heads up</SectionTitle>}
-        {reviewCount > 0 && (
-          <Link href="/transactions?review=1" className="card mb-2 flex items-center justify-between bg-amber/[0.07] text-sm">
-            <span>
-              ⚠️&nbsp; <b>{reviewCount}</b> transaction{reviewCount > 1 ? "s need" : " needs"} review
-            </span>
-            <span className="text-amber">Review →</span>
-          </Link>
-        )}
-        {dueSoon.length > 0 && (
-          <Card className="space-y-2">
-            {dueSoon.map((s) => (
-              <div key={s.commitment.id} className="flex items-center justify-between text-sm">
-                <span>
-                  {s.commitment.kind === "savings" ? "🏦" : "🧾"} {s.commitment.name}
-                  <span className="ml-2 text-xs text-ink-400">{s.state === "overdue" ? "overdue" : s.dueDate === today ? "due today" : `due ${formatDay(s.dueDate)}`}</span>
-                </span>
-                <span className="flex items-center gap-2">
-                  {s.state === "overdue" && <Pill tone="coral">late</Pill>}
-                  <Money paise={s.commitment.amountPaise - s.paidPaise} className="text-ink-300" />
-                </span>
-              </div>
-            ))}
-            <p className="text-[11px] text-ink-400">Already reserved — paying these won't reduce today's budget.</p>
-          </Card>
-        )}
-
-        <SectionTitle action={<Link href="/transactions" className="text-xs font-semibold text-lime">All →</Link>}>Today</SectionTitle>
-        {todays.length === 0 ? (
-          <EmptyState emoji="🧘" title="Nothing spent yet today" body="Zero-spend days earn bonus XP." action={<button className="btn-ghost" onClick={() => open()}>Log an expense</button>} />
+        <SectionTitle
+          action={
+            reviewCount > 0 ? (
+              <Link href="/transactions?review=1" className="text-xs font-semibold text-amber">
+                Review {reviewCount} →
+              </Link>
+            ) : (
+              <Link href="/transactions" className="text-xs font-semibold text-lime">
+                All →
+              </Link>
+            )
+          }
+        >
+          {newFromSms > 0 ? `${newFromSms} new from SMS` : "Latest"}
+        </SectionTitle>
+        {latest.length === 0 ? (
+          <EmptyState emoji="📭" title="Nothing yet" body="Bank SMS show up here as they arrive." />
         ) : (
           <Card className="p-2" data-testid="today-list">
-            {todays.map((t) => (
+            {latest.map((t) => (
               <TxnRow key={t.id} t={t} onClick={() => setEditing(t)} commitmentName={commitmentName(t.commitmentId)} />
             ))}
           </Card>
         )}
 
-        {(data.profile?.prefs?.balances ?? DEFAULT_PREFS.balances) && data.accounts.length > 0 && <Balances accounts={data.accounts} />}
-
-        {ledger.hasBudget && ledger.started && (
+        {(dueSoon.length > 0 || showBalances) && (
           <>
-            <SectionTitle>Badges</SectionTitle>
-            <div className="grid grid-cols-3 gap-2">
-              {badges(ledger).map((b) => (
-                <div key={b.id} className={cx("rounded-2xl border p-3 text-center", b.earned ? "border-lime/30 bg-lime/[0.06]" : "border-white/5 opacity-40")} title={b.hint}>
-                  <div className={cx("text-2xl", !b.earned && "grayscale")}>{b.emoji}</div>
-                  <div className="mt-1 text-[11px] font-semibold leading-tight">{b.name}</div>
+            <SectionTitle>{dueSoon.length > 0 ? "Coming up" : "Balances"}</SectionTitle>
+            <Card className="divide-y divide-white/5 py-1" data-testid="coming-up">
+              {dueSoon.map((s) => (
+                <div key={s.commitment.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                  <span className="min-w-0 truncate">
+                    {s.commitment.kind === "savings" ? "🏦" : "🧾"} {s.commitment.name}
+                    <span className={cx("ml-2 text-xs", s.state === "overdue" ? "text-coral" : "text-ink-400")}>{s.state === "overdue" ? "overdue" : s.dueDate === today ? "today" : formatDay(s.dueDate, { weekday: true })}</span>
+                  </span>
+                  <Money paise={s.commitment.amountPaise - s.paidPaise} className="num text-ink-300" />
                 </div>
               ))}
-            </div>
+              {showBalances && <BalanceRows accounts={data.accounts} />}
+            </Card>
           </>
         )}
+
+        <div className="mt-4 flex items-center justify-between gap-3 px-1 text-sm text-ink-400">
+          <span data-testid="streak-row">
+            {ledger.hasBudget && ledger.started ? (
+              <>
+                {ledger.streak > 0 ? (
+                  <>
+                    🔥 <span data-testid="streak">{ledger.streak}</span>-day streak ·{" "}
+                  </>
+                ) : null}
+                Lvl {lv.level} · {lv.xp} XP
+              </>
+            ) : (
+              "Tracking only"
+            )}
+          </span>
+          <button className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:text-white" onClick={() => open()} data-testid="today-add">
+            + Cash spend
+          </button>
+        </div>
       </div>
+
       <TxnEditor txn={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }
 
-function formatPaise(p: number) {
-  return <Money paise={p} />;
-}
-
-function HeroBudget({ available, ratio, vibe, over }: { available: number; ratio: number; vibe: { label: string; emoji: string; line: string }; over: boolean }) {
-  const R = 88;
-  const C = 2 * Math.PI * R;
+function HeroBudget({ available, base, carried, spent, line }: { available: number; base: number; carried: number; spent: number; line: string }) {
+  const over = available < 0;
+  const startOfDay = Math.max(1, base + carried);
   return (
-    <div className={cx("relative overflow-hidden rounded-[32px] border p-6", over ? "border-coral/30 bg-gradient-to-br from-coral/15 to-ink-850" : "border-lime/20 bg-gradient-to-br from-lime/[0.12] via-ink-850 to-ink-850")}>
-      <div className="flex items-center gap-4">
-        <svg viewBox="0 0 200 200" className="h-24 w-24 shrink-0 -rotate-90 sm:h-36 sm:w-36" aria-hidden>
-          <circle cx="100" cy="100" r={R} stroke="rgba(255,255,255,0.07)" strokeWidth="16" fill="none" />
-          <circle cx="100" cy="100" r={R} stroke={over ? "#ff6b6b" : "#c6ff3d"} strokeWidth="16" fill="none" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - Math.min(1, ratio))} className="transition-all duration-700" />
-        </svg>
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-300">{over ? "Deficit" : "Left to spend today"}</div>
-          <div className={cx("num mt-1 whitespace-nowrap font-bold leading-none", heroSize(available), over ? "text-coral" : "text-lime")} data-testid="available" aria-label={formatINR(available)}>
-            {formatINR(available, { decimals: "never" })}
-            {Math.abs(available) % 100 !== 0 && <span className="text-[0.45em] opacity-70">.{String(Math.abs(available) % 100).padStart(2, "0")}</span>}
-          </div>
-          <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-black/30 px-2.5 py-1 text-xs font-semibold">
-            {vibe.emoji} {vibe.label}
-          </div>
-        </div>
+    <div className={cx("relative overflow-hidden rounded-[32px] border p-6 text-center", over ? "border-coral/30 bg-gradient-to-br from-coral/15 to-ink-850" : "border-lime/20 bg-gradient-to-br from-lime/[0.12] via-ink-850 to-ink-850")}>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-300">{over ? "Over today's budget by" : "Left to spend today"}</div>
+      <div className={cx("num mt-1 whitespace-nowrap font-bold leading-none", heroSize(available), over ? "text-coral" : "text-lime")} data-testid="available" aria-label={formatINR(available)}>
+        {formatINR(Math.abs(available), { decimals: "never" })}
+        {Math.abs(available) % 100 !== 0 && <span className="text-[0.45em] opacity-70">.{String(Math.abs(available) % 100).padStart(2, "0")}</span>}
       </div>
-      <p className="mt-4 text-sm text-ink-300">{vibe.line}</p>
+      <p className="num mt-3 text-xs text-ink-400" data-testid="today-breakdown">
+        <Money paise={base} decimals="never" /> base · <Money paise={carried} decimals="never" sign /> carried · <span data-testid="spent-today"><Money paise={spent} decimals="never" /></span> spent
+      </p>
+      <div className="mx-auto mt-3 max-w-xs">
+        <ProgressBar value={Math.min(1, spent / startOfDay)} tone={over ? "coral" : spent / startOfDay > 0.75 ? "amber" : "lime"} />
+      </div>
+      <p className="mt-3 text-sm text-ink-300">{line}</p>
     </div>
   );
 }
 
 function heroSize(p: number) {
-  const len = formatINR(p, { decimals: "never" }).length;
-  return len <= 6 ? "text-[44px] sm:text-5xl" : len <= 8 ? "text-[34px] sm:text-5xl" : "text-[26px] sm:text-4xl";
+  const len = formatINR(Math.abs(p), { decimals: "never" }).length;
+  return len <= 6 ? "text-[52px] sm:text-6xl" : len <= 8 ? "text-[42px] sm:text-6xl" : "text-[32px] sm:text-5xl";
 }
 
-function HeroTracking({ spentToday, week, month }: { spentToday: number; week: number; month: number }) {
+function HeroTracking({ spent, usual, week }: { spent: number; usual: number; week: number }) {
   return (
-    <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-violet/15 to-ink-850 p-6">
+    <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-violet/15 to-ink-850 p-6 text-center">
       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-300">Spent today</div>
       <div className="num mt-1 text-5xl font-bold" data-testid="spent-today">
-        <Money paise={spentToday} />
+        <Money paise={spent} decimals="never" />
       </div>
-      <div className="mt-4 flex gap-6 text-sm">
-        <div>
-          <div className="text-ink-400">This week</div>
-          <Money paise={week} className="font-semibold" />
-        </div>
-        <div>
-          <div className="text-ink-400">This month</div>
-          <Money paise={month} className="font-semibold" />
-        </div>
-      </div>
-      <p className="mt-4 text-xs text-ink-400">
-        Tracking only — no budget set. <Link href="/settings" className="text-lime">Add income in Settings</Link> to get a daily allowance.
+      <p className="mt-3 text-xs text-ink-400">
+        {usual > 0 ? (
+          <>
+            Your usual: <Money paise={usual} decimals="never" /> a day ·{" "}
+          </>
+        ) : null}
+        This week: <Money paise={week} decimals="never" />
+      </p>
+      <p className="mt-3 text-xs text-ink-400">
+        Tracking only.{" "}
+        <Link href="/settings" className="text-lime">
+          Set a budget
+        </Link>{" "}
+        to get a daily allowance.
       </p>
     </div>
   );
 }
 
-function Stat({ label, paise, tone = "default", signed, testId }: { label: string; paise: number; tone?: "default" | "coral"; signed?: boolean; testId?: string }) {
-  return (
-    <div className="rounded-2xl bg-ink-850 p-3">
-      <div className="text-[11px] text-ink-400">{label}</div>
-      <div className={cx("num mt-0.5 truncate text-[15px] font-semibold", tone === "coral" && "text-coral")} data-testid={testId}>
-        <Money paise={paise} sign={signed} decimals="never" />
-      </div>
-    </div>
-  );
-}
-
-/** Latest balances read from bank SMS (Settings → Data → Bank SMS can turn this off). */
-function Balances({ accounts }: { accounts: Account[] }) {
+function BalanceRows({ accounts }: { accounts: Account[] }) {
   const sorted = [...accounts].sort((a, b) => (a.kind === b.kind ? b.asOf - a.asOf : a.kind === "account" ? -1 : 1));
-  const asOf = (ms: number) => new Date(ms).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  const asOf = (ms: number) => new Date(ms).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
   return (
     <>
-      <SectionTitle>Balances</SectionTitle>
-      <Card className="divide-y divide-white/5 py-1" data-testid="balances">
-        {sorted.map((a) => (
-          <div key={a.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-            <div className="min-w-0">
-              <div className="font-semibold">
-                {a.kind === "card" ? "💳" : "🏦"} {a.bank} ••{a.last4}
-              </div>
-              <div className="text-xs text-ink-400">
-                {a.kind === "card" ? "Available limit" : "Balance"} · as of {asOf(a.asOf)}
-              </div>
-            </div>
-            <Money paise={a.balancePaise} className="num font-semibold" />
-          </div>
-        ))}
-      </Card>
+      {sorted.map((a) => (
+        <div key={a.id} className="flex items-center justify-between gap-3 py-2.5 text-sm" data-testid="balance">
+          <span className="min-w-0 truncate">
+            {a.kind === "card" ? "💳" : "🏦"} {a.bank} ••{a.last4}
+            <span className="ml-2 text-xs text-ink-400">
+              {a.kind === "card" ? "limit" : "balance"} · {asOf(a.asOf)}
+            </span>
+          </span>
+          <Money paise={a.balancePaise} decimals="never" className="num font-semibold" />
+        </div>
+      ))}
     </>
   );
 }

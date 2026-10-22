@@ -20,6 +20,12 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
 ---
 
+## Done in 0.5.0
+
+- **Today, redesigned:** sync status, one hero number (base · carried · spent in a line), month pace with a month-end projection, one weekly insight, the latest transactions ("N new from SMS", "Tag?" on unknown payees, "Review N"), coming-up bills with balances, and a compact streak/level row. Manual entry is a small "+ Cash spend".
+- **Briefing, redesigned:** no tabs; morning brief until 5 pm, night brief after (switchable). Morning: what you can spend, yesterday in one line, anything due, insight. Night: spent vs the day's budget and what rolls over, where it went, tomorrow's allowance. Both: this week's bars, a month calendar (tap a day for its report), badges.
+- **Fix:** tracking-only mode no longer shows a "deficit".
+
 ## Done in 0.4.0
 
 - **Account balances** from "Avl bal" / "Avl limit" in bank SMS, shown on Today. Switch: Settings → Data → *Read account balances* (off also clears them).
@@ -47,28 +53,7 @@ Most transactions now arrive by themselves, so the app's job shifts from "log yo
 - Manual entry moves out of the spotlight: a small "+ Cash spend" on Today, a + in the Activity header, and long-press on the centre button.
 - Nav: Today · Activity · **[review inbox]** · Stats · Briefing.
 
-### Today, redesigned · M
-Top to bottom:
-1. **Header:** sync status ("synced 2m ago"), replacing the big Add button.
-2. **Hero:** left to spend today, with base / carried / spent in one line and a thin meter. Tracking mode: spent today vs your usual by this time.
-3. **Month pace:** spent vs allowance so far, days left, and a projection ("likely to end ₹2,100 under").
-4. **New from SMS:** the latest few auto-tracked transactions with category chips; "Tag?" on unknown payees; links to the review inbox.
-5. **Coming up:** autopays and bills in the next 7 days, plus balances in one compact card.
-6. **One insight:** a single nudge, e.g. "Food is 32% above your usual this week".
-7. **Footer row:** streak and level in one line (instead of two big cards), and a small "+ Cash spend".
-
-### Briefing, redesigned · M
-- **No tabs:** it shows the morning brief before 5 pm and the night brief after, in one scroll. Older days live in a calendar.
-- **Morning:** what you can spend today, yesterday in one line (amount, vs base, top category), anything due today.
-- **Night:** today's spend vs allowance and what rolls into tomorrow; where it went (category split bar, biggest spend); this week as 7 mini bars against the budget line; tomorrow's allowance and what's due.
-- **Month calendar:** each day green or red; tap a day for its report (replaces the History tab).
-- The "push notifications aren't implemented" banner goes away; when notifications ship, the brief gets a "Send this as a notification" switch.
-- These screens are the content for the morning/night notifications (Phase 3), so templates can be finalised here first.
-
 ## Phase 1: Accuracy
-
-### Fix: tracking-only mode shows a deficit · S
-Found while testing: with no budget set, the Today screen still says "Deficit ₹370 … spend less than your base". In tracking mode there's no allowance, so there should be no deficit or recovery plan.
 
 ### Lighter refresh · S
 While the app is open, a check runs every 60 s. Today each check loads every transaction and saves a "last synced" time even when no SMS arrived, and that save makes the screen reload all data and redraw.
@@ -167,8 +152,8 @@ Share **ratios, never amounts**:
 
 ## Suggested order
 
-1. **Next up:** review inbox, then the Today and Briefing redesigns.
-2. **Phase 1:** tracking-mode deficit fix, lighter refresh, dividend + investment rules, "couldn't read" inbox.
+1. **Next up:** review inbox (centre button).
+2. **Phase 1:** lighter refresh, dividend + investment rules, "couldn't read" inbox.
 3. **Phase 2:** payee tags (via the review inbox), budget from regular payments with the "don't set aside" option, the Recurring tab.
 4. **Phase 3:** splash screen, widget, then morning/night brief notifications once templates are ready.
 5. **Phase 4:** backup encryption.

@@ -18,6 +18,7 @@ export function TxnRow({ t, onClick, commitmentName }: { t: Transaction; onClick
           <span className="truncate">{t.category}</span>
           {t.kind !== "expense" && <Pill tone={t.kind === "commitment" ? "sky" : t.kind === "investment" ? "violet" : t.kind === "refund" || t.kind === "income" ? "lime" : "default"}>{commitmentName ?? KIND_LABEL[t.kind]}</Pill>}
           {t.needsReview && <Pill tone="amber">review</Pill>}
+          {t.kind === "expense" && t.category === "Other" && !t.needsReview && <Pill tone="amber">Tag?</Pill>}
           {t.method === "upi" && <span className="text-[10px] uppercase tracking-wider">UPI</span>}
         </span>
       </span>
