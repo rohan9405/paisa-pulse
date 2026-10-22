@@ -18,7 +18,7 @@ describe("backup", () => {
   it("round-trips all data, including rules and SMS sync state", async () => {
     const src = fresh();
     await seedDemo(src, "2026-10-21");
-    await src.rules.add({ id: "mine", pattern: "ramesh@okaxis", category: "Rent & Housing", priority: 10 });
+    await src.rules.add({ id: "mine", pattern: "ramesh@okaxis", category: "Bills", tag: "Rent", payee: "ramesh@okaxis", priority: 10 });
     await src.connections.put({ providerId: "sms", status: "connected", cursor: "1792605085000", syncedFrom: "2026-10-01" });
     const backup = JSON.parse(JSON.stringify(await exportAll(src, "personal")));
 

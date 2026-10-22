@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { haptic } from "@/data/device";
 import { formatINR, type FormatOptions } from "@/lib/money";
 
@@ -176,5 +176,45 @@ export function Toast({ message, onDone, action }: { message: string | null; onD
         </button>
       )}
     </div>
+  );
+}
+
+/** A small ⓘ that shows a short explanation on tap (or hover on desktop). */
+export function InfoTip({ children, label = "About this" }: { children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <span ref={ref} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={id}
+        className={cx("grid h-7 w-7 place-items-center rounded-full text-ink-400 transition hover:bg-white/[0.06] hover:text-white", open && "bg-white/[0.06] text-white")}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 8h.01" />
+        </svg>
+      </button>
+      {open && (
+        <span id={id} role="tooltip" className="animate-pop absolute right-0 top-full z-30 mt-1 w-64 rounded-2xl border border-white/10 bg-ink-800 p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-ink-300 shadow-2xl">
+          {children}
+        </span>
+      )}
+    </span>
   );
 }

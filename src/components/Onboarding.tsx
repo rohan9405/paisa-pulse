@@ -6,6 +6,7 @@ import { dailyAllocation, poolSummary } from "@/lib/budget";
 import { addDays, formatDay, startOfMonth } from "@/lib/dates";
 import { formatINR, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
 import { completeOnboarding } from "@/data/repo";
+import type { SetAsideMode } from "@/lib/types";
 import { useStore } from "@/data/store";
 import { smsBridge } from "@/data/providers/sms";
 import { CommitmentList, type CommitmentDraft, validateDrafts } from "@/components/CommitmentEditor";
@@ -21,6 +22,7 @@ export function Onboarding() {
   const [trackOnly, setTrackOnly] = useState(false);
   const [income, setIncome] = useState("");
   const [drafts, setDrafts] = useState<CommitmentDraft[]>([]);
+  const [saMode, setSaMode] = useState<SetAsideMode>("planned");
   const [draftErrors, setDraftErrors] = useState<Record<string, string>>({});
   const [start, setStart] = useState(today);
   const [opening, setOpening] = useState("");
@@ -30,9 +32,9 @@ export function Onboarding() {
   const incomePaise = trackOnly ? null : rupeesInputToPaise(income);
   const preview = useMemo(() => {
     const { commitments } = validateDrafts(drafts);
-    const s = poolSummary({ id: "", effectiveFrom: start, incomePaise, commitments, createdAt: 0 });
+    const s = poolSummary({ id: "", effectiveFrom: start, incomePaise, commitments, setAsideMode: saMode, createdAt: 0 });
     return { ...s, daily: dailyAllocation(s.allocatablePaise, start) };
-  }, [drafts, incomePaise, start]);
+  }, [drafts, incomePaise, start, saMode]);
 
   const next = () => {
     setErr(null);
@@ -57,6 +59,7 @@ export function Onboarding() {
       name,
       incomePaise,
       commitments,
+      setAsideMode: saMode,
       trackingStart: start,
       openingAdjustmentPaise: openingPaise,
       alreadyPaidIds: drafts.filter((d) => d.alreadyPaid).map((d) => d.id),
@@ -108,13 +111,31 @@ export function Onboarding() {
       {step === 1 && (
         <section className="space-y-5">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Bills & savings, set aside first</h1>
+            <h1 className="text-3xl font-bold tracking-tight">{trackOnly ? "Regular payments" : "Bills and investments come off the top"}</h1>
             <p className="mt-2 text-sm text-ink-400">
-              Fixed bills and savings/SIP targets come off the top. Include ones you've <b>already paid this month</b> — tick them so they don't show as upcoming.
+              {trackOnly
+                ? "Optional: add rent, bills or SIPs to get reminders before they're due."
+                : "Bills (rent, electricity, EMIs), investments (SIPs) and savings are set aside before your daily budget. You can change which in Settings."}
             </p>
           </div>
+          {!trackOnly && (
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="ob-mode">
+              {(
+                [
+                  ["planned", "Plan the amounts", "Enter what you expect to pay. If a bill comes in higher or lower, that day's budget adjusts."],
+                  ["actual", "Use actual payments", "Skip the amounts. Each bill or SIP comes out of the month's pool when it's paid, and the remaining days are recalculated."],
+                ] as const
+              ).map(([v, label, help]) => (
+                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
+                  <span className="font-semibold">{label}</span>
+                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {!trackOnly && saMode === "planned" && <p className="text-xs text-ink-400">Include payments you've already made this month and tick “Paid this month” so they don't show as upcoming.</p>}
           <CommitmentList drafts={drafts} onChange={setDrafts} errors={draftErrors} showPaid />
-          {drafts.length === 0 && <p className="text-sm text-ink-400">No fixed commitments? That's fine — skip ahead.</p>}
+          {drafts.length === 0 && <p className="text-sm text-ink-400">{saMode === "actual" || trackOnly ? "Optional. Add them to get reminders, or skip ahead." : "No regular payments? That's fine, skip ahead."}</p>}
         </section>
       )}
 
@@ -133,17 +154,24 @@ export function Onboarding() {
             </Field>
           )}
 
-          {!trackOnly && (
+          {!trackOnly && saMode === "actual" && (
             <div className="card space-y-2 text-sm" data-testid="ob-summary">
               <Row label="Take-home" value={formatINR(preview.incomePaise)} />
-              <Row label="Fixed bills" value={`− ${formatINR(preview.billsPaise)}`} />
-              <Row label="Savings & SIPs" value={`− ${formatINR(preview.savingsPaise)}`} />
+              <p className="text-xs text-ink-400">Your daily allowance starts at about {formatINR(preview.daily)} and drops as bills, investments and savings are paid.</p>
+            </div>
+          )}
+          {!trackOnly && saMode === "planned" && (
+            <div className="card space-y-2 text-sm" data-testid="ob-summary">
+              <Row label="Take-home" value={formatINR(preview.incomePaise)} />
+              <Row label="Bills" value={`− ${formatINR(preview.billsPaise)}`} />
+              <Row label="Investments" value={`− ${formatINR(preview.investmentsPaise)}`} />
+              <Row label="Savings" value={`− ${formatINR(preview.savingsPaise)}`} />
               <div className="my-1 border-t border-white/5" />
               <Row label="Monthly spending pool" value={formatINR(preview.poolPaise)} strong />
               <Row label="Daily allowance this month" value={formatINR(preview.daily)} strong lime />
               {preview.shortfallPaise > 0 && (
                 <p className="rounded-xl bg-coral/10 p-3 text-coral">
-                  Commitments exceed income by <Money paise={preview.shortfallPaise} />. Your daily allowance will be ₹0 — any spending becomes a deficit. Consider trimming a bill or savings target.
+                  Planned payments exceed income by <Money paise={preview.shortfallPaise} />. Your daily allowance will be ₹0 — any spending becomes a deficit. Consider trimming a bill or savings target.
                 </p>
               )}
             </div>

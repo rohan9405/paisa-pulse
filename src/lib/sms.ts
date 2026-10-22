@@ -8,7 +8,7 @@
  */
 import { type DateKey, toISTKey } from "./dates";
 import { type Paise, parseAmountToPaise } from "./money";
-import { categorize, detectMethod, extractMerchant } from "./categorize";
+import { categorize, detectMethod, extractMerchant, outflowKind } from "./categorize";
 import { cleanMerchantName } from "./merchants";
 import type { CategoryRule, PaymentMethod, TxnKind } from "./types";
 
@@ -50,6 +50,8 @@ export interface ParsedSms {
   account?: string;
   isCard: boolean;
   counterparty?: string;
+  /** Lowercased UPI ID of the other side, when the message shows one. */
+  payee?: string;
   reference?: string;
   method: PaymentMethod;
   /** Credit-card bill payments (either side) — moving money between your own accounts. */
@@ -101,6 +103,7 @@ export function parseBankSms(sms: Pick<RawSms, "address" | "body">): ParsedSms |
     account: findAccount(body),
     isCard,
     counterparty: findCounterparty(body, direction),
+    payee: findPayee(body),
     reference: findReference(body),
     method: findMethod(body, isCard),
     cardBillPayment,
@@ -194,6 +197,12 @@ function findCounterparty(body: string, direction: "out" | "in"): string | undef
   return undefined;
 }
 
+/** First UPI ID in the message ("ramesh.k@okaxis"); email addresses don't count. */
+export function findPayee(body: string): string | undefined {
+  const m = body.match(/(?:^|[\s:(])([a-z0-9][\w.\-]{1,}@[a-z]{2,})(?![\w.@])/i);
+  return m?.[1].toLowerCase();
+}
+
 function cleanCounterparty(raw: string): string | undefined {
   if (/^upi[\/\- :]/i.test(raw)) return extractMerchant(raw);
   const vpa = raw.match(/^([\w.\-]+)@[\w]+$/);
@@ -214,6 +223,8 @@ export interface SmsCandidate {
   kind: TxnKind;
   merchant: string;
   category: string;
+  tag?: string;
+  payee?: string;
   method: PaymentMethod;
   reference?: string;
   /** Stable per SMS: received time + direction + amount. */
@@ -226,7 +237,7 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
   const p = parseBankSms(sms);
   if (!p) return null;
   const merchant = p.upiLiteTopUp ? "UPI Lite top-up" : (p.counterparty ?? (p.method === "cash" ? "ATM cash" : `${p.bank} ${p.direction === "out" ? "debit" : "credit"}`));
-  const rule = categorize(`${merchant} ${sms.body}`, rules);
+  const rule = categorize(`${merchant} ${sms.body}`, rules, p.payee);
 
   let kind: TxnKind = p.direction === "out" ? "expense" : "income";
   // Same precedence as CSV import (csv.ts validateRows).
@@ -234,11 +245,15 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
   if (p.refund) kind = "refund";
   // Money back from a shop or service (e.g. "credited … from WWW MYNTRA COM") is a refund, not income.
   if (p.direction === "in" && rule && !rule.kind && rule.category !== "Income") kind = "refund";
+  // A rule that only sets Investments / Savings still makes the payment an investment.
+  if (p.direction === "out" && kind === "expense" && rule && !rule.kind) kind = outflowKind(rule.category);
   // Paying a card bill: the card spends were already counted when they happened.
   if (p.cardBillPayment) kind = "transfer";
 
   let category = kind === "transfer" ? "Transfers" : kind === "refund" ? "Refunds" : kind === "income" && !rule ? "Income" : (rule?.category ?? "Other");
-  if (p.upiLiteTopUp) [kind, category] = ["expense", "Bills & Utilities"];
+  let tag = kind === "transfer" || kind === "refund" ? undefined : rule?.tag;
+  // Lite payments send no SMS, so the top-up stands in for the everyday spends it pays for.
+  if (p.upiLiteTopUp) [kind, category, tag] = ["expense", "Other", "UPI Lite"];
 
   return {
     date: toISTKey(sms.date),
@@ -247,9 +262,70 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
     kind,
     merchant,
     category,
+    tag,
+    payee: p.payee,
     method: p.method,
     reference: p.reference,
     fingerprint: `sms|${sms.date}|${p.direction}|${p.amountPaise}`,
     raw: sms.body,
   };
+}
+
+// ------------------------------------------------------------- mandates
+
+export interface ParsedMandate {
+  bank: Bank;
+  event: "created" | "modified" | "revoked";
+  /** Mandate amount (for "up to" mandates, the maximum). */
+  amountPaise: Paise | null;
+  /** Who it pays, e.g. "Netflix", "Groww". */
+  name?: string;
+  payee?: string;
+  frequency: "monthly" | "weekly" | "quarterly" | "yearly";
+  /** UMN / UMRN / mandate reference. */
+  ref?: string;
+  /** First / next debit date if the message says so. */
+  startDate?: DateKey;
+}
+
+const MANDATE = /\b(mandate|auto\s?pay|e-?mandate|si\b|standing instruction|nach)\b/i;
+
+/**
+ * Autopay / e-mandate / standing-instruction set-up, change or cancellation.
+ * These aren't transactions; they tell us a regular payment exists.
+ */
+export function parseMandate(sms: Pick<RawSms, "address" | "body" | "date">): ParsedMandate | null {
+  const bank = bankForSender(sms.address);
+  if (!bank) return null;
+  const body = sms.body.replace(/\s+/g, " ").trim();
+  if (!MANDATE.test(body) || NOT_A_TXN[0].test(body)) return null;
+  let event: ParsedMandate["event"] | null = null;
+  if (/\b(revoked|cancell?ed|deleted|paused|deactivated|stopped)\b/i.test(body)) event = "revoked";
+  else if (/\b(modified|updated|amended|changed)\b/i.test(body)) event = "modified";
+  else if (/\b(created|registered|set ?up|activated|approved|successful(ly)?)\b/i.test(body)) event = "created";
+  if (!event) return null;
+  // A debit made under a mandate is a transaction, handled by parseBankSms.
+  if (/\b(debited|deducted|paid|spent)\b/i.test(body) && event === "created" && !/\b(mandate|auto\s?pay)\b.{0,40}\b(created|registered|set ?up)/i.test(body)) return null;
+
+  const freq = body.match(/\b(daily|weekly|monthly|quarterly|half[- ]?yearly|yearly|annually|annual)\b/i)?.[1].toLowerCase() ?? "monthly";
+  const frequency: ParsedMandate["frequency"] = freq.startsWith("week") ? "weekly" : freq.startsWith("quarter") ? "quarterly" : /year|annual/.test(freq) ? "yearly" : "monthly";
+  // Most specific wording first; "for Rs 649" or "to your a/c" aren't names.
+  let name: string | undefined;
+  for (const kw of ["towards", "in favou?r of", "for merchant", "payee", "for", "to"]) {
+    for (const m of body.matchAll(new RegExp(String.raw`\b(?:${kw})\s*:?\s+([A-Za-z][\w&.' \-]{1,40}?)${STOP}`, "gi"))) {
+      if (/^(rs|inr|your|a\/c|account|upi|the|mandate|auto ?pay|frequency|amount|max)\b/i.test(m[1])) continue;
+      name = cleanCounterparty(m[1]);
+      if (name) break;
+    }
+    if (name) break;
+  }
+  const ref = body.match(/\b(?:umn|umrn|mandate (?:ref(?:erence)?|id)|ref(?:erence)? no\.?)[\s:#.-]*([A-Za-z0-9@.\-]{6,})/i)?.[1];
+  const dateM = body.match(/\b(?:from|starting|start date|first debit|next debit|on)\s*(?:on|:)?\s*(\d{1,2})[-\/ ]([a-z]{3}|\d{1,2})[-\/ ](\d{2,4})\b/i);
+  let startDate: DateKey | undefined;
+  if (dateM) {
+    const mon = /^\d+$/.test(dateM[2]) ? Number(dateM[2]) : ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(dateM[2].toLowerCase()) + 1;
+    const yr = dateM[3].length === 2 ? 2000 + Number(dateM[3]) : Number(dateM[3]);
+    if (mon >= 1 && mon <= 12) startDate = `${yr}-${String(mon).padStart(2, "0")}-${String(Number(dateM[1])).padStart(2, "0")}`;
+  }
+  return { bank, event, amountPaise: findAmount(body), name, payee: findPayee(body), frequency, ref, startDate };
 }

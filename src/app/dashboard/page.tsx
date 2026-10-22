@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { categoryBreakdown, commitmentStatuses, manualPaidKey, outgoingsInRange, planForDate, spendVsBudgetSeries } from "@/lib/budget";
-import { categoryEmoji } from "@/lib/categorize";
+import { categoryBreakdown, commitmentCategory, commitmentStatuses, manualPaidKey, outgoingsInRange, planForDate, spendVsBudgetSeries } from "@/lib/budget";
+import { categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { markCommitmentPaid } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
-import { Card, EmptyState, Money, PageHeader, Pill, SectionTitle, Segmented, cx } from "@/components/ui";
+import { Card, EmptyState, InfoTip, Money, PageHeader, Pill, SectionTitle, Segmented, cx } from "@/components/ui";
 
 type Period = "week" | "month";
 
@@ -31,7 +31,7 @@ export default function DashboardPage() {
 
   const view = useMemo(() => {
     if (!data || !derived) return null;
-    const out = outgoingsInRange(data.txns, data.plans, from, toClamped);
+    const out = outgoingsInRange(data.txns, from, toClamped);
     const cats = categoryBreakdown(data.txns, data.plans, from, toClamped);
     const series = spendVsBudgetSeries(derived.ledger, from, toClamped).map((d) => ({
       label: formatDay(d.date),
@@ -41,11 +41,13 @@ export default function DashboardPage() {
       dayBudget: d.budgetPaise / 100,
     }));
     const budgetTotal = series.at(-1)?.Budget ?? 0;
-    return { out, cats, series, budgetTotal };
+    const budgetSpent = Math.round((series.at(-1)?.Spent ?? 0) * 100);
+    const catTotal = cats.reduce((s, c) => s + c.amountPaise, 0);
+    return { out, cats, series, budgetTotal, budgetSpent, catTotal };
   }, [data, derived, from, toClamped]);
 
   if (!data || !derived || !view) return null;
-  const { out, cats, series, budgetTotal } = view;
+  const { out, cats, series, budgetTotal, budgetSpent, catTotal } = view;
   const hasBudget = derived.ledger.hasBudget;
   const catMax = Math.max(1, ...cats.map((c) => c.amountPaise));
   const future = from > today;
@@ -75,27 +77,39 @@ export default function DashboardPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="lg:col-span-2">
+            <div className="-mt-1 mb-1 flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-widest text-ink-400">Total outgoings</div>
+              <InfoTip label="About total outgoings">
+                <b className="text-white">Everyday:</b> food, shopping, travel and everything else.
+                <br />
+                <b className="text-white">Bills:</b> rent, utilities, EMIs.
+                <br />
+                <b className="text-white">Investments and savings</b> are money you keep, not expenses.
+                <br />
+                Transfers between your own accounts aren't counted.
+              </InfoTip>
+            </div>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-widest text-ink-400">Total outgoings</div>
-                <div className="num mt-1 text-4xl font-bold" data-testid="total-outgoings">
+                <div className="num text-4xl font-bold" data-testid="total-outgoings">
                   <Money paise={out.totalPaise} />
                 </div>
               </div>
               {hasBudget && budgetTotal > 0 && (
                 <div className="sm:text-right">
-                  <div className="text-xs text-ink-400">Discretionary vs allowance</div>
+                  <div className="text-xs text-ink-400">Budget spent vs allowance</div>
                   <div className="num text-lg font-semibold">
-                    <span className={out.discretionaryPaise > budgetTotal * 100 ? "text-coral" : "text-lime"}>{formatINR(out.discretionaryPaise)}</span>
+                    <span className={budgetSpent > budgetTotal * 100 ? "text-coral" : "text-lime"}>{formatINR(budgetSpent, { decimals: "never" })}</span>
                     <span className="text-ink-400"> / {formatINR(Math.round(budgetTotal * 100), { decimals: "never" })}</span>
                   </div>
                 </div>
               )}
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Split label="Everyday spending" paise={out.discretionaryPaise} dot="bg-lime" note="counts against daily budget" testId="out-discretionary" />
-              <Split label="Bills & savings" paise={out.commitmentsPaise} dot="bg-sky" note="reserved up front" />
-              <Split label="Investments" paise={out.investmentsPaise} dot="bg-violet" note="not an expense" />
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Split label="Everyday" paise={out.everydayPaise} dot="bg-lime" testId="out-discretionary" />
+              <Split label="Bills" paise={out.billsPaise} dot="bg-sky" testId="out-bills" />
+              <Split label="Investments" paise={out.investmentsPaise} dot="bg-violet" testId="out-investments" />
+              <Split label="Savings" paise={out.savingsPaise} dot="bg-amber" />
             </div>
             <p className="mt-3 text-xs text-ink-400">
               Excluded: <Money paise={out.transfersExcludedPaise} /> own-account transfers. Money in: <Money paise={out.incomePaise} />.
@@ -103,8 +117,10 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <h2 className="mb-1 font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative spending"}</h2>
-            <p className="mb-3 text-xs text-ink-400">{hasBudget ? "Below the dashed line = on track" : "Set an income to compare against a budget"}</p>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative spending"}</h2>
+              <InfoTip label="About spend vs budget">{hasBudget ? "Below the dashed line = on track." : "Set an income in Settings to compare against a budget."}</InfoTip>
+            </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>
             ) : (
@@ -125,8 +141,10 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <h2 className="mb-1 font-semibold">Daily spending</h2>
-            <p className="mb-3 text-xs text-ink-400">Each bar is one day's everyday spending</p>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-semibold">Daily spending</h2>
+              <InfoTip label="About daily spending">Each bar is one day's everyday spending.</InfoTip>
+            </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>
             ) : (
@@ -145,9 +163,12 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <h2 className="mb-3 font-semibold">By category</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-semibold">Expenses by category</h2>
+              <InfoTip label="About expenses by category">Investments and savings aren't expenses, so they're not here.</InfoTip>
+            </div>
             {cats.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-400">No everyday spending in this period.</p>
+              <p className="py-6 text-center text-sm text-ink-400">No expenses in this period.</p>
             ) : (
               <div className="space-y-3" data-testid="category-breakdown">
                 {cats.map((c) => (
@@ -159,7 +180,7 @@ export default function DashboardPage() {
                       </span>
                       <span className="num">
                         {formatINR(c.amountPaise)}
-                        <span className="ml-2 inline-block w-9 text-right text-xs text-ink-400">{Math.round((c.amountPaise / Math.max(1, out.discretionaryPaise)) * 100)}%</span>
+                        <span className="ml-2 inline-block w-9 text-right text-xs text-ink-400">{Math.round((c.amountPaise / Math.max(1, catTotal)) * 100)}%</span>
                       </span>
                     </div>
                     <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
@@ -172,10 +193,12 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <h2 className="mb-1 font-semibold">Bills & savings · {formatMonth(mk)}</h2>
-            <p className="mb-3 text-xs text-ink-400">Reserved before your daily budget. Tap to mark paid without a matching transaction.</p>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-semibold">Planned payments · {formatMonth(mk)}</h2>
+              <InfoTip label="About planned payments">Bills, investments and savings you planned for. Tap ✓ to mark one paid without a matching transaction.</InfoTip>
+            </div>
             {statuses.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-400">No fixed commitments set.</p>
+              <p className="py-6 text-center text-sm text-ink-400">No planned payments. Add them in Settings → Budget.</p>
             ) : (
               <div className="space-y-1" data-testid="upcoming-bills">
                 {statuses.map((s) => {
@@ -185,7 +208,7 @@ export default function DashboardPage() {
                   return (
                     <div key={s.commitment.id} className="flex items-center justify-between gap-2 rounded-xl px-1 py-2 text-sm">
                       <span className={cx("min-w-0 truncate", s.state === "paid" && "text-ink-400 line-through")}>
-                        {s.commitment.kind === "savings" ? "🏦" : "🧾"} {s.commitment.name}
+                        {tagEmoji(s.commitment.tag, commitmentCategory(s.commitment))} {s.commitment.name}
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
                         <Pill tone={tone}>{label}</Pill>
@@ -212,7 +235,7 @@ export default function DashboardPage() {
   );
 }
 
-function Split({ label, paise, dot, note, testId }: { label: string; paise: number; dot: string; note: string; testId?: string }) {
+function Split({ label, paise, dot, testId }: { label: string; paise: number; dot: string; testId?: string }) {
   return (
     <div className="rounded-2xl bg-white/[0.03] p-3">
       <div className="flex items-center gap-2 text-xs text-ink-400">
@@ -222,7 +245,6 @@ function Split({ label, paise, dot, note, testId }: { label: string; paise: numb
       <div className="num mt-1 text-lg font-semibold" data-testid={testId}>
         <Money paise={paise} />
       </div>
-      <div className="text-[11px] text-ink-400">{note}</div>
     </div>
   );
 }

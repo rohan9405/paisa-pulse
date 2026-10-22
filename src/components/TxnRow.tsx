@@ -15,7 +15,11 @@ export function TxnRow({ t, onClick, commitmentName }: { t: Transaction; onClick
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold">{t.merchant}</span>
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-400">
-          <span className="truncate">{t.category}</span>
+          <span className="truncate">
+            {t.category}
+            {t.tag ? ` · ${t.tag}` : ""}
+          </span>
+          {t.recurring && <span aria-label="Repeats monthly">🔁</span>}
           {t.kind !== "expense" && <Pill tone={t.kind === "commitment" ? "sky" : t.kind === "investment" ? "violet" : t.kind === "refund" || t.kind === "income" ? "lime" : "default"}>{commitmentName ?? KIND_LABEL[t.kind]}</Pill>}
           {t.needsReview && <Pill tone="amber">review</Pill>}
           {t.kind === "expense" && t.category === "Other" && !t.needsReview && <Pill tone="amber">Tag?</Pill>}

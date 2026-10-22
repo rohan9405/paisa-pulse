@@ -74,9 +74,9 @@ describe("ICICI", () => {
 });
 
 describe("ICICI, real messages", () => {
-  it("UPI Lite top-up counts as a Bills & Utilities expense", () => {
+  it("UPI Lite top-up counts as an everyday expense (not a set-aside bill)", () => {
     const c = smsToCandidate(sms("JD-ICICIT-S", "UPI LITE top-up amounting to Rs 1850.00 is successful. Your ref no. is 512345678901-ICICI Bank."), rules)!;
-    expect(c).toMatchObject({ amountPaise: 1_850_00, direction: "out", kind: "expense", category: "Bills & Utilities", merchant: "UPI Lite top-up", method: "upi", reference: "512345678901" });
+    expect(c).toMatchObject({ amountPaise: 1_850_00, direction: "out", kind: "expense", category: "Other", tag: "UPI Lite", merchant: "UPI Lite top-up", method: "upi", reference: "512345678901" });
   });
 
   it("money back from a merchant is a refund, with a clean name", () => {

@@ -8,7 +8,7 @@ import { useAppData, useStore } from "@/data/store";
 import { addManualTxn } from "@/data/repo";
 import { AmountInput, Field, Sheet, Toast, cx } from "./ui";
 
-const QUICK_CATS = ["Food & Dining", "Groceries", "Transport", "Shopping", "Entertainment", "Bills & Utilities", "Health", "Other"];
+const QUICK_CATS = ["Food & Dining", "Groceries", "Transport", "Shopping", "Entertainment", "Bills", "Health", "Other"];
 const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "upi", label: "UPI" },
   { value: "card", label: "Card" },

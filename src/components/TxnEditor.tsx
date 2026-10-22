@@ -1,34 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { planForDate } from "@/lib/budget";
-import { CATEGORIES, categoryEmoji } from "@/lib/categorize";
+import { commitmentCategory, matchCommitment, modeOf, planForDate, setAsideOf } from "@/lib/budget";
+import { CATEGORIES, TAGS, categoryEmoji, outflowKind } from "@/lib/categorize";
 import { formatDay } from "@/lib/dates";
-import { commitmentCandidates, refundCandidates } from "@/lib/match";
+import { refundCandidates } from "@/lib/match";
 import { formatINR, paiseToRupeeInput, rupeesInputToPaise } from "@/lib/money";
 import type { Transaction, TxnKind } from "@/lib/types";
-import { correctCategory, deleteTxn, updateTxn } from "@/data/repo";
+import { applyCategory, deleteTxn, setRecurringFromTxn, updateTxn } from "@/data/repo";
 import { useAppData, useStore } from "@/data/store";
 import { providerName } from "@/data/providers/registry";
 import { AmountInput, Field, Pill, Sheet, cx } from "./ui";
 
 export const KIND_LABEL: Record<TxnKind, string> = {
   expense: "Expense",
-  commitment: "Bill / savings",
+  commitment: "Planned",
   investment: "Investment",
   transfer: "Own transfer",
   refund: "Refund",
   income: "Income",
 };
 
-export const KIND_HELP: Record<TxnKind, string> = {
-  expense: "Counts against your daily budget.",
-  commitment: "Pays a reserved bill or savings target — already set aside, not deducted again.",
-  investment: "Money invested outside your savings targets. Shown in outgoings, not as spending.",
-  transfer: "Between your own accounts. Ignored everywhere.",
-  refund: "Money back. Link it to the original expense to restore budget.",
-  income: "Money in. Doesn't change the daily budget.",
+type Flow = "out" | "transfer" | "refund" | "income";
+const FLOW_LABEL: Record<Flow, string> = { out: "Money out", transfer: "Own transfer", refund: "Refund", income: "Income" };
+const FLOW_HELP: Record<Flow, string> = {
+  out: "Spending, a bill or an investment: the category decides which.",
+  transfer: "Between your own accounts, or paying your credit card bill. Ignored everywhere.",
+  refund: "Money back. Link it to the original payment to restore budget.",
+  income: "Money in, e.g. salary or dividends. Doesn't change the daily budget.",
 };
+const flowOf = (k: TxnKind): Flow => (k === "transfer" ? "transfer" : k === "refund" ? "refund" : k === "income" ? "income" : "out");
 
 export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: () => void }) {
   const { db, today } = useStore();
@@ -37,8 +38,10 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
   const [date, setDate] = useState("");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("");
+  const [tag, setTag] = useState("");
   const [remember, setRemember] = useState(false);
-  const [kind, setKind] = useState<TxnKind>("expense");
+  const [recurring, setRecurring] = useState(false);
+  const [flow, setFlow] = useState<Flow>("out");
   const [commitmentId, setCommitmentId] = useState("");
   const [refundOf, setRefundOf] = useState("");
   const [note, setNote] = useState("");
@@ -51,9 +54,11 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     setDate(txn.date);
     setMerchant(txn.merchant);
     setCategory(txn.category);
+    setTag(txn.tag ?? "");
     setRemember(false);
-    setKind(txn.kind);
-    setCommitmentId(txn.commitmentId ?? "");
+    setRecurring(!!txn.recurring);
+    setFlow(flowOf(txn.kind));
+    setCommitmentId(txn.kind === "commitment" ? (txn.commitmentId ?? "") : "");
     setRefundOf(txn.refundOf ?? "");
     setNote(txn.note ?? "");
     setConfirmDelete(false);
@@ -63,11 +68,16 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
   const plans = data?.plans ?? [];
   const txns = data?.txns ?? [];
   const draft = useMemo<Transaction | null>(
-    () => (txn ? { ...txn, date: date || txn.date, merchant, amountPaise: rupeesInputToPaise(amount) ?? txn.amountPaise } : null),
-    [txn, date, merchant, amount],
+    () => (txn ? { ...txn, date: date || txn.date, merchant, category, tag: tag || undefined, commitmentId: undefined, amountPaise: rupeesInputToPaise(amount) ?? txn.amountPaise } : null),
+    [txn, date, merchant, amount, category, tag],
   );
-  const commitmentOpts = useMemo(() => (draft ? planForDate(plans, draft.date)?.commitments ?? [] : []), [draft, plans]);
-  const commitSuggest = useMemo(() => (draft ? commitmentCandidates(draft, plans, txns) : []), [draft, plans, txns]);
+  const plan = useMemo(() => (draft ? planForDate(plans, draft.date) : null), [draft, plans]);
+  // Planned lines this payment could belong to (planned mode, set-aside category).
+  const lineOpts = useMemo(
+    () => (plan && modeOf(plan) === "planned" && setAsideOf(plan).includes(category) ? plan.commitments.filter((c) => commitmentCategory(c) === category) : []),
+    [plan, category],
+  );
+  const autoLine = useMemo(() => (draft && lineOpts.length ? matchCommitment(draft, plan) : null), [draft, plan, lineOpts]);
   const refundOpts = useMemo(() => {
     if (!draft) return [];
     const strong = refundCandidates(draft, txns).map((c) => c.expense);
@@ -85,7 +95,8 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     const p = rupeesInputToPaise(amount);
     if (!p) return setError("Enter an amount above ₹0");
     if (!date || date > today) return setError("Pick a date up to today");
-    if (kind === "commitment" && !commitmentId) return setError("Choose which bill or savings target this pays");
+    const kind: TxnKind = flow === "out" ? (commitmentId && commitmentId !== "none" ? "commitment" : outflowKind(category) === "transfer" ? "transfer" : outflowKind(category)) : flow;
+    const cat = flow === "transfer" ? "Transfers" : flow === "refund" ? "Refunds" : flow === "income" && category !== "Income" ? "Income" : category;
     const patch: Partial<Transaction> = {
       amountPaise: p,
       date,
@@ -98,7 +109,9 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     if (kind === "refund" && !refundOf) Object.assign(patch, { needsReview: true, reviewReason: "No original expense linked" });
     if (kind !== "refund" && txn.needsReview) Object.assign(patch, { needsReview: false, reviewReason: undefined });
     await updateTxn(db, txn.id, patch);
-    if (category !== txn.category || remember) await correctCategory(db, { ...txn, merchant: patch.merchant! }, category, remember);
+    const saved = { ...txn, ...patch } as Transaction;
+    if (cat !== txn.category || (tag || undefined) !== txn.tag || remember) await applyCategory(db, saved, cat, flow === "refund" || flow === "transfer" ? undefined : tag, remember);
+    if (recurring !== !!txn.recurring) await setRecurringFromTxn(db, { ...saved, category: cat, tag: tag || undefined }, recurring);
     onClose();
   };
 
@@ -158,30 +171,23 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
         <div>
           <span className="label">Type</span>
           <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(KIND_LABEL) as TxnKind[]).map((k) => (
-              <button key={k} className={cx("chip", kind === k && "chip-on")} onClick={() => setKind(k)}>
-                {KIND_LABEL[k]}
+            {(Object.keys(FLOW_LABEL) as Flow[]).map((f) => (
+              <button
+                key={f}
+                className={cx("chip", flow === f && "chip-on")}
+                onClick={() => {
+                  setFlow(f);
+                  if (f === "income" && category !== "Income") (setCategory("Income"), setTag(""));
+                  if (f === "out" && ["Income", "Refunds", "Transfers"].includes(category)) (setCategory("Other"), setTag(""));
+                }}
+              >
+                {FLOW_LABEL[f]}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-ink-400">{KIND_HELP[kind]}</p>
+          <p className="mt-1.5 text-xs text-ink-400">{FLOW_HELP[flow]}</p>
         </div>
-
-        {kind === "commitment" && (
-          <Field label="Pays which reservation?" hint={commitSuggest[0] ? `Suggested: ${commitSuggest[0].commitment.name} (${commitSuggest[0].reason})` : undefined}>
-            <select className="input" value={commitmentId} onChange={(e) => setCommitmentId(e.target.value)} data-testid="txn-commitment">
-              <option value="">Choose…</option>
-              {commitmentOpts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {formatINR(c.amountPaise)} · due {c.dueDay}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        {kind === "commitment" && commitmentOpts.length === 0 && <p className="text-xs text-amber">No bills or savings targets in your budget yet — add them in Settings.</p>}
-
-        {kind === "refund" && (
+        {flow === "refund" && (
           <Field label="Refund for which expense?" hint="Linked refunds restore budget on the original expense's day. Unlinked refunds stay flagged.">
             <select className="input" value={refundOf} onChange={(e) => setRefundOf(e.target.value)}>
               <option value="">Not linked (flag for review)</option>
@@ -195,19 +201,59 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
           </Field>
         )}
 
-        <Field label="Category">
-          <select className="input" value={category} onChange={(e) => setCategory(e.target.value)} data-testid="txn-category">
-            {[...new Set([...CATEGORIES, category])].map((c) => (
-              <option key={c} value={c}>
-                {categoryEmoji(c)} {c}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <label className="flex items-center gap-2 text-sm text-ink-300">
-          <input type="checkbox" className="h-4 w-4 accent-lime" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-          Always use this category for “{merchant || "this merchant"}”
-        </label>
+        {(flow === "out" || flow === "income") && (
+          <>
+            <Field label="Category">
+              <select className="input" value={category} onChange={(e) => (setCategory(e.target.value), setTag(""), setCommitmentId(""))} data-testid="txn-category">
+                {[...new Set([...CATEGORIES.filter((c) => (flow === "income" ? c === "Income" : !["Income", "Refunds", "Transfers"].includes(c))), category])].map((c) => (
+                  <option key={c} value={c}>
+                    {categoryEmoji(c)} {c}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div>
+              <span className="label">Tag</span>
+              <div className="flex flex-wrap gap-1.5" data-testid="txn-tags">
+                {[...new Set([...(TAGS[category] ?? []), ...(tag ? [tag] : [])])].map((t) => (
+                  <button key={t} className={cx("chip", tag === t && "chip-on")} onClick={() => setTag(tag === t ? "" : t)}>
+                    {t}
+                  </button>
+                ))}
+                <input className="input min-h-[36px] w-32 rounded-full px-3 text-[13px]" placeholder="Other tag" value={(TAGS[category] ?? []).includes(tag) ? "" : tag} onChange={(e) => setTag(e.target.value)} maxLength={24} aria-label="Custom tag" />
+              </div>
+            </div>
+            {flow === "out" && lineOpts.length > 0 && (
+              <Field label="Planned line" hint={autoLine ? `Auto-matched to ${autoLine.name}. A difference from the planned amount moves that day's budget.` : "Not matched to a planned line: the full amount counts against today's budget."}>
+                <select className="input" value={commitmentId} onChange={(e) => setCommitmentId(e.target.value)} data-testid="txn-commitment">
+                  <option value="">Auto{autoLine ? ` (${autoLine.name})` : ""}</option>
+                  {lineOpts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} · {formatINR(c.amountPaise)} · due {c.dueDay}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <label className="flex items-center gap-2 text-sm text-ink-300">
+              <input type="checkbox" className="h-4 w-4 accent-lime" checked={remember} onChange={(e) => setRemember(e.target.checked)} data-testid="txn-remember" />
+              <span className="min-w-0">
+                Always use this for{" "}
+                {txn.payee ? <span className="num text-white">{txn.payee}</span> : <>“{merchant || "this merchant"}”</>}
+                <span className="block text-xs text-ink-400">Also updates your past payments {txn.payee ? "to this UPI ID" : "with this name"}.</span>
+              </span>
+            </label>
+          </>
+        )}
+        {flow === "out" && (
+          <label className="flex items-center gap-2 text-sm text-ink-300">
+            <input type="checkbox" className="h-4 w-4 accent-lime" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} data-testid="txn-recurring" />
+            <span>
+              Repeats every month
+              <span className="block text-xs text-ink-400">Shows up in “Coming up” before it's due.</span>
+            </span>
+          </label>
+        )}
 
         <Field label="Note">
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={140} />

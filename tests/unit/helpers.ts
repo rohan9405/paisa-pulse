@@ -17,7 +17,7 @@ export function txn(p: Partial<Transaction> & Pick<Transaction, "date" | "amount
 }
 
 export function plan(p: Partial<BudgetPlan> & { incomePaise: number | null }): BudgetPlan {
-  return { id: p.id ?? "plan1", effectiveFrom: p.effectiveFrom ?? "2000-01-01", commitments: p.commitments ?? [], createdAt: p.createdAt ?? 0, incomePaise: p.incomePaise };
+  return { ...p, id: p.id ?? "plan1", effectiveFrom: p.effectiveFrom ?? "2000-01-01", commitments: p.commitments ?? [], createdAt: p.createdAt ?? 0, incomePaise: p.incomePaise };
 }
 
 export function commitment(p: Partial<Commitment> & Pick<Commitment, "id" | "amountPaise">): Commitment {

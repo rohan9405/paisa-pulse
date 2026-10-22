@@ -96,7 +96,7 @@ describe("SMS sync", () => {
     expect(await syncSms(db)).toBe(1); // only the missed top-up is new
     const all = await db.txns.toArray();
     expect(all).toHaveLength(3);
-    expect(all.find((t) => t.merchant === "UPI Lite top-up")).toMatchObject({ kind: "expense", category: "Bills & Utilities", amountPaise: 1_850_00 });
+    expect(all.find((t) => t.merchant === "UPI Lite top-up")).toMatchObject({ kind: "expense", category: "Other", tag: "UPI Lite", amountPaise: 1_850_00 });
     expect(all.find((t) => t.id === my.id)).toMatchObject({ kind: "refund", category: "Refunds", merchant: "Myntra" });
     expect(all.find((t) => t.id === sw.id)?.category).toBe("Groceries");
     expect(all.find((t) => t.merchant === "Zomato")).toBeUndefined();

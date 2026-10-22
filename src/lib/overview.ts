@@ -3,7 +3,7 @@
  * this week's days, the month calendar, your usual spend and one insight.
  * Pure functions over the ledger and transactions.
  */
-import { type Ledger, allocationForDay, categoryBreakdown } from "./budget";
+import { type Ledger, categoryBreakdown } from "./budget";
 import { type DateKey, addDays, daysInMonth, diffDays, eachDay, endOfMonth, parseKey, startOfMonth, startOfWeek } from "./dates";
 import type { BudgetPlan, Transaction } from "./types";
 
@@ -89,9 +89,9 @@ export function monthCalendar(ledger: Ledger, day: DateKey): { blanks: number; d
   return { blanks, days };
 }
 
-/** Tomorrow's base allowance from the plan in force tomorrow. */
-export function tomorrowAllocation(plans: BudgetPlan[], today: DateKey): number {
-  return allocationForDay(plans, addDays(today, 1));
+/** Tomorrow's base allowance (in actual mode, assuming nothing else is set aside before then). */
+export function tomorrowAllocation(ledger: Ledger): number {
+  return ledger.nextAllocationPaise;
 }
 
 export interface Insight {
@@ -106,8 +106,9 @@ const MIN_DIFF = 300_00; // ₹300: smaller swings aren't worth a nudge
  * rose the most, or, failing that, a note if overall spending is well below usual.
  */
 export function weeklyInsight(txns: Transaction[], plans: BudgetPlan[], today: DateKey): Insight | null {
-  const week = categoryBreakdown(txns, plans, addDays(today, -6), today);
-  const before = categoryBreakdown(txns, plans, addDays(today, -34), addDays(today, -7));
+  // Everyday spending only: rent day shouldn't read as "Bills up 900%".
+  const week = categoryBreakdown(txns, plans, addDays(today, -6), today, { exclude: ["Bills"] });
+  const before = categoryBreakdown(txns, plans, addDays(today, -34), addDays(today, -7), { exclude: ["Bills"] });
   if (!before.length) return null;
   const usual = new Map(before.map((c) => [c.category, c.amountPaise / 4]));
 

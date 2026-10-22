@@ -8,6 +8,7 @@ import { formatINR } from "@/lib/money";
 import { VIBE_COPY, level, recoveryPlan, vibe } from "@/lib/insights";
 import { monthPace, usualDailySpend, weeklyInsight } from "@/lib/overview";
 import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
+import { tagEmoji } from "@/lib/categorize";
 import { useBudget } from "@/data/useBudget";
 import { useQuickAdd } from "@/components/AppShell";
 import { InsightCard, PaceCard, SyncPill } from "@/components/Overview";
@@ -32,7 +33,7 @@ export default function TodayPage() {
     [data, today],
   );
   if (!data || !derived) return null;
-  const { ledger, pool, statuses } = derived;
+  const { ledger, pool, upcoming } = derived;
   const row = ledger.todayRow;
   const hour = istHour();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -40,7 +41,6 @@ export default function TodayPage() {
   const sms = data.connections.find((c) => c.providerId === "sms");
   const newFromSms = data.txns.filter((t) => t.source.providerId === "sms" && Date.now() - t.source.importedAt < 24 * 3600_000).length;
   const reviewCount = data.txns.filter((t) => t.needsReview).length;
-  const dueSoon = statuses.filter((s) => s.state !== "paid" && diffDays(today, s.dueDate) <= 7);
   const commitmentName = (id?: string) => derived.plan?.commitments.find((c) => c.id === id)?.name;
   const rec = ledger.hasBudget ? recoveryPlan(ledger, today) : null;
   const pace = monthPace(ledger, today);
@@ -49,7 +49,7 @@ export default function TodayPage() {
   const lv = level(ledger);
   // Tracking mode compares with the same stretch of last month.
   const lastMonthStart = startOfMonth(addDays(startOfMonth(today), -1));
-  const lastMonthByNow = ledger.hasBudget ? undefined : outgoingsInRange(data.txns, data.plans, lastMonthStart, addDays(lastMonthStart, pace.dayOfMonth - 1)).discretionaryPaise;
+  const lastMonthByNow = ledger.hasBudget ? undefined : outgoingsInRange(data.txns, lastMonthStart, addDays(lastMonthStart, pace.dayOfMonth - 1)).everydayPaise;
 
   return (
     <div className="md:grid md:grid-cols-[1.1fr_1fr] md:gap-6">
@@ -65,14 +65,14 @@ export default function TodayPage() {
         {!ledger.started ? (
           <EmptyState emoji="⏳" title={`Tracking starts ${formatDay(data.profile!.trackingStart, { weekday: true })}`} body="Your daily allowance starts accruing on that date." />
         ) : ledger.hasBudget ? (
-          <HeroBudget available={ledger.availablePaise} base={row.allocationPaise} carried={row.carriedInPaise} spent={row.spentPaise} line={VIBE_COPY[vibe(ledger)].line} />
+          <HeroBudget available={ledger.availablePaise} base={row.allocationPaise} carried={row.carriedInPaise} spent={row.spentPaise} adjust={row.adjustPaise} line={VIBE_COPY[vibe(ledger)].line} />
         ) : (
-          <HeroTracking spent={row.spentPaise} usual={usualDailySpend(ledger, today)} week={outgoingsInRange(data.txns, data.plans, startOfWeek(today), today).discretionaryPaise} />
+          <HeroTracking spent={row.spentPaise} usual={usualDailySpend(ledger, today)} week={outgoingsInRange(data.txns, startOfWeek(today), today).everydayPaise} />
         )}
 
         {pool.shortfallPaise > 0 && (
           <Card className="mt-3 border-coral/30 bg-coral/[0.07] text-sm">
-            <b className="text-coral">Bills & savings exceed income</b> by <Money paise={pool.shortfallPaise} />. Daily allowance is ₹0 until you{" "}
+            <b className="text-coral">Set-aside payments exceed income</b> by <Money paise={pool.shortfallPaise} />. Daily allowance is ₹0 until you{" "}
             <Link href="/settings" className="underline">
               adjust your budget
             </Link>
@@ -132,17 +132,20 @@ export default function TodayPage() {
           </Card>
         )}
 
-        {(dueSoon.length > 0 || showBalances) && (
+        {(upcoming.length > 0 || showBalances) && (
           <>
-            <SectionTitle>{dueSoon.length > 0 ? "Coming up" : "Balances"}</SectionTitle>
+            <SectionTitle>{upcoming.length > 0 ? "Coming up" : "Balances"}</SectionTitle>
             <Card className="divide-y divide-white/5 py-1" data-testid="coming-up">
-              {dueSoon.map((s) => (
-                <div key={s.commitment.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+              {upcoming.map((u) => (
+                <div key={u.key} className="flex items-center justify-between gap-3 py-2.5 text-sm" data-testid="due-item">
                   <span className="min-w-0 truncate">
-                    {s.commitment.kind === "savings" ? "🏦" : "🧾"} {s.commitment.name}
-                    <span className={cx("ml-2 text-xs", s.state === "overdue" ? "text-coral" : "text-ink-400")}>{s.state === "overdue" ? "overdue" : s.dueDate === today ? "today" : formatDay(s.dueDate, { weekday: true })}</span>
+                    {tagEmoji(u.tag, u.category)} {u.name}
+                    {u.source === "mandate" && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-ink-400">autopay</span>}
+                    <span className={cx("ml-2 text-xs", u.state === "overdue" ? "text-coral" : u.state === "due_today" ? "text-amber" : "text-ink-400")}>
+                      {u.state === "overdue" ? "overdue" : u.state === "due_today" ? "due today" : diffDays(today, u.dueDate) === 1 ? "tomorrow" : formatDay(u.dueDate, { weekday: true })}
+                    </span>
                   </span>
-                  <Money paise={s.commitment.amountPaise - s.paidPaise} className="num text-ink-300" />
+                  <Money paise={u.amountPaise} decimals="never" className="num text-ink-300" />
                 </div>
               ))}
               {showBalances && <BalanceRows accounts={data.accounts} />}
@@ -176,7 +179,7 @@ export default function TodayPage() {
   );
 }
 
-function HeroBudget({ available, base, carried, spent, line }: { available: number; base: number; carried: number; spent: number; line: string }) {
+function HeroBudget({ available, base, carried, spent, adjust, line }: { available: number; base: number; carried: number; spent: number; adjust: number; line: string }) {
   const over = available < 0;
   const startOfDay = Math.max(1, base + carried);
   return (
@@ -188,6 +191,12 @@ function HeroBudget({ available, base, carried, spent, line }: { available: numb
       </div>
       <p className="num mt-3 text-xs text-ink-400" data-testid="today-breakdown">
         <Money paise={base} decimals="never" /> base · <Money paise={carried} decimals="never" sign /> carried · <span data-testid="spent-today"><Money paise={spent} decimals="never" /></span> spent
+        {adjust !== 0 && (
+          <>
+            {" "}
+            · <Money paise={adjust} decimals="never" sign /> {adjust > 0 ? "bills under plan" : "set aside over pool"}
+          </>
+        )}
       </p>
       <div className="mx-auto mt-3 max-w-xs">
         <ProgressBar value={Math.min(1, spent / startOfDay)} tone={over ? "coral" : spent / startOfDay > 0.75 ? "amber" : "lime"} />

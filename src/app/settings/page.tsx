@@ -2,11 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { planForDate, poolSummary } from "@/lib/budget";
-import { CATEGORIES } from "@/lib/categorize";
+import { modeOf, planForDate, poolSummary, setAsideOf } from "@/lib/budget";
+import { CATEGORIES, DEFAULT_SET_ASIDE, SET_ASIDE_OPTIONS, TAGS, categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
-import { DEFAULT_PREFS, type Prefs, type Profile, type TxnKind } from "@/lib/types";
+import { DEFAULT_PREFS, type Prefs, type Profile, type Recurring, type SetAsideMode, type TxnKind } from "@/lib/types";
 import { deleteDatabase } from "@/data/db";
 import { PROVIDERS } from "@/data/providers/registry";
 import { smsBridge, syncSms } from "@/data/providers/sms";
@@ -57,8 +57,16 @@ export default function SettingsPage() {
 
       {tab === "budget" && (
         <Group>
-          <Section icon="💰" title="Monthly budget" summary={pool.hasBudget ? `${formatINR(pool.poolPaise)}/mo to spend` : "Tracking only"} defaultOpen>
+          <Section
+            icon="💰"
+            title="Budget mode"
+            summary={!pool.hasBudget ? "Tracking only" : pool.mode === "actual" ? "Set aside actual payments" : `${formatINR(pool.poolPaise)}/mo to spend`}
+            defaultOpen
+          >
             <BudgetEditor key={derived.plan?.id ?? "none"} />
+          </Section>
+          <Section icon="🔁" title="Recurring payments" summary={recurringSummary(data.recurring)}>
+            <RecurringList />
           </Section>
           <Section icon="📅" title="Tracking start" summary={`Since ${formatDay(profile.trackingStart, { year: true })}`}>
             <TrackingEditor
@@ -82,7 +90,7 @@ export default function SettingsPage() {
                       <span>
                         From {formatDay(p.effectiveFrom, { year: true })} {active && <Pill tone="lime">current</Pill>} {p.effectiveFrom > today && <Pill tone="sky">scheduled</Pill>}
                       </span>
-                      <span className="num text-ink-300">{s.hasBudget ? `${formatINR(s.poolPaise)}/mo pool` : "tracking only"}</span>
+                      <span className="num text-ink-300">{!s.hasBudget ? "tracking only" : s.mode === "actual" ? "actual payments" : `${formatINR(s.poolPaise)}/mo pool`}</span>
                     </div>
                   );
                 })}
@@ -314,6 +322,8 @@ function BudgetEditor() {
   const [editing, setEditing] = useState(false);
   const [income, setIncome] = useState("");
   const [trackOnly, setTrackOnly] = useState(false);
+  const [setAside, setSetAside] = useState<string[]>(DEFAULT_SET_ASIDE);
+  const [saMode, setSaMode] = useState<SetAsideMode>("planned");
   const [drafts, setDrafts] = useState<CommitmentDraft[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [from, setFrom] = useState(today);
@@ -323,6 +333,8 @@ function BudgetEditor() {
     if (!editing) return;
     setIncome(plan?.incomePaise ? paiseToRupeeInput(plan.incomePaise) : "");
     setTrackOnly(!plan?.incomePaise);
+    setSetAside(setAsideOf(plan));
+    setSaMode(modeOf(plan));
     setDrafts((plan?.commitments ?? []).map(draftFromCommitment));
     setFrom(today);
     setErr(null);
@@ -331,8 +343,8 @@ function BudgetEditor() {
 
   const preview = useMemo(() => {
     const { commitments } = validateDrafts(drafts);
-    return poolSummary({ id: "", effectiveFrom: from, incomePaise: trackOnly ? null : rupeesInputToPaise(income), commitments, createdAt: 0 });
-  }, [drafts, income, trackOnly, from]);
+    return poolSummary({ id: "", effectiveFrom: from, incomePaise: trackOnly ? null : rupeesInputToPaise(income), commitments, setAside, setAsideMode: saMode, createdAt: 0 });
+  }, [drafts, income, trackOnly, from, setAside, saMode]);
 
   if (!data || !derived) return null;
   const pool = derived.pool;
@@ -345,7 +357,7 @@ function BudgetEditor() {
     setErrors(errors);
     if (Object.keys(errors).length) return;
     if (!from || from < data.profile!.trackingStart) return setErr(`Effective date must be on or after tracking start (${formatDay(data.profile!.trackingStart, { year: true })}).`);
-    await addPlanVersion(db, { effectiveFrom: from, incomePaise: inc, commitments });
+    await addPlanVersion(db, { effectiveFrom: from, incomePaise: inc, commitments, setAside, setAsideMode: saMode });
     setEditing(false);
   };
 
@@ -353,21 +365,29 @@ function BudgetEditor() {
     return (
       <Card className="space-y-2 text-sm" data-testid="budget-summary">
         <div className="flex items-center justify-between">
-          <span className="text-ink-400">{pool.hasBudget ? "Current plan" : "No budget set"}</span>
+          <span className="text-ink-400">{!pool.hasBudget ? "Tracking only" : pool.mode === "actual" ? "Set-aside budget · actual payments" : "Set-aside budget · planned amounts"}</span>
           <button className="btn-ghost min-h-[36px] text-xs" onClick={() => setEditing(true)} data-testid="edit-budget">
-            Change budget
+            Change
           </button>
         </div>
         {pool.hasBudget ? (
           <>
             <Line label="Take-home" value={formatINR(pool.incomePaise)} />
-            <Line label="Fixed bills" value={`− ${formatINR(pool.billsPaise)}`} />
-            <Line label="Savings & SIPs" value={`− ${formatINR(pool.savingsPaise)}`} />
-            <Line label="Spending pool" value={formatINR(pool.poolPaise)} strong />
-            {pool.shortfallPaise > 0 && <p className="text-coral">Commitments exceed income by {formatINR(pool.shortfallPaise)} — daily allowance is ₹0.</p>}
+            <p className="text-xs text-ink-400">Set aside first: {pool.setAside.join(", ") || "nothing"}</p>
+            {pool.mode === "planned" ? (
+              <>
+                {pool.setAside.includes("Bills") && <Line label="Bills (planned)" value={`− ${formatINR(pool.billsPaise)}`} />}
+                {pool.setAside.includes("Investments") && <Line label="Investments (planned)" value={`− ${formatINR(pool.investmentsPaise)}`} />}
+                {pool.setAside.includes("Savings") && <Line label="Savings (planned)" value={`− ${formatINR(pool.savingsPaise)}`} />}
+                <Line label="Spending pool" value={formatINR(pool.poolPaise)} strong />
+              </>
+            ) : (
+              <p className="text-xs text-ink-400">Each set-aside payment comes out of the month's pool when it arrives; the remaining days are recalculated.</p>
+            )}
+            {pool.shortfallPaise > 0 && <p className="text-coral">Planned payments exceed income by {formatINR(pool.shortfallPaise)}, so the daily allowance is ₹0.</p>}
           </>
         ) : (
-          <p className="text-ink-400">Tracking only — no budget. Add your income to get a daily allowance.</p>
+          <p className="text-ink-400">No daily budget. Spending is tracked and categorised. Add your income to get a daily allowance.</p>
         )}
       </Card>
     );
@@ -375,28 +395,63 @@ function BudgetEditor() {
 
   return (
     <Card className="space-y-4">
-      <div className="font-semibold">Change budget</div>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" className="h-4 w-4 accent-lime" checked={trackOnly} onChange={(e) => setTrackOnly(e.target.checked)} />
-        Tracking only (no daily budget)
-      </label>
-      {!trackOnly && (
-        <Field label="Monthly take-home income">
-          <AmountInput value={income} onChange={setIncome} aria-label="Monthly income" data-testid="settings-income" />
-        </Field>
+      <Segmented
+        className="w-full"
+        value={trackOnly ? "track" : "budget"}
+        onChange={(v) => setTrackOnly(v === "track")}
+        options={[
+          { value: "budget", label: "Set-aside budget" },
+          { value: "track", label: "Tracking only" },
+        ]}
+      />
+      {trackOnly ? (
+        <p className="text-xs text-ink-400">No daily budget, just expense tracking. Bills, investments and savings are still shown separately in Stats.</p>
+      ) : (
+        <>
+          <Field label="Monthly take-home income">
+            <AmountInput value={income} onChange={setIncome} aria-label="Monthly income" data-testid="settings-income" />
+          </Field>
+          <div>
+            <span className="label">Take these off income first</span>
+            <div className="flex flex-wrap gap-1.5" data-testid="set-aside-categories">
+              {SET_ASIDE_OPTIONS.map((c) => (
+                <button key={c} className={cx("chip", setAside.includes(c) && "chip-on")} onClick={() => setSetAside((xs) => (xs.includes(c) ? xs.filter((x) => x !== c) : [...xs, c]))} aria-pressed={setAside.includes(c)}>
+                  {categoryEmoji(c)} {c}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-ink-400">Payments in these categories don't count against your daily budget. Anything not ticked comes out of the daily budget.</p>
+          </div>
+          <div>
+            <span className="label">How set-aside amounts work</span>
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="set-aside-mode">
+              {(
+                [
+                  ["planned", "Planned", "You enter expected amounts (rent ₹22,000). If the real payment differs, the difference lands in that day's budget: over at once, under at month end."],
+                  ["actual", "Actual", "Nothing to enter. Each set-aside payment comes out of the month's pool when it arrives, and the remaining days are recalculated."],
+                ] as const
+              ).map(([v, label, help]) => (
+                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
+                  <span className="font-semibold">{label}</span>
+                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
       <div>
-        <span className="label">Bills & savings</span>
+        <span className="label">{!trackOnly && saMode === "planned" ? "Planned payments" : "Regular payments (for reminders)"}</span>
         <CommitmentList drafts={drafts} onChange={setDrafts} errors={errors} />
       </div>
       <Field label="Effective from" hint="Earlier days keep the old budget. Changing a past date recalculates from then.">
         <input type="date" className="input" value={from} min={data.profile!.trackingStart} onChange={(e) => setFrom(e.target.value)} data-testid="settings-effective" />
       </Field>
-      {!trackOnly && (
+      {!trackOnly && saMode === "planned" && (
         <p className="text-sm text-ink-300">
           New pool: <Money paise={preview.poolPaise} className="font-semibold" />
           /month
-          {preview.shortfallPaise > 0 && <span className="text-coral"> · exceeds income by {formatINR(preview.shortfallPaise)}</span>}
+          {preview.shortfallPaise > 0 && <span className="text-coral"> · planned payments exceed income by {formatINR(preview.shortfallPaise)}</span>}
         </p>
       )}
       {err && <p className="text-sm text-coral">{err}</p>}
@@ -408,6 +463,46 @@ function BudgetEditor() {
           Save from {formatDay(from)}
         </button>
       </div>
+    </Card>
+  );
+}
+
+function recurringSummary(rs: Recurring[]) {
+  const active = rs.filter((r) => r.status === "active");
+  if (!active.length) return "None yet";
+  return `${active.length} · ${formatINR(active.reduce((s, r) => s + (r.frequency === "monthly" ? r.amountPaise : 0), 0), { decimals: "never" })}/month`;
+}
+
+function RecurringList() {
+  const { data, db } = useBudget();
+  if (!data || !db) return null;
+  const rs = [...data.recurring].sort((a, b) => (a.status === b.status ? a.dueDay - b.dueDay : a.status === "active" ? -1 : 1));
+  return (
+    <Card className="space-y-2 text-sm" data-testid="recurring-list">
+      {rs.length === 0 ? (
+        <p className="text-ink-400">Autopays and e-mandates show up here automatically from your bank SMS. You can also open any transaction and switch on “Repeats every month”.</p>
+      ) : (
+        rs.map((r) => (
+          <div key={r.id} className={cx("flex items-center justify-between gap-2", r.status === "revoked" && "opacity-50")}>
+            <span className="min-w-0">
+              <span className="block truncate">
+                {tagEmoji(r.tag, r.category)} {r.name}
+              </span>
+              <span className="text-xs text-ink-400">
+                {r.category}
+                {r.tag ? ` · ${r.tag}` : ""} · {r.frequency} · day {r.dueDay} · {r.source === "mandate" ? "autopay SMS" : "marked by you"}
+                {r.status === "revoked" ? " · cancelled" : ""}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <Money paise={r.amountPaise} decimals="never" className="num" />
+              <button className="text-xs text-coral" onClick={() => db.recurring.delete(r.id)} aria-label={`Remove ${r.name}`}>
+                Remove
+              </button>
+            </span>
+          </div>
+        ))
+      )}
     </Card>
   );
 }
@@ -454,54 +549,56 @@ function TrackingEditor({ profile: p, onSaved }: { profile: Profile; onSaved: (s
 function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   const { data, db } = useBudget();
   const [pattern, setPattern] = useState("");
-  const [category, setCategory] = useState("Food & Dining");
-  const [kind, setKind] = useState<"" | TxnKind>("");
+  const [category, setCategory] = useState("Bills");
+  const [tag, setTag] = useState("");
   const [showBuiltIn, setShowBuiltIn] = useState(false);
   if (!data || !db) return null;
   const user = data.rules.filter((r) => !r.builtIn).sort((a, b) => a.pattern.localeCompare(b.pattern));
   const builtIn = data.rules.filter((r) => r.builtIn);
+  const isPayee = /^[\w.\-]+@[a-z]+$/i.test(pattern.trim());
 
   const add = async () => {
-    if (!pattern.trim()) return;
-    await saveRule(db, {
-      pattern: pattern.trim().toLowerCase(),
-      category: kind === "transfer" ? "Transfers" : kind === "investment" ? "Investments" : category,
-      kind: kind || undefined,
-      priority: 10,
-    });
+    const p = pattern.trim().toLowerCase();
+    if (!p) return;
+    const kind: TxnKind | undefined = category === "Transfers" ? "transfer" : category === "Income" ? "income" : undefined;
+    await saveRule(db, { pattern: p, payee: isPayee ? p : undefined, category, tag: tag || undefined, kind, priority: 10 });
     setPattern("");
+    setTag("");
     onToast("Rule added");
   };
 
   return (
     <Card className="space-y-3">
       <p className="text-xs text-ink-400">
-        If a merchant or narration contains the text, it gets that category. Your rules beat built-ins. Use “Own transfer” for your other accounts (e.g. “sbi xx1234”).
+        Enter a UPI ID (ramesh@okaxis) to match that payee exactly, or any text in the merchant name or bank SMS. Your rules beat built-ins. Pick “Transfers” for your own accounts.
       </p>
-      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
-        <input className="input text-sm" placeholder="Contains… e.g. chai point" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Rule text" />
-        <select className="input text-sm" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Rule category" disabled={kind === "transfer" || kind === "investment"}>
-          {CATEGORIES.filter((c) => !["Income", "Refunds", "Transfers"].includes(c)).map((c) => (
+      <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_auto]">
+        <input className="input text-sm" placeholder="ramesh@okaxis or chai point" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Rule text or UPI ID" />
+        <select className="input text-sm" value={category} onChange={(e) => (setCategory(e.target.value), setTag(""))} aria-label="Rule category">
+          {CATEGORIES.filter((c) => c !== "Refunds").map((c) => (
             <option key={c}>{c}</option>
           ))}
         </select>
-        <select className="input text-sm" value={kind} onChange={(e) => setKind(e.target.value as TxnKind | "")} aria-label="Rule type">
-          <option value="">Expense</option>
-          <option value="transfer">Own transfer</option>
-          <option value="investment">Investment</option>
+        <select className="input text-sm" value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Rule tag" disabled={!TAGS[category]}>
+          <option value="">No tag</option>
+          {(TAGS[category] ?? []).map((t) => (
+            <option key={t}>{t}</option>
+          ))}
         </select>
         <button className="btn-primary" onClick={add}>
           Add
         </button>
       </div>
+      {pattern.trim() && <p className="text-xs text-ink-400">{isPayee ? "Matches payments to this UPI ID." : "Matches any transaction containing this text."}</p>}
       {user.length > 0 && (
         <div className="divide-y divide-white/5">
           {user.map((r) => (
-            <div key={r.id} className="flex items-center justify-between py-2 text-sm">
-              <span>
-                “{r.pattern}” → <b>{r.category}</b> {r.kind && <Pill>{r.kind}</Pill>}
+            <div key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <span className="min-w-0 truncate">
+                {r.payee ? <span className="num">{r.payee}</span> : <>“{r.pattern}”</>} → <b>{r.category}</b>
+                {r.tag ? ` · ${r.tag}` : ""}
               </span>
-              <button className="text-xs text-coral" onClick={() => db.rules.delete(r.id)}>
+              <button className="shrink-0 text-xs text-coral" onClick={() => db.rules.delete(r.id)}>
                 Remove
               </button>
             </div>
@@ -509,8 +606,8 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <button className="btn-ghost text-xs" onClick={async () => onToast(`Re-categorised ${await recategorizeAll(db)} expense(s)`)}>
-          Re-apply rules to existing expenses
+        <button className="btn-ghost text-xs" onClick={async () => onToast(`Re-categorised ${await recategorizeAll(db)} transaction(s)`)}>
+          Re-apply rules to existing transactions
         </button>
         <button className="btn-ghost text-xs" onClick={() => setShowBuiltIn((s) => !s)}>
           {showBuiltIn ? "Hide" : "Show"} {builtIn.length} built-in rules
@@ -521,6 +618,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
           {builtIn.map((r) => (
             <span key={r.id} className="rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] text-ink-300">
               {r.pattern} → {r.category}
+              {r.tag ? ` · ${r.tag}` : ""}
             </span>
           ))}
         </div>

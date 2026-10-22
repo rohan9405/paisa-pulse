@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { CATEGORIES } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, monthKey, relativeDayLabel, startOfMonth } from "@/lib/dates";
+import { matchCommitment, planForDate } from "@/lib/budget";
 import { commitmentCandidates, transferPairs } from "@/lib/match";
 import { formatINR } from "@/lib/money";
 import type { Transaction, TxnKind } from "@/lib/types";
@@ -70,7 +71,8 @@ function Transactions() {
     const recent = data.txns.filter((t) => t.date >= addDays(today, -62));
     const pairs = transferPairs(recent).filter((p) => !dismissed.has(p.out.id));
     const matches = recent
-      .filter((t) => t.kind === "expense" && !dismissed.has(t.id))
+      // Payments already matched to a planned line automatically need no suggestion.
+      .filter((t) => t.kind === "expense" && !dismissed.has(t.id) && !matchCommitment(t, planForDate(data.plans, t.date)))
       .map((t) => ({ t, c: commitmentCandidates(t, data.plans, data.txns)[0] }))
       .filter((x) => x.c && x.c.score >= 60);
     return { pairs, matches };

@@ -7,8 +7,7 @@ export const CATEGORIES = [
   "Shopping",
   "Entertainment",
   "Subscriptions",
-  "Bills & Utilities",
-  "Rent & Housing",
+  "Bills",
   "Health",
   "Travel",
   "Education",
@@ -30,8 +29,7 @@ export const CATEGORY_EMOJI: Record<string, string> = {
   Shopping: "🛍️",
   Entertainment: "🎬",
   Subscriptions: "📺",
-  "Bills & Utilities": "💡",
-  "Rent & Housing": "🏠",
+  Bills: "🧾",
   Health: "💊",
   Travel: "✈️",
   Education: "📚",
@@ -49,10 +47,40 @@ export function categoryEmoji(c: string): string {
   return CATEGORY_EMOJI[c] ?? "✨";
 }
 
-const R = (pattern: string, category: string, kind?: TxnKind): Omit<CategoryRule, "id"> => ({
+/** Categories that are never "expenses": money you keep. Left out of expense breakdowns. */
+export const NOT_EXPENSE = ["Investments", "Savings"];
+/** Set aside before the daily budget unless you change it in Settings. */
+export const DEFAULT_SET_ASIDE = ["Bills", "Investments", "Savings"];
+/** Categories that can be set aside. */
+export const SET_ASIDE_OPTIONS = ["Bills", "Investments", "Savings", "Subscriptions", "Education"];
+
+/** Suggested tags per category. Any text works as a tag; these are just one tap away. */
+export const TAGS: Record<string, string[]> = {
+  Bills: ["Rent", "Utility", "Phone & internet", "EMI", "Insurance", "Maintenance"],
+  Investments: ["SIP", "Stocks", "Mutual fund", "NPS / PPF"],
+  Savings: ["RD / FD", "Emergency fund"],
+  Income: ["Salary", "Dividend income", "Interest"],
+  Subscriptions: ["OTT", "Music", "Cloud"],
+};
+
+/** Tag → icon for reminders and pills. */
+export function tagEmoji(tag: string | undefined, category: string): string {
+  const t = (tag ?? "").toLowerCase();
+  if (t === "rent") return "🏠";
+  if (t === "utility") return "💡";
+  if (t === "phone & internet") return "📶";
+  if (t === "emi") return "🏦";
+  if (t === "insurance") return "🛡️";
+  if (t === "sip" || t === "mutual fund" || t === "stocks") return "📈";
+  if (t === "dividend income") return "💸";
+  return categoryEmoji(category);
+}
+
+const R = (pattern: string, category: string, kind?: TxnKind, tag?: string): Omit<CategoryRule, "id"> => ({
   pattern,
   category,
   kind,
+  tag,
   priority: 0,
   builtIn: true,
 });
@@ -65,15 +93,25 @@ export const DEFAULT_RULES: Omit<CategoryRule, "id">[] = [
   ...["amazon", "flipkart", "myntra", "ajio", "nykaa", "meesho", "tata cliq", "croma", "decathlon", "ikea"].map((p) => R(p, "Shopping")),
   ...["bookmyshow", "pvr", "inox", "steam", "playstation"].map((p) => R(p, "Entertainment")),
   ...["netflix", "spotify", "hotstar", "jiocinema", "prime video", "youtube premium", "apple.com/bill", "google play", "sonyliv", "zee5"].map((p) => R(p, "Subscriptions")),
-  ...["airtel", "jio", "vodafone", "vi prepaid", "bescom", "tata power", "adani electricity", "mahanagar gas", "act fibernet", "electricity", "broadband", "bbps"].map((p) => R(p, "Bills & Utilities")),
-  ...["rent", "nobroker", "society maintenance"].map((p) => R(p, "Rent & Housing")),
+  ...["bescom", "tata power", "adani electricity", "msedcl", "tneb", "bses", "electricity", "mahanagar gas", "indraprastha gas", "water board", "bbps"].map((p) => R(p, "Bills", undefined, "Utility")),
+  ...["airtel", "jio", "vodafone", "vi prepaid", "act fibernet", "broadband", "hathway", "tata play"].map((p) => R(p, "Bills", undefined, "Phone & internet")),
+  ...["rent", "nobroker"].map((p) => R(p, "Bills", undefined, "Rent")),
+  ...["society maintenance", "mygate", "nobrokerhood"].map((p) => R(p, "Bills", undefined, "Maintenance")),
+  ...["emi", "loan repayment", "bajaj finance", "home loan"].map((p) => R(p, "Bills", undefined, "EMI")),
+  ...["lic", "insurance premium", "hdfc life", "icici pru", "star health", "acko", "policybazaar"].map((p) => R(p, "Bills", undefined, "Insurance")),
   ...["apollo", "pharmeasy", "1mg", "netmeds", "practo", "medplus", "hospital", "clinic", "cult.fit", "cultfit"].map((p) => R(p, "Health")),
   ...["makemytrip", "goibibo", "cleartrip", "indigo", "air india", "vistara", "akasa", "oyo", "airbnb", "booking.com"].map((p) => R(p, "Travel")),
   ...["udemy", "coursera", "byju", "unacademy", "school fee", "college"].map((p) => R(p, "Education")),
   ...["urban company", "salon", "lakme"].map((p) => R(p, "Personal Care")),
-  ...["zerodha", "groww", "kuvera", "coin by zerodha", "upstox", "indmoney", "mutual fund", "sip ", "nps ", "ppf"].map((p) => R(p, "Investments", "investment")),
+  ...["sip ", "mutual fund", "bse star mf", "bse ltd", "cams", "kfintech", "kuvera", "coin by zerodha", "nach mf"].map((p) => R(p, "Investments", "investment", "SIP")),
+  ...["zerodha", "groww", "upstox", "indmoney", "indstocks", "angel one", "dhan"].map((p) => R(p, "Investments", "investment", "Stocks")),
+  ...["nps ", "ppf"].map((p) => R(p, "Investments", "investment", "NPS / PPF")),
+  ...["recurring deposit", "fixed deposit", " rd ", " fd "].map((p) => R(p, "Savings", "investment", "RD / FD")),
   ...["self transfer", "own account", "to self", "sweep"].map((p) => R(p, "Transfers", "transfer")),
-  ...["salary", "sal cr", "payroll", "interest credit", "int.pd"].map((p) => R(p, "Income", "income")),
+  ...["salary", "sal cr", "payroll"].map((p) => R(p, "Income", "income", "Salary")),
+  ...["interest credit", "int.pd", "int pd", "interest paid"].map((p) => R(p, "Income", "income", "Interest")),
+  // Dividends arrive as ACH credits, e.g. "ACH C- ITC LTD" / "ACH CR".
+  ...["dividend", "ach c-", "ach-cr", "achcr"].map((p) => R(p, "Income", "income", "Dividend income")),
 ];
 
 export function normalize(s: string): string {
@@ -83,20 +121,35 @@ export function normalize(s: string): string {
 export interface CategorizeResult {
   category: string;
   kind?: TxnKind;
+  tag?: string;
   ruleId?: string;
 }
 
-/** Highest-priority matching rule wins; ties → longest pattern (more specific). */
-export function categorize(text: string, rules: CategoryRule[]): CategorizeResult | null {
+/**
+ * A rule for this exact payee (UPI ID) wins outright. Otherwise the
+ * highest-priority text rule wins; ties → longest pattern (more specific).
+ */
+export function categorize(text: string, rules: CategoryRule[], payee?: string): CategorizeResult | null {
+  const pay = payee ? normalize(payee) : "";
+  if (pay) {
+    const byPayee = rules.filter((r) => r.payee && normalize(r.payee) === pay).sort((a, b) => b.priority - a.priority)[0];
+    if (byPayee) return { category: byPayee.category, kind: byPayee.kind, tag: byPayee.tag, ruleId: byPayee.id };
+  }
   const hay = ` ${normalize(text)} `;
   let best: CategoryRule | null = null;
   for (const r of rules) {
+    if (r.payee) continue;
     const p = normalize(r.pattern);
     if (!p) continue;
     if (!matchesPattern(hay, p)) continue;
     if (!best || r.priority > best.priority || (r.priority === best.priority && p.length > normalize(best.pattern).length)) best = r;
   }
-  return best ? { category: best.category, kind: best.kind, ruleId: best.id } : null;
+  return best ? { category: best.category, kind: best.kind, tag: best.tag, ruleId: best.id } : null;
+}
+
+/** Kind that goes with a category for money going out. */
+export function outflowKind(category: string): TxnKind {
+  return category === "Investments" || category === "Savings" ? "investment" : category === "Transfers" ? "transfer" : "expense";
 }
 
 /** Short patterns (≤4 chars like "ola", "jio") must match on word boundaries to avoid "coca-cola" → Transport. */

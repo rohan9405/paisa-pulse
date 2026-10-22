@@ -3,19 +3,30 @@ import type { Paise } from "./money";
 
 export type AppMode = "demo" | "personal";
 
-export type CommitmentKind = "bill" | "savings";
+/** Which set-aside category a planned payment belongs to: Bills, Investments or Savings. */
+export type CommitmentKind = "bill" | "investment" | "savings";
 
-/** A fixed monthly reservation taken out of income before discretionary spending. */
+/** A planned monthly payment (rent, electricity, SIP…) set aside before the daily budget. */
 export interface Commitment {
   id: string;
   name: string;
   kind: CommitmentKind;
+  /** Optional tag, e.g. Rent, Utility, SIP. Used to match payments to this plan line. */
+  tag?: string;
   amountPaise: Paise;
   /** Day of month the payment is due (1-31; clamped to month length). */
   dueDay: number;
-  /** Optional merchant/description substring used to suggest matches. */
+  /** Optional merchant/description substring, or a UPI ID, used to match payments. */
   matchHint?: string;
 }
+
+/**
+ * - planned: you enter expected amounts; when a payment differs, the difference
+ *   lands in that day's budget (over at once, under at month end).
+ * - actual: nothing is entered; each set-aside payment comes out of the month's
+ *   pool when it arrives and the remaining days are recalculated.
+ */
+export type SetAsideMode = "planned" | "actual";
 
 /**
  * A budget plan is effective from a date until the next plan's effectiveFrom.
@@ -27,6 +38,10 @@ export interface BudgetPlan {
   /** Monthly take-home income. 0 / null means "no budget, just track". */
   incomePaise: Paise | null;
   commitments: Commitment[];
+  /** Categories taken off income before the daily budget. Missing = DEFAULT_SET_ASIDE. */
+  setAside?: string[];
+  /** Missing = "planned". */
+  setAsideMode?: SetAsideMode;
   createdAt: number;
 }
 
@@ -71,8 +86,8 @@ export interface Account {
 
 /**
  * - expense: discretionary spending, deducted from the daily budget
- * - commitment: payment of a fixed bill / savings target, matched to a reservation
- * - investment: money moved into investments outside a savings reservation (not an expense)
+ * - commitment: a payment linked to a planned line (rent, SIP…) in the budget
+ * - investment: money moved into investments (not an expense)
  * - transfer: between the user's own accounts — excluded from everything
  * - refund: money back for an earlier expense
  * - income: salary, interest, other inflows
@@ -100,6 +115,12 @@ export interface Transaction {
   kind: TxnKind;
   merchant: string;
   category: string;
+  /** Finer label within the category, e.g. Rent, Utility, SIP, Dividend income. */
+  tag?: string;
+  /** Who was paid / who paid: a lowercased UPI ID when the bank SMS or statement shows one. */
+  payee?: string;
+  /** Marked by you as a regular payment (adds it to Recurring). */
+  recurring?: boolean;
   method: PaymentMethod;
   note?: string;
   /** For kind=commitment: the reserved commitment it pays. */
@@ -118,9 +139,13 @@ export interface Transaction {
 
 export interface CategoryRule {
   id: string;
-  /** Case-insensitive substring matched against merchant / narration. */
+  /** Case-insensitive substring matched against merchant / narration. Ignored when `payee` is set. */
   pattern: string;
+  /** Exact payee (UPI ID) this rule applies to. Payee rules beat text rules. */
+  payee?: string;
   category: string;
+  /** Optional tag set together with the category, e.g. Bills · Rent. */
+  tag?: string;
   /** Optionally also set the kind (e.g. "transfer" for own-account moves). */
   kind?: TxnKind;
   /** Higher priority wins. User rules default above built-ins. */
@@ -145,6 +170,28 @@ export interface ProviderConnection {
   parserVersion?: number;
   /** SMS: fingerprints of imported transactions you deleted, so a re-read never brings them back. */
   dismissed?: string[];
+}
+
+/** A regular payment: from an autopay/mandate SMS, or a transaction you marked as recurring. */
+export interface Recurring {
+  id: string;
+  name: string;
+  payee?: string;
+  /** Usual (or maximum mandate) amount. */
+  amountPaise: Paise;
+  frequency: "monthly" | "weekly" | "quarterly" | "yearly";
+  /** Day of month it's due (monthly/quarterly/yearly). */
+  dueDay: number;
+  /** For yearly/quarterly: a month it's due (1-12). */
+  dueMonth?: number;
+  category: string;
+  tag?: string;
+  source: "mandate" | "manual";
+  /** Bank mandate reference (UMRN) when the SMS has one. */
+  mandateRef?: string;
+  status: "active" | "revoked";
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ImportBatch {

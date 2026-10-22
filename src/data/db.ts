@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
-import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Transaction } from "@/lib/types";
+import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Recurring, Transaction } from "@/lib/types";
+import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 
 /**
  * Demo and personal data live in two completely separate IndexedDB databases,
@@ -13,6 +14,7 @@ export class FinanceDB extends Dexie {
   connections!: Table<ProviderConnection, string>;
   imports!: Table<ImportBatch, string>;
   accounts!: Table<Account, string>;
+  recurring!: Table<Recurring, string>;
 
   constructor(name: string) {
     super(name);
@@ -29,6 +31,23 @@ export class FinanceDB extends Dexie {
     });
     // v2 (drip 0.4): account balances from SMS. Adds a table; existing data is untouched.
     this.version(2).stores({ accounts: "id" });
+    // v3 (drip 0.5): Bills and Investments split, tags, payees, recurring payments.
+    this.version(3)
+      .stores({ txns: "id, date, kind, category, fingerprint, commitmentId, refundOf, payee", recurring: "id, payee, status" })
+      .upgrade(async (tx) => {
+        await tx.table<Transaction, string>("txns").toCollection().modify((t, ref) => {
+          ref.value = migrateTxn(t);
+        });
+        await tx.table<BudgetPlan, string>("plans").toCollection().modify((p, ref) => {
+          ref.value = migratePlan(p);
+        });
+        const rules = tx.table<CategoryRule, string>("rules");
+        await rules.filter((r) => !!r.builtIn).delete();
+        await rules.toCollection().modify((r, ref) => {
+          ref.value = migrateRule(r);
+        });
+        await rules.bulkPut(currentBuiltInRules());
+      });
   }
 }
 

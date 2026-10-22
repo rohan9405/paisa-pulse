@@ -4,9 +4,11 @@
  * read and parsed on the device; nothing is uploaded anywhere.
  */
 import { autoLinkRefund } from "@/lib/match";
-import { type RawSms, parseBalance, smsToCandidate } from "@/lib/sms";
+import { toISTKey } from "@/lib/dates";
+import { type ParsedMandate, type RawSms, parseBalance, parseMandate, smsToCandidate } from "@/lib/sms";
 import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
 import { type FinanceDB, uid } from "../db";
+import { applyMandate } from "../repo";
 
 export interface SmsBridge {
   hasPermission(): boolean;
@@ -36,7 +38,7 @@ export function smsBridge(): SmsBridge | null {
 
 const PAGE = 500;
 /** Bump when the parser learns new message formats: the next sync re-reads the inbox once. */
-export const SMS_PARSER_VERSION = 3;
+export const SMS_PARSER_VERSION = 4;
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -86,6 +88,7 @@ async function doSync(db: FinanceDB): Promise<number> {
   const corrected: Transaction[] = [];
   const readBalances = profile.prefs?.balances ?? DEFAULT_PREFS.balances;
   const balances = new Map<string, Account>();
+  const mandates: { m: ParsedMandate; on: string }[] = [];
 
   try {
     for (const [after, before] of ranges) {
@@ -100,14 +103,19 @@ async function doSync(db: FinanceDB): Promise<number> {
             if (b && id && sms.date >= (balances.get(id)?.asOf ?? 0)) balances.set(id, { id, bank: b.bank, last4: b.last4, kind: b.kind, balancePaise: b.balancePaise, asOf: sms.date });
           }
           if (sms.date <= startOfTracking) continue;
+          const mandate = parseMandate(sms);
+          if (mandate) {
+            mandates.push({ m: mandate, on: toISTKey(sms.date) });
+            continue;
+          }
           const c = smsToCandidate(sms, rules);
           if (!c || dismissed.has(c.fingerprint)) continue;
           const already = byFp.get(c.fingerprint) ?? (c.reference ? byRef.get(c.reference) : undefined);
           if (already) {
             // Read before: only fix how it was classified, and never override your own edits.
             const untouched = already.source.providerId === "sms" && already.updatedAt === already.createdAt;
-            if (reread && untouched && (already.kind !== c.kind || already.category !== c.category || already.merchant !== c.merchant)) {
-              let t: Transaction = { ...already, kind: c.kind, category: c.category, merchant: c.merchant, method: c.method };
+            if (reread && untouched && (already.kind !== c.kind || already.category !== c.category || already.merchant !== c.merchant || already.tag !== c.tag || already.payee !== c.payee)) {
+              let t: Transaction = { ...already, kind: c.kind, category: c.category, tag: c.tag, payee: c.payee, merchant: c.merchant, method: c.method };
               if (t.kind === "refund" && !t.refundOf) t = { ...t, ...autoLinkRefund(t, [...existing, ...created]) };
               corrected.push(t);
             }
@@ -121,6 +129,8 @@ async function doSync(db: FinanceDB): Promise<number> {
             kind: c.kind,
             merchant: c.merchant,
             category: c.category,
+            tag: c.tag,
+            payee: c.payee,
             method: c.method,
             fingerprint: c.fingerprint,
             source: { providerId: "sms", importBatchId: batchId, externalRef: c.reference, raw: c.raw, importedAt: now },
@@ -141,6 +151,7 @@ async function doSync(db: FinanceDB): Promise<number> {
     throw e;
   }
 
+  for (const { m, on } of mandates) await applyMandate(db, m, on, rules);
   await db.transaction("rw", [db.txns, db.connections, db.accounts], async () => {
     if (created.length) await db.txns.bulkAdd(created);
     if (corrected.length) await db.txns.bulkPut(corrected);

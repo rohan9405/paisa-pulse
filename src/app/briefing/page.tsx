@@ -132,7 +132,7 @@ function Night({ day, isToday }: { day: string; isToday: boolean }) {
   const total = r.byCategory.reduce((s, c) => s + c.amountPaise, 0);
   const top = r.byCategory.slice(0, SPLIT.length);
   const tomorrow = addDays(today, 1);
-  const tomorrowBase = tomorrowAllocation(data.plans, today);
+  const tomorrowBase = tomorrowAllocation(derived.ledger);
   const dueTomorrow = statuses.filter((s) => s.state !== "paid" && s.dueDate === tomorrow);
 
   return (

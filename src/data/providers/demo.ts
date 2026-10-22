@@ -4,7 +4,7 @@
  * This is NOT live bank data and must never be presented as such.
  */
 import { type DateKey, addMonths, dueDateInMonth, eachDay, monthKey, parseKey, startOfMonth } from "@/lib/dates";
-import type { BudgetPlan, Profile, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
+import type { BudgetPlan, Commitment, Profile, Recurring, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -19,15 +19,25 @@ function rng(seed: number) {
 
 const rupees = (r: number) => Math.round(r * 100);
 
-export const DEMO_COMMITMENTS = [
-  { id: "c-rent", name: "Rent", kind: "bill" as const, amountPaise: rupees(22000), dueDay: 1, matchHint: "nobroker" },
-  { id: "c-sip", name: "Index fund SIP", kind: "savings" as const, amountPaise: rupees(8000), dueDay: 5, matchHint: "groww" },
-  { id: "c-wifi", name: "Airtel Xstream Fiber", kind: "bill" as const, amountPaise: rupees(1178), dueDay: 8, matchHint: "airtel" },
-  { id: "c-rd", name: "Emergency fund RD", kind: "savings" as const, amountPaise: rupees(4000), dueDay: 10, matchHint: "recurring deposit" },
-  { id: "c-power", name: "Electricity (BESCOM)", kind: "bill" as const, amountPaise: rupees(1800), dueDay: 14, matchHint: "bescom" },
-  { id: "c-ott", name: "Netflix", kind: "bill" as const, amountPaise: rupees(649), dueDay: 18, matchHint: "netflix" },
-  { id: "c-phone", name: "Jio postpaid", kind: "bill" as const, amountPaise: rupees(599), dueDay: 24, matchHint: "jio" },
+export const DEMO_COMMITMENTS: Commitment[] = [
+  { id: "c-rent", name: "Rent", kind: "bill", tag: "Rent", amountPaise: rupees(22000), dueDay: 1, matchHint: "ramesh.k@okaxis" },
+  { id: "c-sip", name: "Index fund SIP", kind: "investment", tag: "SIP", amountPaise: rupees(8000), dueDay: 5, matchHint: "groww" },
+  { id: "c-stocks", name: "Stocks top-up", kind: "investment", tag: "Stocks", amountPaise: rupees(3000), dueDay: 7, matchHint: "zerodha" },
+  { id: "c-wifi", name: "Airtel Xstream Fiber", kind: "bill", tag: "Phone & internet", amountPaise: rupees(1178), dueDay: 8, matchHint: "airtel" },
+  { id: "c-rd", name: "Emergency fund RD", kind: "savings", tag: "RD / FD", amountPaise: rupees(4000), dueDay: 10, matchHint: "recurring deposit" },
+  { id: "c-power", name: "Electricity (BESCOM)", kind: "bill", tag: "Utility", amountPaise: rupees(1800), dueDay: 14, matchHint: "bescom" },
+  { id: "c-phone", name: "Jio postpaid", kind: "bill", tag: "Phone & internet", amountPaise: rupees(599), dueDay: 24, matchHint: "jio" },
 ];
+
+const DEMO_PAYMENT: Record<string, { merchant: string; category: string; payee?: string }> = {
+  "c-rent": { merchant: "Ramesh K", category: "Bills", payee: "ramesh.k@okaxis" },
+  "c-sip": { merchant: "Groww", category: "Investments" },
+  "c-stocks": { merchant: "Zerodha", category: "Investments" },
+  "c-wifi": { merchant: "Airtel", category: "Bills" },
+  "c-rd": { merchant: "Recurring deposit", category: "Savings" },
+  "c-power": { merchant: "Bescom", category: "Bills" },
+  "c-phone": { merchant: "Jio", category: "Bills" },
+};
 
 type Spec = { merchant: string; category: string; min: number; max: number; method?: PaymentMethod };
 const BREAKFAST: Spec[] = [
@@ -74,6 +84,7 @@ export interface DemoDataset {
   profile: Profile;
   plan: BudgetPlan;
   txns: Transaction[];
+  recurring: Recurring[];
 }
 
 export function generateDemoData(today: DateKey, now = Date.now()): DemoDataset {
@@ -82,7 +93,7 @@ export function generateDemoData(today: DateKey, now = Date.now()): DemoDataset 
   const amt = (s: Spec) => Math.round(s.min + rand() * (s.max - s.min)) * 100;
 
   const trackingStart = startOfMonth(addMonths(monthKey(today), -1) + "-01");
-  const plan: BudgetPlan = { id: "plan-demo", effectiveFrom: trackingStart, incomePaise: rupees(80000), commitments: DEMO_COMMITMENTS, createdAt: now };
+  const plan: BudgetPlan = { id: "plan-demo", effectiveFrom: trackingStart, incomePaise: rupees(84000), commitments: DEMO_COMMITMENTS, createdAt: now };
   const profile: Profile = { id: "me", name: "Aarav (demo)", trackingStart, openingAdjustmentPaise: 0, onboardedAt: now, manuallyPaid: [] };
 
   const txns: Transaction[] = [];
@@ -115,17 +126,19 @@ export function generateDemoData(today: DateKey, now = Date.now()): DemoDataset 
     const mk = monthKey(day);
 
     // Monthly: salary, commitments on due dates, own-account transfer.
-    if (d === 1) add(day, "Acme Technologies Pvt Ltd", "Income", rupees(80000), "income", { method: "netbanking", note: "Salary (demo)" });
+    if (d === 1) add(day, "Acme Technologies Pvt Ltd", "Income", rupees(84000), "income", { method: "netbanking", note: "Salary (demo)" });
     for (const c of DEMO_COMMITMENTS) {
       if (dueDateInMonth(mk, c.dueDay) !== day) continue;
       const variance = c.id === "c-power" ? (mk === monthKey(today) ? 1.12 : 0.94) : 1;
-      add(day, c.matchHint ? cap(c.matchHint) : c.name, c.kind === "bill" ? (c.id === "c-rent" ? "Rent & Housing" : c.id === "c-ott" ? "Subscriptions" : "Bills & Utilities") : "Savings", Math.round(c.amountPaise * variance), "commitment", {
-        commitmentId: c.id,
-        method: c.kind === "savings" ? "netbanking" : "upi",
+      const pay = DEMO_PAYMENT[c.id];
+      add(day, pay.merchant, pay.category, Math.round(c.amountPaise * variance), c.kind === "bill" ? "expense" : "investment", {
+        tag: c.tag,
+        payee: pay.payee,
+        method: c.kind === "bill" ? "upi" : "netbanking",
       });
     }
     if (d === 2) add(day, "Self transfer to SBI savings", "Transfers", rupees(15000), "transfer", { method: "netbanking" });
-    if (d === 7) add(day, "Zerodha", "Investments", rupees(3000), "investment", { method: "netbanking", note: "Stocks top-up (demo)" });
+    if (d === 18) add(day, "Netflix", "Subscriptions", rupees(649), "expense", { tag: "OTT", method: "card", recurring: true });
 
     // Daily life.
     if (!weekend || rand() < 0.4) add(day, ...specArgs(pick(BREAKFAST)));
@@ -155,15 +168,20 @@ export function generateDemoData(today: DateKey, now = Date.now()): DemoDataset 
     method: "wallet",
   });
 
-  return { profile, plan, txns: txns.filter((t) => t.date <= today) };
+  const recurring: Recurring[] = [
+    { id: "rec-netflix", name: "Netflix", amountPaise: rupees(649), frequency: "monthly", dueDay: 18, category: "Subscriptions", tag: "OTT", source: "mandate", status: "active", createdAt: now, updatedAt: now },
+    { id: "rec-lic", name: "LIC premium", amountPaise: rupees(2400), frequency: "monthly", dueDay: dayAfter(today, 3), category: "Bills", tag: "Insurance", source: "mandate", status: "active", createdAt: now, updatedAt: now },
+  ];
+  return { profile, plan, txns: txns.filter((t) => t.date <= today), recurring };
 
   function specArgs(s: Spec): [string, string, number, TxnKind, Partial<Transaction>] {
     return [s.merchant, s.category, amt(s), "expense", { method: s.method ?? "upi" }];
   }
 }
 
-function cap(s: string) {
-  return s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** Day of month `n` days after `from` (so the demo always has something coming up). */
+function dayAfter(from: DateKey, n: number): number {
+  return parseKey(nextDay(from, "9999-12-31", n)).d;
 }
 
 function nextDay(from: DateKey, max: DateKey, n: number): DateKey {

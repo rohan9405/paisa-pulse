@@ -5,8 +5,8 @@ import { monthCalendar, monthPace, usualDailySpend, weekDays, weeklyInsight } fr
 import { plan, txn } from "./helpers";
 
 function ledger(rows: [string, number, number][], today: string, hasBudget = true): Ledger {
-  const days: DayRow[] = rows.map(([date, alloc, spent]) => ({ date, allocationPaise: alloc, spentPaise: spent, carriedInPaise: 0, closingPaise: alloc - spent, underBudget: spent <= alloc }));
-  return { started: true, hasBudget, today, days, todayRow: days[days.length - 1], availablePaise: 0, totalAllocatedPaise: 0, totalSpentPaise: 0, streak: 0 };
+  const days: DayRow[] = rows.map(([date, alloc, spent]) => ({ date, allocationPaise: alloc, spentPaise: spent, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: alloc - spent, underBudget: spent <= alloc }));
+  return { started: true, hasBudget, mode: "planned", today, days, todayRow: days[days.length - 1], availablePaise: 0, totalAllocatedPaise: 0, totalSpentPaise: 0, streak: 0, nextAllocationPaise: 0 };
 }
 
 describe("month pace", () => {

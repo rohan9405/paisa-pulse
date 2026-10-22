@@ -1,5 +1,6 @@
 "use client";
 
+import { TAGS } from "@/lib/categorize";
 import { paiseToRupeeInput, rupeesInputToPaise } from "@/lib/money";
 import type { Commitment, CommitmentKind } from "@/lib/types";
 import { uid } from "@/data/db";
@@ -9,29 +10,37 @@ export interface CommitmentDraft {
   id: string;
   name: string;
   kind: CommitmentKind;
+  tag: string;
   amount: string;
   dueDay: string;
   matchHint: string;
   alreadyPaid: boolean;
 }
 
-export const PRESETS: { name: string; kind: CommitmentKind; dueDay: number; hint?: string }[] = [
-  { name: "Rent", kind: "bill", dueDay: 1, hint: "rent" },
-  { name: "Electricity", kind: "bill", dueDay: 10, hint: "electricity" },
-  { name: "Internet", kind: "bill", dueDay: 8, hint: "fiber" },
-  { name: "Phone", kind: "bill", dueDay: 15 },
-  { name: "EMI", kind: "bill", dueDay: 5, hint: "emi" },
-  { name: "Insurance", kind: "bill", dueDay: 20, hint: "insurance" },
-  { name: "SIP", kind: "savings", dueDay: 5, hint: "sip" },
-  { name: "RD / savings", kind: "savings", dueDay: 10 },
+export const PRESETS: { name: string; kind: CommitmentKind; tag: string; dueDay: number; hint?: string }[] = [
+  { name: "Rent", kind: "bill", tag: "Rent", dueDay: 1 },
+  { name: "Electricity", kind: "bill", tag: "Utility", dueDay: 10 },
+  { name: "Internet", kind: "bill", tag: "Phone & internet", dueDay: 8 },
+  { name: "Phone", kind: "bill", tag: "Phone & internet", dueDay: 15 },
+  { name: "EMI", kind: "bill", tag: "EMI", dueDay: 5 },
+  { name: "Insurance", kind: "bill", tag: "Insurance", dueDay: 20 },
+  { name: "SIP", kind: "investment", tag: "SIP", dueDay: 5 },
+  { name: "RD / FD", kind: "savings", tag: "RD / FD", dueDay: 10 },
 ];
 
+const KIND_CHIPS: { kind: CommitmentKind; label: string }[] = [
+  { kind: "bill", label: "🧾 Bills" },
+  { kind: "investment", label: "📈 Investments" },
+  { kind: "savings", label: "🏦 Savings" },
+];
+const KIND_CATEGORY: Record<CommitmentKind, string> = { bill: "Bills", investment: "Investments", savings: "Savings" };
+
 export function newDraft(p?: Partial<CommitmentDraft>): CommitmentDraft {
-  return { id: uid("c-"), name: "", kind: "bill", amount: "", dueDay: "1", matchHint: "", alreadyPaid: false, ...p };
+  return { id: uid("c-"), name: "", kind: "bill", tag: "", amount: "", dueDay: "1", matchHint: "", alreadyPaid: false, ...p };
 }
 
 export function draftFromCommitment(c: Commitment): CommitmentDraft {
-  return { id: c.id, name: c.name, kind: c.kind, amount: paiseToRupeeInput(c.amountPaise), dueDay: String(c.dueDay), matchHint: c.matchHint ?? "", alreadyPaid: false };
+  return { id: c.id, name: c.name, kind: c.kind, tag: c.tag ?? "", amount: paiseToRupeeInput(c.amountPaise), dueDay: String(c.dueDay), matchHint: c.matchHint ?? "", alreadyPaid: false };
 }
 
 export function validateDrafts(drafts: CommitmentDraft[]): { commitments: Commitment[]; errors: Record<string, string> } {
@@ -43,7 +52,7 @@ export function validateDrafts(drafts: CommitmentDraft[]): { commitments: Commit
     if (!d.name.trim()) errors[d.id] = "Give it a name";
     else if (!amount) errors[d.id] = "Enter an amount above ₹0";
     else if (!Number.isInteger(day) || day < 1 || day > 31) errors[d.id] = "Due day must be 1–31";
-    else commitments.push({ id: d.id, name: d.name.trim(), kind: d.kind, amountPaise: amount, dueDay: day, matchHint: d.matchHint.trim() || undefined });
+    else commitments.push({ id: d.id, name: d.name.trim(), kind: d.kind, tag: d.tag.trim() || undefined, amountPaise: amount, dueDay: day, matchHint: d.matchHint.trim() || undefined });
   }
   return { commitments, errors };
 }
@@ -75,9 +84,9 @@ export function CommitmentList({
             <input className="input num text-center" inputMode="numeric" value={d.dueDay} onChange={(e) => set(d.id, { dueDay: e.target.value.replace(/\D/g, "").slice(0, 2) })} aria-label="Due day of month" placeholder="Day" />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {(["bill", "savings"] as const).map((k) => (
-              <button key={k} className={cx("chip", d.kind === k && "chip-on")} onClick={() => set(d.id, { kind: k })}>
-                {k === "bill" ? "🧾 Fixed bill" : "🏦 Savings / SIP"}
+            {KIND_CHIPS.map(({ kind: k, label }) => (
+              <button key={k} className={cx("chip", d.kind === k && "chip-on")} onClick={() => set(d.id, { kind: k, tag: (TAGS[KIND_CATEGORY[k]] ?? []).includes(d.tag) ? d.tag : "" })}>
+                {label}
               </button>
             ))}
             {showPaid && (
@@ -87,13 +96,20 @@ export function CommitmentList({
               </label>
             )}
           </div>
-          <input className="input text-sm" placeholder="Match text in bank narration (optional, e.g. nobroker)" value={d.matchHint} onChange={(e) => set(d.id, { matchHint: e.target.value })} aria-label="Match hint" />
+          <div className="flex flex-wrap gap-1.5">
+            {(TAGS[KIND_CATEGORY[d.kind]] ?? []).map((t) => (
+              <button key={t} className={cx("chip min-h-[30px] text-[12px]", d.tag === t && "chip-on")} onClick={() => set(d.id, { tag: d.tag === t ? "" : t })}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <input className="input text-sm" placeholder="UPI ID or text in the bank SMS (optional, e.g. ramesh@okaxis)" value={d.matchHint} onChange={(e) => set(d.id, { matchHint: e.target.value })} aria-label="Match hint" />
           {errors[d.id] && <p className="text-xs text-coral">{errors[d.id]}</p>}
         </div>
       ))}
       <div className="flex flex-wrap gap-1.5">
         {PRESETS.filter((p) => !drafts.some((d) => d.name === p.name)).map((p) => (
-          <button key={p.name} className="chip" onClick={() => onChange([...drafts, newDraft({ name: p.name, kind: p.kind, dueDay: String(p.dueDay), matchHint: p.hint ?? "" })])}>
+          <button key={p.name} className="chip" onClick={() => onChange([...drafts, newDraft({ name: p.name, kind: p.kind, tag: p.tag, dueDay: String(p.dueDay), matchHint: p.hint ?? "" })])}>
             + {p.name}
           </button>
         ))}

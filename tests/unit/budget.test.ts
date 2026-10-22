@@ -173,23 +173,22 @@ describe("commitments / bill matching", () => {
   const p = plan({ incomePaise: 55_000_00, commitments: [rent, sip] }); // pool 30k → Sep ₹1000/day
 
   it("matched bill payments are in outgoings but not deducted from the pool twice", () => {
-    const txns = [txn({ date: "2026-09-01", amountPaise: 20_000_00, kind: "commitment", commitmentId: "rent" }), txn({ date: "2026-09-01", amountPaise: 300_00 })];
+    const txns = [txn({ date: "2026-09-01", amountPaise: 20_000_00, kind: "commitment", commitmentId: "rent", category: "Bills" }), txn({ date: "2026-09-01", amountPaise: 300_00 })];
     const l = computeLedger({ plans: [p], profile: profile("2026-09-01"), txns, today: "2026-09-01" });
     expect(l.availablePaise).toBe(1_000_00 - 300_00);
-    const o = outgoingsInRange(txns, [p], "2026-09-01", "2026-09-30");
-    expect(o.commitmentsPaise).toBe(20_000_00);
-    expect(o.discretionaryPaise).toBe(300_00);
+    const o = outgoingsInRange(txns, "2026-09-01", "2026-09-30");
+    expect(o.billsPaise).toBe(20_000_00);
+    expect(o.everydayPaise).toBe(300_00);
     expect(o.totalPaise).toBe(20_300_00);
   });
 
   it("paying more than reserved: only the excess hits discretionary, counted once in outgoings", () => {
-    const txns = [txn({ date: "2026-09-02", amountPaise: 21_000_00, kind: "commitment", commitmentId: "rent" })];
+    const txns = [txn({ date: "2026-09-02", amountPaise: 21_000_00, kind: "commitment", commitmentId: "rent", category: "Bills" })];
     const l = computeLedger({ plans: [p], profile: profile("2026-09-01"), txns, today: "2026-09-02" });
     expect(l.totalSpentPaise).toBe(1_000_00);
-    const o = outgoingsInRange(txns, [p], "2026-09-01", "2026-09-30");
+    const o = outgoingsInRange(txns, "2026-09-01", "2026-09-30");
     expect(o.totalPaise).toBe(21_000_00);
-    expect(o.discretionaryPaise).toBe(1_000_00);
-    expect(o.commitmentsPaise).toBe(20_000_00);
+    expect(o.billsPaise).toBe(21_000_00);
   });
 
   it("split payments across the month accumulate before overage", () => {
@@ -225,17 +224,18 @@ describe("transfers, investments, refunds", () => {
     const txns = [txn({ date: "2026-09-01", amountPaise: 50_000_00, kind: "transfer" })];
     const l = computeLedger({ plans: [p], profile: profile("2026-09-01"), txns, today: "2026-09-01" });
     expect(l.totalSpentPaise).toBe(0);
-    const o = outgoingsInRange(txns, [p], "2026-09-01", "2026-09-30");
+    const o = outgoingsInRange(txns, "2026-09-01", "2026-09-30");
     expect(o.totalPaise).toBe(0);
     expect(o.transfersExcludedPaise).toBe(50_000_00);
   });
 
   it("investments are outgoings but not expenses", () => {
-    const txns = [txn({ date: "2026-09-01", amountPaise: 5_000_00, kind: "investment", category: "Investments" })];
-    const l = computeLedger({ plans: [p], profile: profile("2026-09-01"), txns, today: "2026-09-01" });
+    const withSip = plan({ incomePaise: 35_000_00, commitments: [commitment({ id: "sip", name: "SIP", kind: "investment", tag: "SIP", amountPaise: 5_000_00 })] });
+    const txns = [txn({ date: "2026-09-05", amountPaise: 5_000_00, kind: "investment", category: "Investments", tag: "SIP", merchant: "Groww" })];
+    const l = computeLedger({ plans: [withSip], profile: profile("2026-09-01"), txns, today: "2026-09-05" });
     expect(l.totalSpentPaise).toBe(0);
-    expect(outgoingsInRange(txns, [p], "2026-09-01", "2026-09-30").investmentsPaise).toBe(5_000_00);
-    expect(categoryBreakdown(txns, [p], "2026-09-01", "2026-09-30")).toEqual([]);
+    expect(outgoingsInRange(txns, "2026-09-01", "2026-09-30").investmentsPaise).toBe(5_000_00);
+    expect(categoryBreakdown(txns, [withSip], "2026-09-01", "2026-09-30")).toEqual([]);
   });
 
   it("linked refund nets against the original expense on its date", () => {

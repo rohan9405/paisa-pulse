@@ -1,7 +1,7 @@
 /**
  * Morning briefing / evening report / gamification — derived, pure data.
  */
-import { type CommitmentStatus, type Ledger, categoryBreakdown, discretionaryEntries } from "./budget";
+import { type CommitmentStatus, type Ledger, discretionaryEntries, groupSpend } from "./budget";
 import { type DateKey, addDays, diffDays, endOfMonth, parseKey, daysInMonth } from "./dates";
 import type { BudgetPlan, Transaction } from "./types";
 
@@ -100,7 +100,7 @@ export function eveningReport(ledger: Ledger, txns: Transaction[], plans: Budget
     allocationPaise: row.allocationPaise,
     closingPaise: row.closingPaise,
     underBudget: row.underBudget,
-    byCategory: categoryBreakdown(txns, plans, day, day),
+    byCategory: groupSpend(entries),
     biggest,
     count: entries.length,
     noSpend: row.spentPaise === 0,

@@ -6,7 +6,8 @@
 import Papa from "papaparse";
 import { type DateKey, isDateKey, makeKey } from "./dates";
 import { type Paise, parseAmountToPaise } from "./money";
-import { categorize, detectMethod, extractMerchant, normalize } from "./categorize";
+import { categorize, detectMethod, extractMerchant, normalize, outflowKind } from "./categorize";
+import { findPayee } from "./sms";
 import type { CategoryRule, PaymentMethod, TxnKind } from "./types";
 
 export interface ParsedCsv {
@@ -135,6 +136,8 @@ export interface CandidateRow {
   reference?: string;
   kind?: TxnKind;
   category?: string;
+  tag?: string;
+  payee?: string;
   method?: PaymentMethod;
   fingerprint?: string;
   raw: string[];
@@ -203,13 +206,16 @@ export function validateRows(
     if (errors.length || !date || amountPaise === undefined || !direction) return base;
 
     const fp = fingerprint({ date, amountPaise, direction, description, reference });
-    const rule = categorize(description, opts.rules);
+    const payee = findPayee(description);
+    const rule = categorize(description, opts.rules, payee);
     let kind: TxnKind = direction === "out" ? "expense" : "income";
     if (rule?.kind && (rule.kind === "transfer" || (direction === "out" && rule.kind !== "income" && rule.kind !== "refund") || (direction === "in" && rule.kind === "income"))) kind = rule.kind;
     if (direction === "in" && kind === "income" && /refund|reversal|cashback|rev\b/i.test(description)) kind = "refund";
-    const category = kind === "refund" ? "Refunds" : kind === "income" ? "Income" : rule?.category ?? "Other";
+    if (direction === "out" && kind === "expense" && rule && !rule.kind) kind = outflowKind(rule.category);
+    const category = kind === "refund" ? "Refunds" : kind === "income" ? (rule?.kind === "income" ? rule.category : "Income") : rule?.category ?? "Other";
+    const tag = kind === "refund" || kind === "transfer" ? undefined : rule?.tag;
 
-    const row: CandidateRow = { ...base, status: "valid", date, amountPaise, direction, fingerprint: fp, kind, category, method: detectMethod(description) };
+    const row: CandidateRow = { ...base, status: "valid", date, amountPaise, direction, fingerprint: fp, kind, category, tag, payee, method: detectMethod(description) };
     if (opts.existingFingerprints.has(fp)) {
       row.status = "duplicate";
       row.duplicateReason = reference ? "Same bank reference already imported" : "Same date, amount and description already imported";
