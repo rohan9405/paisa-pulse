@@ -1,6 +1,6 @@
 # drip roadmap
 
-Where the app is (v0.2.0): on-device budget, bank SMS import on Android (HDFC / ICICI / SBI / Axis / Kotak), backfill from a chosen date, CSV import, demo mode. No server and no internet permission.
+Where the app is (v0.5.0): on-device budget, bank SMS import on Android (HDFC / ICICI / SBI / Axis / Kotak), backfill from a chosen date, CSV import, demo mode. No server and no internet permission.
 
 Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
@@ -19,6 +19,23 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 4. To verify: whether Play Protect also blocks *updates* of an app that's already installed. If it doesn't, in-app "download update" would work after the first install, but it needs internet permission just for that, so it's opt-in at best.
 
 ---
+
+## Built, not released yet (next: 0.6.0): money model
+
+- **Bills and Investments are separate categories.** Rent, electricity, phone and internet, EMIs and insurance are **Bills**, each with a tag (Rent, Utility, Phone & internet, EMI, Insurance, Maintenance). SIPs, Zerodha, Groww, INDmoney, BSE StAR MF, CAMS and KFintech are **Investments** (tags SIP, Stocks, Mutual fund, NPS / PPF). Savings stays separate (RD / FD, Emergency fund).
+- **Category + tag rules, by payee.** The bank SMS parser now keeps the payee's UPI ID. In a transaction, "Always use this for ramesh@okaxis" saves a rule with category *and* tag (e.g. Bills · Rent) and fixes your past payments to that UPI ID. Settings → Rules accepts a UPI ID or any text, with a tag.
+- **Budget modes** (Settings → Budget mode, and at setup):
+  - **Set-aside budget:** the categories you tick (Bills, Investments, Savings by default; Subscriptions and Education optional) come off income first; the rest ÷ days in the month is the daily budget. Two ways to set aside:
+    - **Planned:** you enter expected amounts. Payments are matched to their planned line automatically (UPI ID, text hint, tag or name). Paying more takes the difference from that day; paying less gives it back at month end; a set-aside payment with no planned line counts in full.
+    - **Actual:** nothing to enter. Each set-aside payment comes out of the month's pool when it arrives and the remaining days are recalculated; anything beyond what's left becomes a deficit.
+  - **Tracking only:** no daily budget, just expenses.
+- **Dividend income** tag on incoming ACH credits ("ACH C- ITC LTD"), plus Salary and Interest tags.
+- **Stats:** outgoings split into Everyday · Bills · Investments · Savings; the expense breakdown leaves out Investments and Savings.
+- **Recurring payments** come only from autopay / e-mandate SMS (created, changed, cancelled) or a transaction you switch to "Repeats every month". Settings → Recurring payments lists them. Today's **Coming up** shows planned bills and recurring payments due within a week, marking those due today or overdue.
+- **Credit card bill payments** stay own transfers (unchanged).
+- **UPI Lite top-ups** moved from Bills & Utilities to **Other · UPI Lite**: they stand in for everyday spends, and Bills are now set aside.
+- **Upgrade:** existing data is migrated in place (Bills & Utilities / Rent & Housing → Bills with a tag; SIP-like savings lines → Investments; rules keep working). The SMS inbox is re-read once to pick up UPI IDs, tags and mandates. Old backups are migrated on restore.
+- **Needs real samples:** the autopay/mandate SMS formats are based on typical HDFC/ICICI wording. Paste a few real ones so they become test cases.
 
 ## Done in 0.5.0
 
@@ -42,16 +59,14 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 - Export, restore and CSV import now work inside the Android app (they silently did nothing before).
 - Plain JSON for now; encrypting backups with a passphrase stays in Phase 4.
 
-## Next up: screens built around auto-tracking
+## Next up: tagging without the chores
 
-Most transactions now arrive by themselves, so the app's job shifts from "log your spending" to "check what came in and know where you stand". Manual entry stays, but quietly. Mockups were reviewed on 22 Oct; nothing here is built yet.
-
-### Review inbox (centre button) · M
-- The centre button of the bottom nav becomes a **review inbox** with a count badge: new transactions since you last looked, unknown merchants and unmatched refunds first.
-- One card at a time: swipe right = looks right, swipe left or tap = change category.
-- **Tag by payee** lives here: "Always treat payments to this payee as Rent / EMI / Investment / …" (Phase 2's tagging, in the place you naturally see each payee).
-- Manual entry moves out of the spotlight: a small "+ Cash spend" on Today, a + in the Activity header, and long-press on the centre button.
-- Nav: Today · Activity · **[review inbox]** · Stats · Briefing.
+Decided 23 Oct: no review inbox tab and no badge. Tagging must take almost no effort, or nobody keeps doing it.
+- **Quick-action cards** on Today (at most one, the most important) and at the top of Activity (all pending). They disappear when nothing is left.
+- Card order: top-payees setup (once, after the first SMS scan: "6 payees cover 81% of your money"), new autopay found, a large or repeated payment to an unknown payee ("₹3,200 to Sunita, 3rd month. Bills · Household?"), an unmatched refund, a possible own-account transfer.
+- Every card comes with a suggested answer, so "Yes" is one tap; "Something else" opens category + tag. ✕ means "leave it", and that payee isn't asked about again.
+- Only ask when it changes the budget: at least ₹2,000 or 3 months in a row, a person or unknown UPI ID (not a known brand), never asked before.
+- Correcting a category once remembers it for that payee, with an Undo toast (instead of the checkbox).
 
 ## Phase 1: Accuracy
 
@@ -60,15 +75,7 @@ While the app is open, a check runs every 60 s. Today each check loads every tra
 - Ask the inbox for new SMS first; if there are none, stop (no reads, no writes).
 - Only save the "last synced" time when something was added.
 
-### 3. Dividend income category · S
-- New category **Dividend income** (kind `income`).
-- Rule: a **credit** whose SMS or narration contains `ACH` (e.g. `ACH C- ITC LTD`, `ACH CR`) → Dividend income, with the company name as the merchant.
-- Keep **debit** ACH/NACH separate: those are SIPs, EMIs and insurance mandates (they feed the Recurring tab).
-- Applies to SMS and CSV imports; a one-off "re-categorise existing" pass fixes past transactions.
-
-### 2a. Investment rules · S
-- SIPs, **Zerodha**, **INDmoney / INDstocks**, Groww, Kuvera, mutual-fund registrars (CAMS, KFintech, BSE StAR MF, `MF`/`SIP` in NACH narrations) → **Investment**, never Bills or Savings.
-- Investments stay out of "spent today" and get their own line in Stats.
+### ✅ Dividend income and investment rules (built, see above)
 
 ### 4. Messages the parser misses · M
 - ✅ **0.3.1:** UPI Lite top-ups are read as an **expense** in **Bills & Utilities** (Lite payments themselves send no SMS). Money credited from a shop or service ("from WWW MYNTRA COM") is a **refund**, not income, with a clean merchant name. A parser upgrade re-reads the inbox once: it adds missed messages, corrects unedited old ones, and never brings back deleted ones.
@@ -77,32 +84,10 @@ While the app is open, a check runs every 60 s. Today each check loads every tra
 
 ## Phase 2: Money model
 
-### 2. Budget from your real regular payments · L
-Two modes, picked at setup and switchable in Settings:
-
-**Budget mode**
-- Same idea as today: regular outflows come off the top first, and what's left becomes the **daily budget**.
-- The difference is where those outflows come from. You no longer type bills, savings and amounts in by hand: they're **learned from your transactions**. Investments (SIPs, Zerodha, INDmoney), rent, EMIs, fixed bills and savings, as identified by payee tags and the Recurring tab (below).
-- At the start of each month the expected amounts (from last month's actual payments) are set aside. When the real payment arrives, it's matched against that reservation and doesn't hit the daily budget, as today.
-- **"Don't set anything aside" option:** the daily budget is simply income ÷ days in month. It's explained cleanly with a side-by-side preview at setup and in Settings:
-  > **Set aside regular payments:** ₹1,350/day. Rent day won't knock you into deficit.
-  > **Don't set aside:** ₹2,580/day. Feels like more, but rent, EMIs and SIPs come out of it, so expect a big deficit on those days.
-
-**Tracking mode**
-- No budget at all: spending, categories and trends only.
-
-**Tag by payee** (both modes)
-- On any transaction: "Always treat payments to *this payee* as…" **Rent / EMI / Bills & utilities / Savings / Investment / Transfer / Ignore**.
-- The key is the UPI ID or account (`ramesh@okaxis`), not the merchant text, so rent to a specific person works even with odd names.
-- Tags decide what counts as a regular payment in budget mode, and roll up into Stats: **Everyday · Bills & utilities · Rent & EMI · Investments · Savings**.
-- Migration: existing commitments become payee tags where a match hint exists.
-
-### 1. Recurring & autopay tab · M
-New **Recurring** tab, for awareness. In budget mode it also supplies the expected amounts that are set aside.
-- **From SMS:** UPI AutoPay / e-mandate / NACH / standing-instruction messages. Today they're skipped as "not a transaction"; they'll be captured as *mandate created / modified / revoked* events instead.
-- **From history:** same payee, similar amount, roughly monthly or weekly → "Looks recurring". You confirm or dismiss.
-- Each entry shows payee, amount, frequency, last paid, next expected date and the source (mandate or pattern), plus a "Missed?" flag if it didn't arrive.
-- Totals: "₹18,450/month committed across 9 autopays", including subscriptions (Netflix, Spotify…).
+Built (see the top). Still to do:
+- **Planned amounts learned from last month:** in Planned mode, offer to fill planned lines from last month's actual Bills / Investments payments instead of typing them.
+- **Missed payments:** flag a recurring payment that didn't arrive within 5 days of its due date.
+- **Recurring totals:** "₹18,450/month committed across 9 autopays", including subscriptions.
 
 ---
 
@@ -118,7 +103,7 @@ New **Recurring** tab, for awareness. In budget mode it also supplies the expect
 "Left to spend today" (or "Spent today" in tracking mode) plus the last transaction, on the home screen without opening the app. It refreshes when the app runs and when a brief is built.
 
 ### Splash screen · S
-- A native splash with the pulse logo on the app's dark background, shown while the web app loads. It uses Android 12+'s system splash, with the same look on older versions.
+- A native splash with the drip logo (ink drop on lime) on the app's dark background, shown while the web app loads. It uses Android 12+'s system splash, with the same look on older versions.
 - It stays up until the first screen is ready, so the current blank-then-content flash goes away.
 
 ## Phase 4: Safety & insight
@@ -128,12 +113,99 @@ New **Recurring** tab, for awareness. In budget mode it also supplies the expect
 
 ## Phase 5: Friends & leaderboard (8) · L, needs a server
 
-Share **ratios, never amounts**:
-- **What's shared, opt-in:** monthly savings rate %, investment rate %, category mix %, and a normalised weekly spending trend (shape only, no axis values). No rupee amounts, merchants or payees ever leave the phone.
-- **Leaderboard:** ranked by savings % + investment % of income for the month (income comes from salary and dividend credits). Badges for streaks and "invested more than last month".
-- **Connecting:** an invite code or QR; both sides approve, and either can disconnect, which deletes the shared data.
-- **Backend:** a small serverless API (e.g. Cloudflare Workers + D1) storing one aggregate row per user per week. This adds internet permission, so it's off by default, and the README's privacy promise gets a clear exception for this feature.
-- **No-server option:** share a signed "monthly card" (an image or link with the % figures) on WhatsApp; the friend imports it into a local leaderboard. Less live, but keeps the app fully offline. A good first step before building the backend.
+A fitness tracker for spending: healthy competition with friends. Share **scores and ratios, never amounts**.
+
+**Fair by design.** Everything is measured against your *own* daily drip, like a personal move goal. Someone on ₹500/day and someone on ₹5,000/day compete equally, and nobody's income shows.
+
+### What friends see
+- **drip Score (0–100), daily:** how much of today's drip you kept, with a bonus for rollover. The leaderboard number.
+- **Streaks:** "🔥 12 days under drip". One **streak freeze** earned per week, so a single wedding or emergency doesn't wipe out a month.
+- **Three rings:** *Stay under* today's drip · *Skip one impulse category* (e.g. food delivery, shopping; already detected from SMS) · *Save on time* (the money set aside stayed aside). Friends see closed / not closed only.
+- **Squads (3–8 friends), weekly leagues:** Duolingo-style; the top of the squad moves up a league, the bottom moves down, reset every Monday.
+- **Challenges:** "No-Swiggy Week", "₹0 Weekend", "Cook 5 of 7 days". Pass/fail only, checked from SMS, so nobody can just claim it.
+- **Duels:** one friend, one week, best average score wins.
+- **Squad goals:** cooperative, e.g. "everyone under drip 5 of 7 days" unlocks the 💧 Hydrated badge, so the friend who's struggling gets support, not shame.
+- **Reactions and nudges:** 💧 for a good day, a poke when a streak is at risk. No comments on purchases.
+- **Monthly "drip Wrapped" card:** percentages and a personality ("Weekend Leaker", "Midnight Zomato Era") for Instagram stories / WhatsApp. Doubles as marketing.
+
+### Privacy rules
+- **Never leaves the phone:** rupee amounts, income, merchants, payees, bank names, individual transactions.
+- **Shared, opt-in per item:** scores, streak lengths, ring flags, challenge pass/fail, percentages.
+- **Inference guard:** savings % of income plus a known salary can reveal amounts, so the score is *% of daily drip kept*, not savings % of income. Category mix % stays private to you, never shown to the squad.
+- **Preview before sharing:** "here's exactly what your squad sees this week". Everything is computed on the phone; only the final figures are sent.
+- **Leaving deletes:** leaving a squad or disconnecting a friend deletes the shared data on the server, not just hides it.
+- **No shame lists:** ranking is positive only; never "who spent the most".
+- **Connecting:** an invite code or QR; both sides approve.
+
+### Rollout
+1. **No server · M:** drip Score + streaks + a daily/weekly **share card** (image or signed link) on WhatsApp; a friend imports it into a local leaderboard. The app stays fully offline. Proves people actually compete before building more.
+2. **Small backend · L:** squads, leagues, duels, live streaks. A small serverless API (e.g. Cloudflare Workers + D1) storing one row per user per day: score, streak, ring flags, challenge results. This adds internet permission, so it's off by default, and the README's privacy promise gets a clear exception for this feature.
+
+## Phase 6: Everyday delight · offline, no AI
+
+Make drip fun to open without making anything up. Other apps either report the past (Walnut, Money Manager, Fold: month-end dashboards) or hand out fake rewards (CRED: coins, spin wheels, scratch cards). drip's rewards are **your real money or a real insight**, and they vary because your life does.
+
+**Rules for every idea here:**
+- **Zero effort:** comes from SMS the app already reads. Nothing to type.
+- **Organic:** fires only when something actually happened. No random draws, no made-up points.
+- **Variable:** different from day to day because spending is.
+- **Offline:** plain rules and counting on the phone. No LLM, no internet; the app has no internet permission anyway. An LLM could later *reword* messages as an optional extra, with the templates as the fallback, but detection never depends on it.
+- **No new notifications:** surprises appear on app open and in the Phase 3 morning/night briefs (per-transaction notifications stay off, as decided).
+
+### "You skipped it" ⭐ · M
+drip learns your habits from SMS and notices when one doesn't happen: *"No Friday order this week. ₹480 stayed with you 💧"*. No other tracker can do this without manual entry. Like Urge's "track what you skip", but automatic.
+- **Learn a habit:** group outgoing spends by merchant (or UPI payee) and weekday, e.g. Zomato on Fridays in 4 of the last 5 weeks, ₹380–₹560. A habit needs at least 3 occurrences in at least 3 of the last 4–5 weeks, must be recent, and excludes bills, rent and anything in Recurring. Reuse `sameMerchant` (match.ts) and the "paid around the date" logic (recurring.ts).
+- **Spot a skip:** once the habit's window has fully passed (Friday is over) with no matching spend. The amount shown is the habit's typical (median) spend.
+- **Reveal:** on the next app open or in the morning brief; at most 1–2 a week so it stays special.
+- **Copy:** template pools per habit type (food, cab, coffee, shopping) in the brand voice, e.g. *"Uber took the Sunday off. ₹310 stayed home 🏠"*.
+- **Guards:**
+  - Paid by cash or a card drip doesn't see → gentle wording (*"Looks like you skipped…"*) plus one tap "I paid another way", which hides it and teaches drip.
+  - Every habit missing at once → probably travelling; stay quiet that week.
+  - 3 skips in a row → no longer a habit; celebrate once (*"3 Fridays without Zomato. New era? 👀"*), then retire it.
+- **Time-of-day habits** ("the 4pm coffee") need the SMS timestamp stored on each transaction (today only the date is kept). New transactions only, so these start appearing a few weeks after the update. Weekday habits work with today's data.
+
+### Morning reveal · S
+Today's drip is genuinely different every day (rollover, deficit payback, bills set aside), so opening the app becomes a daily Wordle-style moment: the drop fills to today's amount with what changed, *"+₹212 from yesterday"*.
+
+### "What it bought" · S
+Translate what you kept into something tangible, rotating so it stays fresh: *"This week's leftovers = 2 movie tickets"* · *"= 11 cutting chais"* · *"Goa trip 18% closer"*. Same real number, new framing.
+
+### Personal records · S–M
+Strava-style PRs that appear only when true: *"Cheapest Saturday this year"*, *"Longest under-drip run: 9 days"*, *"First month with zero late-night orders"*. Rare and earned, which is what makes them feel good.
+
+### Forecast · S
+Like a weather report: *"At this pace, Friday's drip is ₹1,100 ☀️"*, *"Rough weekend ahead: two bills land Saturday 🌧️"*. Helps you adjust before overspending, not after.
+
+### The living drop · S (with the Phase 3 widget)
+The widget shows a drop that's full, half or nearly empty with today's remaining drip. Information at a glance, without opening the app; a Tamagotchi whose "pet" is your real money.
+
+### Hype or roast · S
+Pick a tone (Cleo's most-loved feature is its roast mode). Large template pools triggered by real events, so lines rarely repeat: *"Third under-drip day. Who even are you 💅"* / *"Swiggy knows your address better than your mom does 💀"*. Roast the spending, never the person.
+
+### Sunday mini-Wrapped · M
+A short story-style weekly recap: best day, what you skipped, any record, next week's forecast. No finance app does Wrapped well, so it's open territory, and it's shareable without amounts (ties into the Phase 5 share card).
+
+### Real-life moments · S
+Detected from SMS, so they happen only when life does:
+- **Salary lands:** *"Payday 🎉 New month, new drip: ₹1,240/day"*.
+- **Month-end survived:** *"Made it to the 31st with ₹600 to spare"*.
+- **Sale seasons** (Big Billion Days, Diwali): a heads-up before, a "you survived" after.
+
+### Streaks that forgive · S
+Count only real under-drip days, with one freeze earned weekly (as in NoBuy: one bad day shouldn't erase thirty good ones). Shared with Phase 5.
+
+### What to avoid, and why
+| Avoid | Why |
+|---|---|
+| **Coins, points, spin wheels, scratch cards, jackpots** (CRED-style) | Artificial: the reward has nothing to do with your money. Users stop caring once the novelty wears off, and coins of unclear value erode trust. |
+| **Random rewards** | Variability should come from real life. A random draw feels like a slot machine, the wrong feeling for a money app. |
+| **"Come back!" / streak-in-danger notifications** | Nagging, not delight. Per-transaction notifications are already ruled out; surprises live in the app and the two briefs. |
+| **Badges for opening the app or tapping things** | Rewards attention, not behaviour. The only things worth celebrating are things you did with money. |
+| **Shame or guilt** ("you failed", red alerts for every overspend) | People stop opening apps that make them feel bad. Roast the spending lightly, never the person, and always show the way back (deficit payback). |
+| **Daily insight quotas** (a "tip of the day" whether or not there's anything to say) | Filler teaches people to ignore the app. Say something only when the data has something to say. |
+| **Too many surprises** | A skip or record every day stops being a surprise. Cap reveals (1–2 skips a week) to keep them rare. |
+| **Cloud AI for detection** | Needs internet and sends spending data off the phone, breaking the privacy promise. Rules and counting are enough, and work offline. |
+| **Rewards that need manual entry** | The point is zero effort. If a feature only works when people log things by hand, most won't, and it quietly dies. |
 
 ---
 
@@ -152,15 +224,17 @@ Share **ratios, never amounts**:
 
 ## Suggested order
 
-1. **Next up:** review inbox (centre button).
-2. **Phase 1:** lighter refresh, dividend + investment rules, "couldn't read" inbox.
-3. **Phase 2:** payee tags (via the review inbox), budget from regular payments with the "don't set aside" option, the Recurring tab.
-4. **Phase 3:** splash screen, widget, then morning/night brief notifications once templates are ready.
-5. **Phase 4:** backup encryption.
-6. **Install route:** decide on Play internal testing vs USB/sideload.
-7. **Phase 5:** friends, starting with the no-server share card.
+1. **Release 0.6.0** (money model), after checking real autopay SMS samples.
+2. **Next up:** quick-action cards for tagging.
+3. **Phase 1:** lighter refresh, "couldn't read" inbox.
+4. **Phase 2 leftovers:** planned amounts from last month, missed-payment flags, recurring totals.
+5. **Phase 3:** splash screen, widget, then morning/night brief notifications once templates are ready.
+6. **Phase 4:** backup encryption.
+7. **Install route:** decide on Play internal testing vs USB/sideload.
+8. **Phase 6:** "You skipped it" first, then morning reveal, personal records and the Sunday mini-Wrapped. All offline.
+9. **Phase 5:** friends, starting with drip Score, streaks and the no-server share card.
 
-**Decided:** UPI Lite top-ups → expense, Bills & Utilities · no background refresh or per-transaction notifications · budget stays, built from real regular payments, with an option not to set anything aside.
+**Decided:** UPI Lite top-ups → everyday expense (Other · UPI Lite) · no background refresh or per-transaction notifications · Bills and Investments separate, with tags · budget modes: set-aside (Planned or Actual, categories configurable) or tracking only · recurring only from mandate SMS or explicit marking · credit card bill payments are own transfers · no review inbox tab; quick-action cards instead.
 
 **Still open:**
 - Morning/night brief templates (you).

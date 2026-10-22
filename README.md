@@ -1,6 +1,8 @@
 # drip
 
-**"How much can I spend today, and where is my money going?"**: a mobile-first, on-device daily budget for India.
+*Your money, one day at a time.*
+
+**"How much can I spend today, and where is my money going?"**: a mobile-first, on-device daily budget for India. (Formerly Paisa Pulse: the APK file, GitHub repo and internal storage names still use the old name; see [Modes and privacy](#modes-and-privacy).)
 
 Bills and savings are set aside first; the rest becomes a daily allowance that refills at midnight IST. Underspend and it rolls over. Overspend and it becomes a deficit that later days pay back. On Android, your bank's transaction SMS are read automatically, on the phone, so spending shows up without typing anything.
 
@@ -57,7 +59,8 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 
 - Only messages from known bank sender IDs (HDFC, ICICI, SBI, Axis, Kotak, e.g. `VM-HDFCBK-S`) are considered. Texts from phone numbers are dropped on the device before the app sees them.
 - OTPs, offers, statements, due-date reminders, payment requests and failed/declined transactions are ignored.
-- Amount, direction, account, payee/merchant, UPI/bank reference and payment method are read from the body, then categorised with the same rules as CSV import. Credit-card bill payments are treated as transfers so card spends aren't counted twice; refunds are linked to the original purchase.
+- Amount, direction, account, payee/merchant (with the payee's UPI ID where shown), UPI/bank reference and payment method are read from the body, then categorised with the same rules as CSV import; merchant names are cleaned ("BUNDL TECHNOLOGIES" → Swiggy). Credit-card bill payments are treated as transfers so card spends aren't counted twice; refunds are linked to the original purchase; UPI Lite top-ups count as everyday spend.
+- Autopay / e-mandate SMS (created, changed, cancelled) become recurring payments. "Avl bal" / "Avl limit" give account balances (can be switched off).
 - Sync runs when the app opens, when it comes back to the foreground and every minute while open. Messages are de-duplicated by fingerprint and bank reference.
 - Everything stays on the phone: SMS are parsed in the app and stored in its local IndexedDB.
 
@@ -110,32 +113,39 @@ Next.js 15 (App Router) · TypeScript · Tailwind CSS · Recharts · Dexie (Inde
 src/lib/            pure financial logic: no React, no storage
   money.ts          integer paise, Indian formatting, safe amount parsing
   dates.ts          Asia/Kolkata DateKeys, month/leap-year arithmetic
-  budget.ts         pool, daily allocation + rounding, ledger, commitments, outgoings
+  budget.ts         pool, budget modes, daily allocation + rounding, ledger, set-asides, outgoings
   csv.ts            parse → map → validate → dedupe
-  sms.ts            bank sender IDs, SMS → transaction parsing and classification
-  categorize.ts     merchant rules, narration → merchant, payment method
+  sms.ts            bank sender IDs, SMS → transaction parsing and classification, mandates, balances
+  categorize.ts     category + tag rules (by payee UPI ID or text), narration → merchant, payment method
+  merchants.ts      clean merchant names (legal names → brands)
   match.ts          refund ↔ expense, payment ↔ reservation, transfer pairs
-  insights.ts       morning briefing, evening report, streaks/XP/badges
+  recurring.ts      upcoming bills and autopays for "Coming up"
+  overview.ts       month pace and projection, week bars, calendar, weekly insight
+  insights.ts       morning brief, night report, streaks/levels/badges
 src/data/           storage + adapters
   db.ts             Dexie schema; separate DBs for demo and personal
+  migrate.ts        in-place data migrations (also applied to old backups on restore)
   repo.ts           all writes (add/edit/delete, import, backup, rules)
+  backup.ts         automatic daily backup to a user-picked folder (Android)
+  device.ts         haptics and fingerprint lock (Android)
   providers/        provider interface, registry, demo generator, SMS sync
 src/app/            screens (Today, Briefing, Activity, Stats, Import, Settings, Onboarding)
-android/            WebView shell, SMS bridge, build + LAN install scripts
+android/            WebView shell, SMS / files / device bridges, build + LAN install scripts
 tests/unit, tests/e2e
+docs/               budget rules, data integration, roadmap, marketing
 ```
 
 ## Screens
 
 | Screen | What it does |
 |---|---|
-| Onboarding | Income (or "just track"), bills & savings with due days and "already paid this month", tracking start date, opening adjustment (default ₹0), live pool preview incl. shortfall warning |
-| Today | Available now, today's base, carried balance, spent today, deficit recovery plan, streak/XP/badges, bills due this week, quick-add |
-| Briefing | Morning briefing, evening report, daily history (tap a day for its report) |
+| Onboarding | Budget mode (set-aside, planned or actual, or "just track"), income, bills / investments / savings with due days and "already paid this month", tracking start date, opening adjustment (default ₹0), live pool preview incl. shortfall warning |
+| Today | Sync status, one hero number (base · carried · spent), month pace with month-end projection, weekly insight, latest transactions ("N new from SMS", "Tag?"), coming-up bills and autopays, balances, streak/level, "+ Cash spend" |
+| Briefing | Morning brief until 5 pm, night brief after (switchable): what you can spend, yesterday, what's due, what rolls over; week bars, month calendar (tap a day for its report), badges |
 | Activity | Search, kind/category/period filters, edit, delete, category correction (optionally saved as a rule), match to bill/savings reservation, link refunds, smart suggestions for bill matches and own-account transfers |
 | Stats | Week/month: total outgoings split into everyday / bills & savings / investments (transfers excluded), cumulative spend vs budget, daily spend, category breakdown, this month's bills with mark-paid |
 | Import CSV | Column mapping, date-format choice, three amount layouts, preview with per-row errors, duplicate detection, per-row include/exclude, undo import |
-| Settings | Budget changes effective from a date (history preserved), tracking start (moving it earlier backfills SMS) / opening adjustment, categorisation rules, data-source status, JSON/CSV export, backup restore, typed-confirmation delete, mode switch |
+| Settings | Budget · Data · App tabs. Budget: mode, changes effective from a date (history preserved), recurring payments. Data: tracking start (moving it earlier backfills SMS) / opening adjustment, category + tag rules, balances switch, backup folder, JSON/CSV export, restore, typed-confirmation delete, mode switch. App: fingerprint lock, haptics |
 
 ## Modes and privacy
 
@@ -144,6 +154,7 @@ tests/unit, tests/e2e
 - No server, no analytics, no external AI calls. Fonts are self-hosted at build time. The Android app has no internet permission.
 - **Turn on automatic backup in the Android app.** In a browser, data lives only in that browser: export from Settings.
 - The app never asks for bank passwords, PINs or OTPs.
+- **Old name inside, on purpose.** The app was renamed from Paisa Pulse to drip, but the Android package (`dev.paisapulse.app`), the WebView origin (`paisapulse.local`), the database names, storage keys and the backup format / file prefix (`paisa-pulse-backup-`) keep the old name. Changing any of them would orphan existing data or backups. The APK file is still `PaisaPulse.apk` because the install QR and release link point to it.
 
 ## Not implemented yet
 
@@ -152,4 +163,9 @@ tests/unit, tests/e2e
 - **Account Aggregator bank sync.** See [docs/DATA_INTEGRATION.md](docs/DATA_INTEGRATION.md) for what an AA integration requires.
 - iPhone SMS import (iOS doesn't let apps read SMS), multi-currency, split expenses, multiple budgets.
 
-See [docs/BUDGET_LOGIC.md](docs/BUDGET_LOGIC.md) for the exact budget rules.
+## Docs
+
+- [docs/BUDGET_LOGIC.md](docs/BUDGET_LOGIC.md): the exact budget rules.
+- [docs/ROADMAP.md](docs/ROADMAP.md): what's built, what's next, and decisions, including friends (Phase 5) and offline engagement like "You skipped it" (Phase 6), with what to avoid.
+- [docs/MARKETING.md](docs/MARKETING.md): the name, icon, voice, copy ideas and store listing draft.
+- [docs/DATA_INTEGRATION.md](docs/DATA_INTEGRATION.md): bank data options in India (SMS, CSV, Account Aggregator).

@@ -18,7 +18,9 @@ It stands out and still says what the app does.
 
 ## Icon (shipped)
 
-A lime (`#c6ff3d`) water drop with a ₹ cut into it, on the ink (`#07070a`) background. The in-app logo mark is the plain drop. Files: `public/favicon.svg`, `android/res/drawable/ic_launcher_fg.xml`, `Brand` in `src/components/AppShell.tsx`.
+A plain ink (`#07070a`) water drop on a lime (`#c6ff3d`) tile, the same mark as the header logo, so the launcher, favicon and in-app logo match. The name is always written lowercase: **drip**. Files: `public/favicon.svg`, `android/res/drawable/ic_launcher_fg.xml` (on the lime adaptive-icon background), `Brand` in `src/components/AppShell.tsx`.
+
+(An earlier version had a lime drop with a ₹ cut into it, on ink. Dropped so the icon reads at small sizes and matches the header.)
 
 ## Voice
 
@@ -56,6 +58,18 @@ Your bank's transaction SMS are read on the phone, so spending shows up without 
 - "Stop checking your bank app. Check your drip."
 - Before/after reel: a messy bank SMS inbox → one clean number.
 - Daily-number screenshots ("today's drip") as a shareable format.
+
+## Features that market themselves
+
+From [ROADMAP.md](ROADMAP.md) Phases 5 and 6. Each one makes a natural, shareable moment without showing amounts:
+
+- **"You skipped it":** *"No Friday order this week. ₹480 stayed with you 💧"*. The hero feature for launch: no other tracker can notice what you *didn't* spend without manual entry. Screenshot-worthy.
+- **Sunday mini-Wrapped and monthly drip Wrapped:** story-format recaps with percentages and a personality ("Weekend Leaker", "Midnight Zomato Era"). No finance app does Wrapped well.
+- **Personal records:** *"Cheapest Saturday this year"*. Rare and earned, so people share them.
+- **Hype or roast:** pick a tone; roast lines are the most quotable copy.
+- **Streaks and drip Score** with friends: fair because everyone is measured against their own drip, so nobody's income shows.
+
+**Positioning against others:** Walnut / Money Manager / Fold report the past; CRED hands out coins and spin wheels. drip's rewards are your real money and real insights, offline and private. Avoid the fake-reward tactics listed in the roadmap's "What to avoid" table in marketing too: no "spin to win", no guilt-trip ads.
 
 ## Name backups
 
