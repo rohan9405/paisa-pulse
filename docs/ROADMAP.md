@@ -36,6 +36,35 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 - Export, restore and CSV import now work inside the Android app (they silently did nothing before).
 - Plain JSON for now; encrypting backups with a passphrase stays in Phase 4.
 
+## Next up: screens built around auto-tracking
+
+Most transactions now arrive by themselves, so the app's job shifts from "log your spending" to "check what came in and know where you stand". Manual entry stays, but quietly. Mockups were reviewed on 22 Oct; nothing here is built yet.
+
+### Review inbox (centre button) · M
+- The centre button of the bottom nav becomes a **review inbox** with a count badge: new transactions since you last looked, unknown merchants and unmatched refunds first.
+- One card at a time: swipe right = looks right, swipe left or tap = change category.
+- **Tag by payee** lives here: "Always treat payments to this payee as Rent / EMI / Investment / …" (Phase 2's tagging, in the place you naturally see each payee).
+- Manual entry moves out of the spotlight: a small "+ Cash spend" on Today, a + in the Activity header, and long-press on the centre button.
+- Nav: Today · Activity · **[review inbox]** · Stats · Briefing.
+
+### Today, redesigned · M
+Top to bottom:
+1. **Header:** sync status ("synced 2m ago"), replacing the big Add button.
+2. **Hero:** left to spend today, with base / carried / spent in one line and a thin meter. Tracking mode: spent today vs your usual by this time.
+3. **Month pace:** spent vs allowance so far, days left, and a projection ("likely to end ₹2,100 under").
+4. **New from SMS:** the latest few auto-tracked transactions with category chips; "Tag?" on unknown payees; links to the review inbox.
+5. **Coming up:** autopays and bills in the next 7 days, plus balances in one compact card.
+6. **One insight:** a single nudge, e.g. "Food is 32% above your usual this week".
+7. **Footer row:** streak and level in one line (instead of two big cards), and a small "+ Cash spend".
+
+### Briefing, redesigned · M
+- **No tabs:** it shows the morning brief before 5 pm and the night brief after, in one scroll. Older days live in a calendar.
+- **Morning:** what you can spend today, yesterday in one line (amount, vs base, top category), anything due today.
+- **Night:** today's spend vs allowance and what rolls into tomorrow; where it went (category split bar, biggest spend); this week as 7 mini bars against the budget line; tomorrow's allowance and what's due.
+- **Month calendar:** each day green or red; tap a day for its report (replaces the History tab).
+- The "push notifications aren't implemented" banner goes away; when notifications ship, the brief gets a "Send this as a notification" switch.
+- These screens are the content for the morning/night notifications (Phase 3), so templates can be finalised here first.
+
 ## Phase 1: Accuracy
 
 ### Fix: tracking-only mode shows a deficit · S
@@ -60,12 +89,6 @@ While the app is open, a check runs every 60 s. Today each check loads every tra
 - ✅ **0.3.1:** UPI Lite top-ups are read as an **expense** in **Bills & Utilities** (Lite payments themselves send no SMS). Money credited from a shop or service ("from WWW MYNTRA COM") is a **refund**, not income, with a clean merchant name. A parser upgrade re-reads the inbox once: it adds missed messages, corrects unedited old ones, and never brings back deleted ones.
 - **Sample messages needed:** paste a few missed SMS (the top-up one included) and they become test cases. Likely causes are an unrecognised sender ID, or wording without "debited / spent / sent" (e.g. "Rs 2000 **added to UPI Lite**").
 - **"Couldn't read" inbox:** bank-sender SMS that mention an amount but didn't parse are listed in Settings → Bank SMS ("3 messages not understood"), with **Add as expense / Ignore**. Nothing gets lost silently.
-
-### Cleaner merchant names · S
-- Map UPI IDs and truncated SMS names ("Makemytrip Indi" → "MakeMyTrip") to clean names, using a built-in list of common merchants plus your own renames.
-- Renaming one transaction offers "rename all from this payee"; duplicates of the same merchant merge in Stats.
-
----
 
 ## Phase 2: Money model
 
@@ -113,26 +136,10 @@ New **Recurring** tab, for awareness. In budget mode it also supplies the expect
 - A native splash with the pulse logo on the app's dark background, shown while the web app loads. It uses Android 12+'s system splash, with the same look on older versions.
 - It stays up until the first screen is ready, so the current blank-then-content flash goes away.
 
-### Light haptic feedback · S
-- Subtle taps on: adding an expense, saving, switching tabs, toggles, pull-to-refresh, and a soft "success" pattern when a brief or import finishes.
-- Uses Android's built-in haptic feedback, which needs no extra permission and respects the phone's system haptics setting. An in-app "Haptics" switch is in Settings.
-
-### Fingerprint app lock · S
-- Unlock with fingerprint or the phone PIN when the app opens or comes back after a few minutes away (Android's BiometricPrompt).
-- Off by default, switched on in Settings. Notifications and the widget can optionally hide amounts while locked.
-
----
-
 ## Phase 4: Safety & insight
 
 ### Encrypt backups · S
 - Automatic daily backup shipped in 0.3.0 (plain JSON). Add an optional passphrase so the backup files are encrypted; restore asks for it.
-
-### Account balances from SMS · S–M
-- Read "Avl bal" / "Available balance" from bank SMS (today it's deliberately skipped when reading the amount) and keep the latest balance per account and card (by last 4 digits).
-- An Accounts view shows each balance with "as of" time; card SMS show available limit.
-
----
 
 ## Phase 5: Friends & leaderboard (8) · L, needs a server
 
@@ -160,12 +167,13 @@ Share **ratios, never amounts**:
 
 ## Suggested order
 
-1. **Phase 1:** lighter refresh, dividend + investment rules, UPI Lite + missed-SMS fixes, "couldn't read" inbox, merchant names.
-2. **Phase 2:** payee tags, then budget-from-regular-payments (with the "don't set aside" option), then the Recurring tab.
-3. **Phase 3:** splash + haptics (small, visible), app lock, widget, then morning/night briefs once templates are ready.
-4. **Phase 4:** backup encryption, account balances.
-5. **Install route:** decide on Play internal testing vs USB/sideload.
-6. **Phase 5:** friends, starting with the no-server share card.
+1. **Next up:** review inbox, then the Today and Briefing redesigns.
+2. **Phase 1:** tracking-mode deficit fix, lighter refresh, dividend + investment rules, "couldn't read" inbox.
+3. **Phase 2:** payee tags (via the review inbox), budget from regular payments with the "don't set aside" option, the Recurring tab.
+4. **Phase 3:** splash screen, widget, then morning/night brief notifications once templates are ready.
+5. **Phase 4:** backup encryption.
+6. **Install route:** decide on Play internal testing vs USB/sideload.
+7. **Phase 5:** friends, starting with the no-server share card.
 
 **Decided:** UPI Lite top-ups → expense, Bills & Utilities · no background refresh or per-transaction notifications · budget stays, built from real regular payments, with an option not to set anything aside.
 
