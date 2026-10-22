@@ -6,6 +6,7 @@ import { type ComponentType, createContext, type ReactNode, useCallback, useCont
 import { useAppData, useStore } from "@/data/store";
 import { useSmsSync } from "@/data/useSmsSync";
 import { useAutoBackup } from "@/data/useAutoBackup";
+import { useHomeWidget } from "@/data/useHomeWidget";
 import { haptic, setHapticsEnabled } from "@/data/device";
 import { DEFAULT_PREFS } from "@/lib/types";
 import { QuickAddSheet } from "./QuickAdd";
@@ -29,10 +30,11 @@ const NAV_EXTRA = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { ready, mode, setMode, db } = useStore();
+  const { ready, mode, setMode, db, today } = useStore();
   const data = useAppData();
   useSmsSync(mode === "personal" && data?.profile ? db : null);
   useAutoBackup(data?.profile ? db : null, mode);
+  useHomeWidget(data, mode, today);
   const hapticsPref = data?.profile?.prefs?.haptics ?? DEFAULT_PREFS.haptics;
   useEffect(() => setHapticsEnabled(hapticsPref), [hapticsPref]);
   // One light tap for every button, link, tab and toggle, instead of wiring each one.

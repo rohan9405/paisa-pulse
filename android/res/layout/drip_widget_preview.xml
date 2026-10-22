@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="horizontal" android:gravity="center_vertical"
+    android:padding="18dp" android:background="@drawable/widget_background">
+    <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="drip" android:textColor="#c6ff3d" android:textSize="16sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Left today" android:textColor="#9696a8" android:textSize="12sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="₹740" android:textColor="#f4f4f7" android:textSize="30sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Tap to open drip" android:textColor="#9696a8" android:textSize="11sp" />
+    </LinearLayout>
+    <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:gravity="center" android:text="TODAY + MONTH\n\nM  T  W  T  F  S  S\n●  ●  ●  ●  ●  ●  ●\n●  ●  ●  ●  ●  ●  ●\n●  ●  ●  ●  ●  ○  ○\n○  ○  ○  ○  ○  ○  ○" android:textColor="#c6ff3d" android:textSize="11sp" />
+</LinearLayout>

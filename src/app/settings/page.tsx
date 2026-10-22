@@ -129,6 +129,19 @@ export default function SettingsPage() {
 
       {tab === "app" && (
         <>
+          {typeof window !== "undefined" && window.PaisaWidget && (
+            <Group>
+              <Section icon="💧" title="Home widget" summary="Today’s drip + month calendar · 4 × 2">
+                <div className="space-y-3 text-sm text-ink-300">
+                  <p>{derived.ledger.hasBudget ? "Your remaining allowance fills the drop. The calendar shows days under or over budget and this month’s budget spending." : "The widget shows everyday spending and neutral calendar days, without allowance or budget targets."}</p>
+                  <p className="text-xs text-ink-400">Updates when drip reads your data. Tap the widget to open drip and sync. With app lock on, figures are hidden.</p>
+                  {window.PaisaWidget.canPin() ? (
+                    <button className="btn-primary" onClick={() => window.PaisaWidget?.requestPin()}>Add to home screen</button>
+                  ) : <p>Long-press your home screen → Widgets → drip.</p>}
+                </div>
+              </Section>
+            </Group>
+          )}
           <Group>
             <AppLock prefs={prefs} onToast={setToast} />
             <Toggle

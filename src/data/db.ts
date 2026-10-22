@@ -67,6 +67,7 @@ export function getDB(mode: AppMode): FinanceDB {
 }
 
 export async function deleteDatabase(mode: AppMode) {
+  if (mode === "personal" && typeof window !== "undefined") window.PaisaWidget?.clear();
   const db = cache.get(mode);
   if (db) {
     db.close();

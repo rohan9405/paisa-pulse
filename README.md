@@ -165,6 +165,8 @@ docs/               budget rules, data integration, roadmap, marketing
 
 ## Docs
 
+- [docs/HOME_WIDGET.md](docs/HOME_WIDGET.md): the Android 4 × 2 home widget, installation, refresh behaviour and privacy.
+
 - [docs/BUDGET_LOGIC.md](docs/BUDGET_LOGIC.md): the exact budget rules.
 - [docs/ROADMAP.md](docs/ROADMAP.md): what's built, what's next, and decisions, including friends (Phase 5) and offline engagement like "You skipped it" (Phase 6), with what to avoid.
 - [docs/MARKETING.md](docs/MARKETING.md): the name, icon, voice, copy ideas and store listing draft.

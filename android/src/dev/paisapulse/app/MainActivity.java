@@ -72,6 +72,7 @@ public class MainActivity extends Activity {
         files = new FilesBridge(this);
         web.addJavascriptInterface(files, "PaisaFiles");
         web.addJavascriptInterface(new DeviceBridge(this), "PaisaDevice");
+        web.addJavascriptInterface(new WidgetBridge(this), "PaisaWidget");
         // Needed for <input type=file> (CSV import, backup restore) and confirm() dialogs.
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -120,12 +121,19 @@ public class MainActivity extends Activity {
         root.addView(web);
         root.addView(lockCover);
         setContentView(root);
-        if (saved != null) web.restoreState(saved);
+        if (saved != null && !"dev.paisapulse.app.WIDGET_OPEN".equals(getIntent().getAction())) web.restoreState(saved);
         else web.loadUrl("https://" + HOST + "/");
 
         if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[] {Manifest.permission.READ_SMS}, SMS_REQUEST);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if ("dev.paisapulse.app.WIDGET_OPEN".equals(intent.getAction())) web.loadUrl("https://" + HOST + "/");
     }
 
     private WebResourceResponse serve(String path) {
@@ -239,6 +247,7 @@ public class MainActivity extends Activity {
 
     void setLockEnabled(boolean on) {
         getSharedPreferences("device", 0).edit().putBoolean("appLock", on).apply();
+        DripWidgetProvider.refresh(this);
         unlocked = true;
         lockCover.setVisibility(View.GONE);
     }
