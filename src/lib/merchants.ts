@@ -5,7 +5,7 @@
 import { getConfig } from "./remoteConfig";
 
 /** Brand keys (lowercase, letters/digits only) → display name. Includes legal names seen on card SMS. */
-const BRANDS: [string, string][] = [
+export const BRANDS: [string, string][] = [
   ["makemytrip", "MakeMyTrip"],
   ["goibibo", "Goibibo"],
   ["cleartrip", "Cleartrip"],
@@ -87,7 +87,7 @@ const BRANDS: [string, string][] = [
 ];
 
 /** Short brands need a whole-word match ("ola" must not match "coca cola"). */
-const SHORT_BRANDS: [RegExp, string][] = [
+export const SHORT_BRANDS: [RegExp, string][] = [
   [/\bola\b/, "Ola"],
   [/\buber\b/, "Uber"],
   [/\bkfc\b/, "KFC"],
@@ -112,9 +112,13 @@ function titleCase(s: string) {
 export function cleanMerchantName(raw: string): string {
   const spaced = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const compact = spaced.replace(/ /g, "");
-  for (const m of getConfig().merchants) if (compact.includes(m.contains)) return m.name;
-  for (const [key, name] of BRANDS) if (compact.includes(key)) return name;
-  for (const [re, name] of SHORT_BRANDS) if (re.test(spaced)) return name;
+  const { merchants, replaceBuiltInMerchants } = getConfig();
+  const padded = ` ${spaced} `;
+  for (const m of merchants) if (m.word ? padded.includes(` ${m.contains} `) : compact.includes(m.contains)) return m.name;
+  if (!replaceBuiltInMerchants) {
+    for (const [key, name] of BRANDS) if (compact.includes(key)) return name;
+    for (const [re, name] of SHORT_BRANDS) if (re.test(spaced)) return name;
+  }
 
   const tokens = raw.trim().split(/\s+/);
   while (tokens.length > 1 && isSuffix(tokens[tokens.length - 1])) tokens.pop();

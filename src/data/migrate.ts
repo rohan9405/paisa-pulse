@@ -60,8 +60,10 @@ export function migratePlan(p: BudgetPlan): BudgetPlan {
 /** The current built-in rules, with stable ids. */
 /** Built-in rules plus the remote config's rules, minus built-ins it switched off. */
 export function currentBuiltInRules(): CategoryRule[] {
-  const { rules, disabledRules } = getConfig();
+  const { rules, disabledRules, replaceBuiltInRules } = getConfig();
   const off = new Set(disabledRules);
   const remote: CategoryRule[] = rules.map((r, i) => ({ id: `remote-${i}-${r.contains}`, pattern: r.contains, category: r.category, tag: r.tag, kind: r.kind, direction: r.direction, priority: r.priority, builtIn: true }));
-  return [...builtIns.filter((r) => !off.has(r.pattern.trim().toLowerCase())).map((r) => ({ ...r })), ...remote];
+  // The config can own the whole list; the built-ins are then only the offline fallback before the first config.
+  const base = replaceBuiltInRules ? [] : builtIns.filter((r) => !off.has(r.pattern.trim().toLowerCase())).map((r) => ({ ...r }));
+  return [...base, ...remote];
 }

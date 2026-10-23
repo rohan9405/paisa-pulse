@@ -30,8 +30,11 @@ button.primary{background:var(--lime);color:#07070a;border:0;font-weight:700}but
 <section><h2>Categorisation rules</h2><p class="sub">If the merchant or SMS contains the text, it gets this category. Built-ins are priority 0, a user's own rules 10.</p>
 <table id="rules"><thead><tr><th>Contains</th><th>Category</th><th>Tag</th><th>Kind</th><th>Money</th><th>Priority</th><th></th></tr></thead><tbody></tbody></table>
 <button data-action="add-rule">+ Rule</button>
+<p><label><input type="checkbox" class="chk" id="replaceRules"> Use only these rules (the app's built-in list is then just the offline fallback)</label></p>
 <p class="sub" style="margin-top:12px">Switch off built-in rules (one pattern per line, e.g. <code>ola</code>):</p><textarea id="disabledRules"></textarea></section>
-<section><h2>Merchant names</h2><p class="sub">Text contains → name shown in the app (e.g. "bundl" → Swiggy).</p><table id="merchants"><tbody></tbody></table><button data-action="add-pair" data-list="merchants">+ Name</button></section>
+<section><h2>Merchant names</h2><p class="sub">Text contains → name shown in the app (e.g. "bundl" → Swiggy).</p><p class="sub">"Whole word" for short names, so "ola" doesn't match "coca cola".</p>
+<table id="merchants"><tbody></tbody></table><button data-action="add-pair" data-list="merchants">+ Name</button>
+<p><label><input type="checkbox" class="chk" id="replaceMerchants"> Use only these names (the app's built-in list is then just the offline fallback)</label></p></section>
 <section><h2>Bank SMS senders</h2><p class="sub">Add a bank by its SMS sender ID, the part between the dashes (VM-<b>YESBNK</b>-S). Must contain letters.</p><table id="banks"><tbody></tbody></table><button data-action="add-pair" data-list="banks">+ Bank</button></section>
 <section><h2>Ignore SMS containing</h2><p class="sub">One phrase per line. Matching bank SMS are never read as transactions.</p><textarea id="smsIgnore"></textarea></section>
 <section><h2>Budget and insights</h2><div class="grid" id="budget"></div></section>
@@ -69,7 +72,8 @@ function render() {
   $("screens").innerHTML = META.screenIds.map((s) => { const v = cfg.screens[s] || {}; return '<tr><td style="width:90px">' + esc(s) + '</td><td><input data-st="' + esc(s) + '" placeholder="Title" value="' + esc(v.title) + '" maxlength="40"></td><td><input data-ss="' + esc(s) + '" placeholder="Subtitle" value="' + esc(v.subtitle) + '" maxlength="120"></td></tr>'; }).join("");
   $("rules").querySelector("tbody").innerHTML = cfg.rules.map(ruleRow).join("");
   $("disabledRules").value = cfg.disabledRules.join("\\n");
-  $("merchants").querySelector("tbody").innerHTML = cfg.merchants.map((m, i) => pairRow("merchants", i, m.contains, m.name, "contains", "name")).join("");
+  $("merchants").querySelector("tbody").innerHTML = cfg.merchants.map((m, i) => pairRow("merchants", i, m.contains, m.name, "contains", "name", m.word)).join("");
+  $("replaceRules").checked = !!cfg.replaceBuiltInRules; $("replaceMerchants").checked = !!cfg.replaceBuiltInMerchants;
   $("banks").querySelector("tbody").innerHTML = cfg.banks.map((b, i) => pairRow("banks", i, b.sender, b.bank, "sender ID", "bank name")).join("");
   $("smsIgnore").value = cfg.smsIgnore.join("\\n");
   const B = { lateSalaryDay: "Salary counts for next month from day", bigCreditRupees: "…if it's at least (₹)", nightBriefHour: "Night brief from (hour, IST)", insightMinRupees: "Insight: minimum change (₹)", insightRisePct: "Insight: minimum rise (%)" };
@@ -83,8 +87,9 @@ function ruleRow(r, i) {
   const tags = META.tags[r.category] || [];
   return '<tr data-rule="' + i + '"><td><input data-k="contains" value="' + esc(r.contains) + '"></td><td><select data-k="category">' + opt(META.categories, r.category) + '</select></td><td><input data-k="tag" list="tags-' + i + '" value="' + esc(r.tag) + '"><datalist id="tags-' + i + '">' + tags.map((t) => "<option>" + esc(t) + "</option>").join("") + '</datalist></td><td><select data-k="kind">' + opt(KINDS, r.kind || "") + '</select></td><td><select data-k="direction">' + opt(["", "in", "out"], r.direction || "") + '</select></td><td><input type="number" data-k="priority" value="' + Number(r.priority ?? 5) + '" style="width:70px"></td><td><button class="x" data-action="remove" data-list="rules" data-i="' + i + '">✕</button></td></tr>';
 }
-function pairRow(list, i, a, b, pa, pb) {
-  return "<tr data-" + list + '="' + i + '"><td><input data-a value="' + esc(a) + '" placeholder="' + pa + '"></td><td><input data-b2 value="' + esc(b) + '" placeholder="' + pb + '"></td><td><button class="x" data-action="remove" data-list="' + list + '" data-i="' + i + '">✕</button></td></tr>';
+function pairRow(list, i, a, b, pa, pb, word) {
+  const w = list === "merchants" ? '<td><label><input type="checkbox" class="chk" data-w' + (word ? " checked" : "") + "> whole word</label></td>" : "";
+  return "<tr data-" + list + '="' + i + '"><td><input data-a value="' + esc(a) + '" placeholder="' + pa + '"></td><td><input data-b2 value="' + esc(b) + '" placeholder="' + pb + '"></td>' + w + '<td><button class="x" data-action="remove" data-list="' + list + '" data-i="' + i + '">✕</button></td></tr>';
 }
 const lines = (id) => $(id).value.split("\\n").map((s) => s.trim()).filter(Boolean);
 function collect() {
@@ -93,7 +98,8 @@ function collect() {
   c.screens = {}; META.screenIds.forEach((s) => { const t = document.querySelector('[data-st="' + s + '"]').value.trim(), st = document.querySelector('[data-ss="' + s + '"]').value.trim(); if (t || st) c.screens[s] = { title: t || undefined, subtitle: st || undefined }; });
   c.rules = [...document.querySelectorAll("[data-rule]")].map((tr) => { const g = (k) => tr.querySelector('[data-k="' + k + '"]').value.trim(); return { contains: g("contains"), category: g("category"), tag: g("tag") || undefined, kind: g("kind") || undefined, direction: g("direction") || undefined, priority: Number(g("priority")) }; });
   c.disabledRules = lines("disabledRules");
-  c.merchants = [...document.querySelectorAll("[data-merchants]")].map((tr) => ({ contains: tr.querySelector("[data-a]").value.trim(), name: tr.querySelector("[data-b2]").value.trim() }));
+  c.merchants = [...document.querySelectorAll("[data-merchants]")].map((tr) => ({ contains: tr.querySelector("[data-a]").value.trim(), name: tr.querySelector("[data-b2]").value.trim(), word: tr.querySelector("[data-w]").checked || undefined }));
+  c.replaceBuiltInRules = $("replaceRules").checked; c.replaceBuiltInMerchants = $("replaceMerchants").checked;
   c.banks = [...document.querySelectorAll("[data-banks]")].map((tr) => ({ sender: tr.querySelector("[data-a]").value.trim(), bank: tr.querySelector("[data-b2]").value.trim() }));
   c.smsIgnore = lines("smsIgnore");
   document.querySelectorAll("[data-b]").forEach((el) => (c.budget[el.dataset.b] = Number(el.value)));
@@ -117,7 +123,7 @@ $("keyfile").addEventListener("change", async (e) => {
 });
 
 async function publish() {
-  if (!signingKey) return msg("Load your signing key file first (private/config-signing-key.jwk).");
+  if (!signingKey) return msg("Load your signing key file first (~/.drip-private/config-signing-key.jwk).");
   const prep = await post("/admin/api/prepare", { config: collect() });
   if (!prep.ok) return msg("Not published:\\n" + prep.errors.join("\\n"));
   const sig = b64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signingKey, new TextEncoder().encode(prep.payload)));

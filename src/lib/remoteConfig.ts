@@ -40,8 +40,15 @@ export interface RemoteConfig {
   rules: RemoteRule[];
   /** Built-in rule patterns to switch off (e.g. "ola"). */
   disabledRules: string[];
-  /** Merchant name clean-ups: text contains → display name. */
-  merchants: { contains: string; name: string }[];
+  /** True: `rules` is the complete list and the app's built-in rules are not used. */
+  replaceBuiltInRules: boolean;
+  /**
+   * Merchant name clean-ups: text contains → display name. `word`: match as a
+   * whole word ("ola" must not match "coca cola"); otherwise letters/digits only, anywhere.
+   */
+  merchants: { contains: string; name: string; word?: boolean }[];
+  /** True: `merchants` is the complete list and the app's built-in names are not used. */
+  replaceBuiltInMerchants: boolean;
   /** More bank SMS senders: sender ID core (e.g. "YESBNK") → bank name. */
   banks: { sender: string; bank: string }[];
   /** Extra phrases that mean "not a transaction" (offers, OTPs…). */
@@ -82,7 +89,9 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   screens: {},
   rules: [],
   disabledRules: [],
+  replaceBuiltInRules: false,
   merchants: [],
+  replaceBuiltInMerchants: false,
   banks: [],
   smsIgnore: [],
   budget: { lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
@@ -172,16 +181,22 @@ export function parseRemoteConfig(input: unknown): ParseResult {
     }
   }
 
+  c.replaceBuiltInRules = input.replaceBuiltInRules === true && c.rules.length > 0; // never replace with nothing
   if (Array.isArray(input.disabledRules)) c.disabledRules = input.disabledRules.map((p) => str(p, 60)).filter((p): p is string => !!p).map((p) => p.toLowerCase()).slice(0, 500);
 
   if (Array.isArray(input.merchants)) {
     for (const m of input.merchants.slice(0, 500)) {
       if (!isObj(m)) continue;
-      const contains = str(m.contains, 60, 3);
+      const word = m.word === true;
+      const contains = str(m.contains, 60, word ? 2 : 3);
       const name = str(m.name, 40);
-      if (contains && name) c.merchants.push({ contains: contains.toLowerCase().replace(/[^a-z0-9]/g, ""), name });
+      if (!contains || !name) continue;
+      const key = word ? contains.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() : contains.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (key) c.merchants.push(word ? { contains: key, name, word } : { contains: key, name });
     }
   }
+
+  c.replaceBuiltInMerchants = input.replaceBuiltInMerchants === true && c.merchants.length > 0;
 
   if (Array.isArray(input.banks)) {
     for (const b of input.banks.slice(0, 100)) {

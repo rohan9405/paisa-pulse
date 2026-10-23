@@ -97,7 +97,8 @@ No Gradle: the script builds a static export of the web app (`NEXT_STATIC_EXPORT
 The shell (`android/src`) is a WebView that serves the export from the APK on a private `https://paisapulse.local` origin (never change it: the app's storage belongs to that origin), exposes the SMS inbox as `window.PaisaSms` (read-only) and file saving / the backup folder as `window.PaisaFiles`.
 
 Update safety, enforced by `build.py`:
-- The APK must be signed by the certificate pinned in `android/signing-cert.sha256`. If `android/paisa.keystore` is missing the build stops rather than making a new key. **Keep the keystore safe and out of git.** Only the very first build uses `--new-key`.
+- The APK must be signed by the certificate pinned in `android/signing-cert.sha256`. If the keystore is missing the build stops rather than making a new key. Only the very first build uses `--new-key`.
+- **Secrets never live in the repo.** The APK keystore, the config signing key and the admin password are kept in `~/.drip-private/` on the developer's machine (override with `DRIP_PRIVATE_DIR`), outside the working tree, so they can't be committed even by accident. Back that folder up somewhere offline.
 - `versionCode` (in `android/AndroidManifest.xml`) can't go below the last build; bump it for each release.
 - Database changes must add a new Dexie `version()` with an upgrade step and never drop data; `tests/unit/backup.test.ts` fails if a table is missing from the backup.
 

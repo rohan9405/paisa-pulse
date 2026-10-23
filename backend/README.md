@@ -52,9 +52,9 @@ Then add the config URL to `android/local.json` as `"config_url": "https://drip-
 ## Publishing
 
 1. Open `https://drip-config.<your-subdomain>.workers.dev/admin` and sign in.
-2. At the bottom, choose your **signing key** file: `private/config-signing-key.jwk` (created once with `node backend/scripts/keygen.mjs`; back it up offline). It's read in the browser tab only.
+2. At the bottom, choose your **signing key** file: `~/.drip-private/config-signing-key.jwk` (created once with `node backend/scripts/keygen.mjs`; back it up offline). It's read in the browser tab only.
 3. Edit, add a note, **Sign and publish**. To undo, load an older version from History and publish it again.
 
 ## Local development
 
-`backend/.dev.vars` (git-ignored) holds a local `ADMIN_PASSWORD`; then `npm run dev`.
+Create `backend/.dev.vars` (git-ignored) with a throwaway local `ADMIN_PASSWORD=…` (20+ characters), then `npm run dev`. Delete it when done.

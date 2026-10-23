@@ -10,9 +10,10 @@ Gradle and no third-party Android libraries. Output: android/build/PaisaPulse.ap
 Updates must never cost the user their data, so the build refuses anything that
 couldn't install over the existing app:
 - the signing key must match the pinned certificate (android/signing-cert.sha256);
-  a missing android/paisa.keystore is an error, not a cue to make a new one;
+  a missing ~/.drip-private/paisa.keystore is an error, not a cue to make a new one;
 - versionCode can never go below the last build (android/last-version-code).
-Keep a copy of android/paisa.keystore somewhere safe.
+The APK signing key is ~/.drip-private/paisa.keystore (outside the repo). Keep a
+backup of it somewhere safe.
 """
 import argparse
 import json
@@ -27,7 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "android"
 OUT = SOURCE / "build"
 WEB = ROOT / ".next-android"
-KEY = SOURCE / "paisa.keystore"
+# Secrets live outside the repo (never committed): ~/.drip-private, or $DRIP_PRIVATE_DIR.
+PRIVATE = Path(os.environ.get("DRIP_PRIVATE_DIR", "~/.drip-private")).expanduser()
+KEY = PRIVATE / "paisa.keystore"
 PIN = SOURCE / "signing-cert.sha256"
 LAST_CODE = SOURCE / "last-version-code"
 
@@ -130,7 +133,7 @@ def version_code() -> int:
 def check_update_safety(new_key: bool):
     if not KEY.exists() and not new_key:
         raise SystemExit(
-            "android/paisa.keystore is missing. Restore it from your backup: an APK signed with any other key can't "
+            "~/.drip-private/paisa.keystore is missing. Restore it from your backup: an APK signed with any other key can't "
             "update the installed app, and uninstalling to get around that deletes all of its data. "
             "Use --new-key only for the very first build."
         )

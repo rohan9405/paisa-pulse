@@ -30,7 +30,7 @@ The config backend lets the owner change app settings without a release. It must
 
 ## What to protect
 
-1. **`private/config-signing-key.jwk`** — the signing key. It's git-ignored and blocked from commits. Keep a backup somewhere safe and offline (e.g. a password manager). If it leaks, run `node backend/scripts/keygen.mjs --rotate` and release an app with the new public key; if it's lost, do the same (old apps will keep their last config until updated).
+1. **`~/.drip-private/config-signing-key.jwk`** — the signing key. It lives outside the repo (git can't see it) and is blocked from commits. Keep a backup somewhere safe and offline (e.g. a password manager). If it leaks, run `node backend/scripts/keygen.mjs --rotate` and release an app with the new public key; if it's lost, do the same (old apps will keep their last config until updated).
 2. **The admin password** — 20+ random characters, stored as the `ADMIN_PASSWORD` Worker secret, kept in your password manager.
 3. **Your Cloudflare account** — turn on two-factor authentication.
 
