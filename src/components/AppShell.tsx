@@ -9,6 +9,9 @@ import { useAutoBackup } from "@/data/useAutoBackup";
 import { useHomeWidget } from "@/data/useHomeWidget";
 import { haptic, setHapticsEnabled } from "@/data/device";
 import { DEFAULT_PREFS } from "@/lib/types";
+import type { TabId } from "@/lib/remoteConfig";
+import { loadCachedConfig, refreshConfig, useRemoteConfig } from "@/data/remoteConfigLoader";
+import { ensureRules } from "@/data/repo";
 import { QuickAddSheet } from "./QuickAdd";
 import { Onboarding } from "./Onboarding";
 import { Welcome } from "./Welcome";
@@ -18,13 +21,14 @@ import { cx } from "./ui";
 const QuickAddCtx = createContext<{ open: (preset?: { date?: string }) => void }>({ open: () => {} });
 export const useQuickAdd = () => useContext(QuickAddCtx);
 
-const NAV = [
-  { href: "/", label: "Today", icon: IconToday },
-  { href: "/briefing", label: "Briefing", icon: IconBriefing },
-  { href: "/transactions", label: "Activity", icon: IconList },
-  { href: "/dashboard", label: "Stats", icon: IconChart },
-];
-const NAV_EXTRA = [
+/** Where each tab goes; order, labels and visibility come from the remote config. */
+const TAB_ROUTES: Record<TabId, { href: string; icon: ComponentType }> = {
+  today: { href: "/", icon: IconToday },
+  briefing: { href: "/briefing", icon: IconBriefing },
+  activity: { href: "/transactions", icon: IconList },
+  stats: { href: "/dashboard", icon: IconChart },
+};
+const NAV_EXTRA_ALL = [
   { href: "/import", label: "Import CSV", icon: IconUpload },
   { href: "/settings", label: "Settings", icon: IconSettings },
 ];
@@ -41,7 +45,24 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   useSmsSync(mode === "personal" && data?.profile ? db : null);
   useAutoBackup(data?.profile ? db : null, mode);
   useHomeWidget(data, mode, today);
-  const hapticsPref = data?.profile?.prefs?.haptics ?? DEFAULT_PREFS.haptics;
+  const config = useRemoteConfig();
+  const NAV = config.tabs.filter((t) => t.visible).map((t) => ({ ...TAB_ROUTES[t.id], label: t.label }));
+  const NAV_EXTRA = NAV_EXTRA_ALL.filter((n) => n.href !== "/import" || config.features.csvImport);
+  const half = Math.ceil(NAV.length / 2);
+  // Remote config: cached copy first, then the latest from the server; on change, rules are refreshed and SMS re-read.
+  useEffect(() => {
+    loadCachedConfig();
+    refreshConfig();
+    window.addEventListener("paisa-resume", refreshConfig);
+    return () => window.removeEventListener("paisa-resume", refreshConfig);
+  }, []);
+  useEffect(() => {
+    if (!db) return;
+    const onConfig = () => ensureRules(db).then(() => window.dispatchEvent(new Event("paisa-resume")));
+    window.addEventListener("drip-config", onConfig);
+    return () => window.removeEventListener("drip-config", onConfig);
+  }, [db]);
+  const hapticsPref = (data?.profile?.prefs?.haptics ?? DEFAULT_PREFS.haptics) && config.features.haptics;
   useEffect(() => setHapticsEnabled(hapticsPref), [hapticsPref]);
   // One light tap for every button, link, tab and toggle, instead of wiring each one.
   useEffect(() => {
@@ -120,7 +141,7 @@ function InteractiveShell({ children }: { children: ReactNode }) {
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-ink-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden" aria-label="Primary">
         <div className="mx-auto grid max-w-md grid-cols-5 items-center px-2 py-1.5">
-          {NAV.slice(0, 2).map((n) => (
+          {NAV.slice(0, half).map((n) => (
             <TabLink key={n.href} {...n} active={isActive(pathname, n.href)} />
           ))}
           <div className="flex justify-center">
@@ -128,7 +149,7 @@ function InteractiveShell({ children }: { children: ReactNode }) {
               <IconPlus />
             </button>
           </div>
-          {NAV.slice(2).map((n) => (
+          {NAV.slice(half).map((n) => (
             <TabLink key={n.href} {...n} active={isActive(pathname, n.href)} />
           ))}
         </div>

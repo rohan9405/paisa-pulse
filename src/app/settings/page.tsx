@@ -17,6 +17,7 @@ import { useBudget } from "@/data/useBudget";
 import { CommitmentList, type CommitmentDraft, draftFromCommitment, validateDrafts } from "@/components/CommitmentEditor";
 import { AmountInput, Card, Field, Money, PageHeader, Pill, Segmented, Toast, cx } from "@/components/ui";
 import { useStore } from "@/data/store";
+import { useRemoteConfig } from "@/data/remoteConfigLoader";
 
 type Tab = "budget" | "data" | "app";
 const TABS: { value: Tab; label: string }[] = [
@@ -26,6 +27,7 @@ const TABS: { value: Tab; label: string }[] = [
 ];
 
 export default function SettingsPage() {
+  const config = useRemoteConfig();
   const { data, derived, today, db, mode } = useBudget();
   const { setMode } = useStore();
   const router = useRouter();
@@ -50,7 +52,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Settings" subtitle={mode === "demo" ? "Demo mode — changes affect fictional data only" : "Personal mode"} />
+      <PageHeader screen="settings" title="Settings" subtitle={mode === "demo" ? "Demo mode — changes affect fictional data only" : "Personal mode"} />
       <div className="sticky top-0 z-20 -mx-4 mb-4 bg-ink-950/90 px-4 py-2 backdrop-blur md:static md:mx-0 md:bg-transparent md:px-0">
         <Segmented value={tab} onChange={setTab} options={TABS} className="w-full" />
       </div>
@@ -60,7 +62,7 @@ export default function SettingsPage() {
           <Section
             icon="💰"
             title="Budget mode"
-            summary={!pool.hasBudget ? "Tracking only" : pool.mode === "actual" ? "Set aside actual payments" : `${formatINR(pool.poolPaise)}/mo to spend`}
+            summary={!pool.hasBudget ? "Just tracking" : pool.mode === "actual" ? "Daily budget · Actual" : `Daily budget · Planned · ${formatINR(pool.poolPaise, { decimals: "never" })}/mo`}
             defaultOpen
           >
             <BudgetEditor key={derived.plan?.id ?? "none"} />
@@ -103,7 +105,7 @@ export default function SettingsPage() {
         <>
           <Group>
             <BankSms onToast={setToast} />
-            {smsBridge() && mode === "personal" && (
+            {smsBridge() && mode === "personal" && config.features.balances && (
               <Toggle
                 icon="🏦"
                 title="Read account balances"
@@ -143,7 +145,7 @@ export default function SettingsPage() {
             </Group>
           )}
           <Group>
-            <AppLock prefs={prefs} onToast={setToast} />
+            {config.features.appLock && <AppLock prefs={prefs} onToast={setToast} />}
             <Toggle
               icon="📳"
               title="Haptic feedback"
@@ -379,7 +381,7 @@ function BudgetEditor() {
     return (
       <Card className="space-y-2 text-sm" data-testid="budget-summary">
         <div className="flex items-center justify-between">
-          <span className="text-ink-400">{!pool.hasBudget ? "Tracking only" : pool.mode === "actual" ? "Set-aside budget · actual payments" : "Set-aside budget · planned amounts"}</span>
+          <span className="text-ink-400">{!pool.hasBudget ? "Just tracking" : pool.mode === "actual" ? "Daily budget · Actual" : "Daily budget · Planned"}</span>
           <button className="btn-ghost min-h-[36px] text-xs" onClick={() => setEditing(true)} data-testid="edit-budget">
             Change
           </button>
@@ -414,37 +416,46 @@ function BudgetEditor() {
         value={trackOnly ? "track" : "budget"}
         onChange={(v) => setTrackOnly(v === "track")}
         options={[
-          { value: "budget", label: "Set-aside budget" },
-          { value: "track", label: "Tracking only" },
+          { value: "budget", label: "Daily budget" },
+          { value: "track", label: "Just track" },
         ]}
       />
       {trackOnly ? (
         <p className="text-xs text-ink-400">No daily budget, just expense tracking. Bills, investments and savings are still shown separately in Stats.</p>
       ) : (
-        <>
-          <div>
-            <span className="label">How should drip work out your budget?</span>
-            <div className="grid gap-2 sm:grid-cols-2" data-testid="set-aside-mode">
-              {(
-                [
-                  ["actual", "Actual", "Nothing to enter. Income is your salary and other credits as they arrive; bills and investments come off as they're paid. A salary that lands in the last week of a month counts for the next month."],
-                  ["planned", "Planned", "You enter your monthly income and the expected bills and investments (rent ₹22,000). If a real payment differs, the difference lands in that day's budget."],
-                ] as const
-              ).map(([v, label, help]) => (
-                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
-                  <span className="font-semibold">{label}</span>
-                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
-                </button>
-              ))}
+        <div className="space-y-3" data-testid="set-aside-mode">
+          <span className="label">How should bills and investments come off?</span>
+          {(
+            [
+              ["planned", "Planned", "Enter your income and expected bills and investments. If a real payment differs, the difference lands in that day's budget."],
+              ["actual", "Actual", "Nothing to enter. Income that arrives funds your allowance; bills and investments come off as they're paid. A salary in the last week of a month counts for the next month."],
+            ] as const
+          ).map(([v, label, help]) => (
+            <div key={v} className={cx("rounded-2xl border", saMode === v ? "border-lime/50 bg-lime/[0.05]" : "border-white/10")}>
+              <button onClick={() => setSaMode(v)} className="w-full p-3 text-left text-sm" aria-pressed={saMode === v}>
+                <span className="font-semibold">{label}</span>
+                <span className="mt-1 block text-xs text-ink-400">{help}</span>
+              </button>
+              {v === "planned" && saMode === "planned" && (
+                <div className="space-y-4 border-t border-white/5 p-3">
+                  <Field label="Monthly take-home income">
+                    <AmountInput value={income} onChange={setIncome} aria-label="Monthly income" data-testid="settings-income" />
+                  </Field>
+                  <div>
+                    <span className="label">Planned bills and investments</span>
+                    <CommitmentList drafts={drafts} onChange={setDrafts} errors={errors} />
+                  </div>
+                  <p className="text-sm text-ink-300">
+                    Spending pool: <Money paise={preview.poolPaise} className="font-semibold" />
+                    /month
+                    {preview.shortfallPaise > 0 && <span className="text-coral"> · planned payments exceed income by {formatINR(preview.shortfallPaise)}</span>}
+                  </p>
+                </div>
+              )}
             </div>
-          </div>
-          {saMode === "planned" && (
-            <Field label="Monthly take-home income">
-              <AmountInput value={income} onChange={setIncome} aria-label="Monthly income" data-testid="settings-income" />
-            </Field>
-          )}
+          ))}
           <div>
-            <span className="label">Take these off income first</span>
+            <span className="label">Set aside these categories</span>
             <div className="flex flex-wrap gap-1.5" data-testid="set-aside-categories">
               {SET_ASIDE_OPTIONS.map((c) => (
                 <button key={c} className={cx("chip", setAside.includes(c) && "chip-on")} onClick={() => setSetAside((xs) => (xs.includes(c) ? xs.filter((x) => x !== c) : [...xs, c]))} aria-pressed={setAside.includes(c)}>
@@ -452,26 +463,13 @@ function BudgetEditor() {
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-xs text-ink-400">Payments in these categories don't count against your daily budget. Anything not ticked comes out of the daily budget.</p>
+            <p className="mt-1.5 text-xs text-ink-400">Payments in these categories don't count against your daily budget. Anything not ticked comes out of it.</p>
           </div>
-          {saMode === "planned" && (
-            <div>
-              <span className="label">Planned bills and investments</span>
-              <CommitmentList drafts={drafts} onChange={setDrafts} errors={errors} />
-            </div>
-          )}
-        </>
+        </div>
       )}
-      <Field label="Effective from" hint="Earlier days keep their mode. A budget started after tracking begins with no carried balance; tracking spending never becomes a budget deficit. Changing a past date recalculates from then.">
+      <Field label="Effective from" hint="Earlier days keep their old setup. A budget started after tracking begins at ₹0.">
         <input type="date" className="input" value={from} min={data.profile!.trackingStart} onChange={(e) => setFrom(e.target.value)} data-testid="settings-effective" />
       </Field>
-      {!trackOnly && saMode === "planned" && (
-        <p className="text-sm text-ink-300">
-          New pool: <Money paise={preview.poolPaise} className="font-semibold" />
-          /month
-          {preview.shortfallPaise > 0 && <span className="text-coral"> · planned payments exceed income by {formatINR(preview.shortfallPaise)}</span>}
-        </p>
-      )}
       {err && <p className="text-sm text-coral">{err}</p>}
       <div className="flex gap-2">
         <button className="btn-ghost flex-1" onClick={() => setEditing(false)}>

@@ -91,7 +91,9 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     return [...strong.map((t) => ({ t, suggested: true })), ...recent.map((t) => ({ t, suggested: false }))];
   }, [draft, txns]);
 
-  const matching = draft && txn && flow === flowOf(txn.kind) ? recipientMatches(txns, draft, "all", today).filter((t) => t.category !== category || t.tag !== (tag.trim() || undefined)) : [];
+  // Rules and bulk edits only follow an actual category / tag change, never a note or amount fix.
+  const classChanged = !!txn && (category !== txn.category || (tag.trim() || undefined) !== txn.tag);
+  const matching = classChanged && draft && txn && flow === flowOf(txn.kind) ? recipientMatches(txns, draft, "all", today).filter((t) => t.category !== category || t.tag !== (tag.trim() || undefined)) : [];
 
   if (!txn) return null;
 
@@ -119,7 +121,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     try {
       await updateTxn(db, txn.id, patch);
       const saved = { ...txn, ...patch } as Transaction;
-      if (cat !== txn.category || (tag || undefined) !== txn.tag || remember || applyPast) await applyCategory(db, saved, cat, flow === "refund" || flow === "transfer" ? undefined : tag, { remember: remember && (flow === "out" || flow === "income"), scope: applyPast && matching.length > 0 ? "all" : "one" });
+      if (classChanged && (flow === "out" || flow === "income")) await applyCategory(db, saved, cat, tag, { remember, scope: applyPast && matching.length > 0 ? "all" : "one" });
       onClose();
     } catch { setError("Could not save changes. Please try again."); } finally { setSaving(false); }
   };
@@ -252,7 +254,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
                 </span>
               </label>
             )}
-            {recipientKey({ ...txn, merchant }) && <label className="flex items-center gap-2 text-sm text-ink-300">
+            {classChanged && recipientKey({ ...txn, merchant }) && <label className="flex items-center gap-2 text-sm text-ink-300">
               <input type="checkbox" className="h-4 w-4 accent-lime" checked={remember} onChange={(e) => setRemember(e.target.checked)} data-testid="txn-remember" />
               <span className="min-w-0">
                 Remember for future payments to{" "}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { categoryBreakdown, commitmentCategory, commitmentStatuses, manualPaidKey, outgoingsInRange, planForDate, spendVsBudgetSeries } from "@/lib/budget";
+import { categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, outgoingsInRange, planForDate, spendVsBudgetSeries } from "@/lib/budget";
 import { categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
@@ -53,11 +53,14 @@ export default function DashboardPage() {
   const catMax = Math.max(1, ...cats.map((c) => c.amountPaise));
   const future = from > today;
   const mk = monthKey(today);
-  const statuses = commitmentStatuses(planForDate(data.plans, today), data.profile!, data.txns, mk, today);
+  const todayPlan = planForDate(data.plans, today);
+  // Planned lines only exist in planned set-aside mode; other modes keep old lines unused.
+  const showPlanned = planHasBudget(todayPlan) && modeOf(todayPlan) === "planned";
+  const statuses = showPlanned ? commitmentStatuses(todayPlan, data.profile!, data.txns, mk, today) : [];
 
   return (
     <div>
-      <PageHeader title="Stats" subtitle="Where your money is going" />
+      <PageHeader screen="stats" title="Stats" subtitle="Where your money is going" />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Segmented value={period} onChange={(p) => (setPeriod(p), setOffset(0))} options={[{ value: "week", label: "Week" }, { value: "month", label: "Month" }]} />
         <div className="ml-auto flex items-center gap-1">
@@ -193,7 +196,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card>
+          {showPlanned && <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="font-semibold">Planned payments · {formatMonth(mk)}</h2>
               <InfoTip label="About planned payments">Bills, investments and savings you planned for. Tap ✓ to mark one paid without a matching transaction.</InfoTip>
@@ -229,7 +232,7 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
-          </Card>
+          </Card>}
         </div>
       )}
     </div>

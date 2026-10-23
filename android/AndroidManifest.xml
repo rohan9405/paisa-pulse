@@ -1,7 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.paisapulse.app" android:versionCode="9" android:versionName="0.6.0">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
-    <!-- Read-only access to the SMS inbox to pick up bank alerts. Nothing is sent off the phone; there is no INTERNET permission. -->
+    <!-- Read-only access to the SMS inbox to pick up bank alerts. Nothing is sent off the phone. -->
     <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- Download-only: fetches the remote config file (backend/). The WebView blocks every other outside URL; nothing about you is sent. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- Fingerprint app lock (optional, off by default). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />

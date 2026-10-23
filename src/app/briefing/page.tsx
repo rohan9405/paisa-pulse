@@ -8,6 +8,8 @@ import { hasBudget as budgetOnDate, planForDate, outgoingsInRange } from "@/lib/
 import { badges, eveningReport, morningBriefing } from "@/lib/insights";
 import { monthCalendar, monthPace, tomorrowAllocation, weekDays, weeklyInsight } from "@/lib/overview";
 import { useBudget } from "@/data/useBudget";
+import { useRemoteConfig } from "@/data/remoteConfigLoader";
+import { getConfig } from "@/lib/remoteConfig";
 import { InsightCard, MonthCalendar, PaceCard, WeekBars } from "@/components/Overview";
 import { Card, EmptyState, Money, PageHeader, Pill, SectionTitle, cx } from "@/components/ui";
 
@@ -15,9 +17,10 @@ import { Card, EmptyState, Money, PageHeader, Pill, SectionTitle, cx } from "@/c
 const SPLIT = ["bg-lime", "bg-violet", "bg-sky", "bg-amber", "bg-ink-600"];
 
 export default function BriefingPage() {
+  const config = useRemoteConfig();
   const { data, derived, today } = useBudget();
   // Morning brief until 5 pm, night brief after; a day picked on the calendar shows that day's report.
-  const [night, setNight] = useState(() => istHour() >= 17);
+  const [night, setNight] = useState(() => istHour() >= getConfig().budget.nightBriefHour);
   const [day, setDay] = useState<string | null>(null);
   useEffect(() => {
     const selected = new URLSearchParams(window.location.search).get("day");
@@ -37,6 +40,7 @@ export default function BriefingPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader
+        screen={showingPast ? undefined : "briefing"}
         title={showingPast ? "Day report" : isNight ? "Night brief" : "Morning brief"}
         subtitle={formatDay(reportDay, { weekday: true, year: reportDay.slice(0, 4) !== today.slice(0, 4) })}
         right={
@@ -60,7 +64,7 @@ export default function BriefingPage() {
           {!showingPast && <WeekBars days={weekDays(ledger, today)} hasBudget={hasBudget} today={today} />}
           {!showingPast && !isNight && <PaceCard pace={monthPace(ledger, today)} hasBudget={hasBudget} />}
           <MonthCalendar blanks={cal.blanks} days={cal.days} hasBudget={hasBudget} selected={day ?? undefined} onPick={(d) => setDay(d === today ? null : d)} />
-          {!showingPast && hasBudget && <Badges />}
+          {!showingPast && hasBudget && config.features.badges && <Badges />}
         </div>
       )}
     </div>
@@ -68,6 +72,7 @@ export default function BriefingPage() {
 }
 
 function Morning() {
+  const config = useRemoteConfig();
   const { data, derived, today } = useBudget();
   if (!data || !derived) return null;
   const { ledger, statuses } = derived;
@@ -125,7 +130,7 @@ function Morning() {
         </Card>
       )}
 
-      {insight && <InsightCard insight={insight} />}
+      {insight && config.features.insights && <InsightCard insight={insight} />}
     </>
   );
 }

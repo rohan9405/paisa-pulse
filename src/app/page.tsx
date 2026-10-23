@@ -10,6 +10,8 @@ import { monthPace, usualDailySpend, weeklyInsight } from "@/lib/overview";
 import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
 import { tagEmoji } from "@/lib/categorize";
 import { useBudget } from "@/data/useBudget";
+import { useRemoteConfig } from "@/data/remoteConfigLoader";
+import { Notices } from "@/components/Notices";
 import { useQuickAdd } from "@/components/AppShell";
 import { InsightCard, PaceCard, SyncPill } from "@/components/Overview";
 import { TxnEditor } from "@/components/TxnEditor";
@@ -19,6 +21,7 @@ import { Card, EmptyState, Money, ProgressBar, SectionTitle, cx } from "@/compon
 const LATEST = 4;
 
 export default function TodayPage() {
+  const config = useRemoteConfig();
   const { data, derived, today } = useBudget();
   const { open } = useQuickAdd();
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -44,8 +47,8 @@ export default function TodayPage() {
   const commitmentName = (id?: string) => derived.plan?.commitments.find((c) => c.id === id)?.name;
   const rec = ledger.hasBudget ? recoveryPlan(ledger, today) : null;
   const pace = monthPace(ledger, today);
-  const insight = ledger.started ? weeklyInsight(data.txns, data.plans, today) : null;
-  const showBalances = (data.profile?.prefs?.balances ?? DEFAULT_PREFS.balances) && data.accounts.length > 0;
+  const insight = ledger.started && config.features.insights ? weeklyInsight(data.txns, data.plans, today) : null;
+  const showBalances = config.features.balances && (data.profile?.prefs?.balances ?? DEFAULT_PREFS.balances) && data.accounts.length > 0;
   const lv = level(ledger);
   // Tracking mode compares with the same stretch of last month.
   const lastMonthStart = startOfMonth(addDays(startOfMonth(today), -1));
@@ -58,11 +61,13 @@ export default function TodayPage() {
       <div>
         <div className="mb-4 mt-3 flex items-center justify-between gap-2 md:mt-0">
           <p className="truncate text-sm text-ink-400">
-            {greeting}
+            {config.screens.today?.title ?? greeting}
             {name ? `, ${name}` : ""} · {formatDay(today, { weekday: true })}
           </p>
           <SyncPill connection={sms} />
         </div>
+        {config.screens.today?.subtitle && <p className="-mt-2 mb-4 text-sm text-ink-300">{config.screens.today.subtitle}</p>}
+        <Notices />
 
         {!ledger.started ? (
           <EmptyState emoji="⏳" title={`Tracking starts ${formatDay(data.profile!.trackingStart, { weekday: true })}`} body="Your spending summaries start on that date." />

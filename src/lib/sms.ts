@@ -6,6 +6,7 @@
  * OTPs, offers, reminders and failed/declined attempts, and read amount,
  * direction, account, counterparty and bank reference from the body.
  */
+import { getConfig } from "./remoteConfig";
 import { type DateKey, toISTKey } from "./dates";
 import { type Paise, parseAmountToPaise } from "./money";
 import { categorize, detectMethod, extractMerchant, outflowKind } from "./categorize";
@@ -22,7 +23,8 @@ export interface RawSms {
   date: number;
 }
 
-export type Bank = "HDFC" | "ICICI" | "SBI" | "Axis" | "Kotak";
+/** Built-in banks; the remote config can add more (any name). */
+export type Bank = "HDFC" | "ICICI" | "SBI" | "Axis" | "Kotak" | (string & {});
 
 /** Sender-ID cores after stripping the operator prefix ("VM-") and the DLT suffix ("-S"). */
 const SENDERS: [RegExp, Bank][] = [
@@ -39,7 +41,7 @@ export function bankForSender(address: string): Bank | null {
   const core = parts.length >= 2 && parts[0].length === 2 ? parts[1] : parts[0];
   if (!core) return null;
   for (const [re, bank] of SENDERS) if (re.test(core)) return bank;
-  return null;
+  return getConfig().banks.find((b) => b.sender === core)?.bank ?? null;
 }
 
 export interface ParsedSms {
@@ -79,6 +81,8 @@ export function parseBankSms(sms: Pick<RawSms, "address" | "body">): ParsedSms |
   if (!bank) return null;
   const body = sms.body.replace(/\s+/g, " ").trim();
   if (NOT_A_TXN.some((re) => re.test(body))) return null;
+  const lower = body.toLowerCase();
+  if (getConfig().smsIgnore.some((p) => lower.includes(p))) return null;
 
   // "UPI LITE top-up amounting to Rs 1850.00 is successful" has no debit wording at all.
   const upiLiteTopUp = /\bupi\s*lite\b/i.test(body) && /\b(top-?\s?up|topped up|add(ed)? money|loaded)\b/i.test(body);

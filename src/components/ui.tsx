@@ -2,6 +2,8 @@
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { haptic } from "@/data/device";
+import { useRemoteConfig } from "@/data/remoteConfigLoader";
+import type { ScreenId } from "@/lib/remoteConfig";
 import { formatINR, type FormatOptions } from "@/lib/money";
 
 export function cx(...xs: (string | false | null | undefined)[]) {
@@ -29,7 +31,11 @@ export function SectionTitle({ children, action }: { children: ReactNode; action
   );
 }
 
-export function PageHeader({ title, subtitle, right }: { title: string; subtitle?: ReactNode; right?: ReactNode }) {
+/** `screen` lets the remote config replace the title / subtitle without an app release. */
+export function PageHeader({ title, subtitle, right, screen }: { title: string; subtitle?: ReactNode; right?: ReactNode; screen?: ScreenId }) {
+  const text = useRemoteConfig().screens[screen ?? ("" as ScreenId)];
+  title = text?.title ?? title;
+  subtitle = text?.subtitle ?? subtitle;
   return (
     <header className="mb-4 flex items-end justify-between gap-3 pt-2">
       <div className="min-w-0">

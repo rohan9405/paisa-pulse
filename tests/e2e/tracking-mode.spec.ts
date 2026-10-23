@@ -6,7 +6,7 @@ import { formatINR } from "../../src/lib/money";
 async function start(page: Page, mode: "tracking" | "actual") {
   await page.goto("/");
   await page.getByTestId("start-personal").click();
-  if (mode === "tracking") await page.getByRole("checkbox", { name: /Just track spending/ }).check();
+  if (mode === "tracking") await page.getByTestId("ob-track").click();
   else await page.getByRole("button", { name: /Use actual payments/ }).click();
   await expect(page.getByTestId("ob-income")).toHaveCount(0);
   await page.getByTestId("ob-next").click();
@@ -42,7 +42,7 @@ test("tracking hides budget inputs and keeps remembered transaction tagging", as
   await page.getByTestId("edit-budget").click();
   await expect(page.getByTestId("settings-income")).toHaveCount(0);
   await expect(page.getByLabel("Monthly amount")).toHaveCount(0);
-  await page.getByRole("tab", { name: "Set-aside budget", exact: true }).click();
+  await page.getByRole("tab", { name: "Daily budget", exact: true }).click();
   await page.getByTestId("settings-income").fill("30000");
   await page.getByTestId("save-budget").click();
   await expect(page.getByTestId("save-budget")).toBeHidden();
@@ -55,21 +55,25 @@ test("tracking hides budget inputs and keeps remembered transaction tagging", as
 test("actual mode takes no budget amounts and is funded by recorded income", async ({ page }) => {
   await start(page, "actual");
   await expect(page.getByTestId("available")).toHaveAttribute("aria-label", "₹0");
-  await add(page, "30000", "Salary", "Income");
+  // A small non-salary credit funds today in any week; a salary from the 25th on would count for next month.
+  await add(page, "9000", "Freelance payment", "Income");
   const { y, m, d } = parseKey(toISTKey());
-  const allocation = Math.floor(30_000_00 / (daysInMonth(y, m) - d + 1));
+  const daysLeft = daysInMonth(y, m) - d + 1;
+  const allocation = daysLeft === 1 ? 9_000_00 : Math.floor(9_000_00 / daysLeft);
   await expect(page.getByTestId("available")).toHaveAttribute("aria-label", formatINR(allocation));
   await page.goto("/settings");
   await page.getByTestId("edit-budget").click();
   await expect(page.getByTestId("settings-income")).toHaveCount(0);
   await expect(page.getByLabel("Monthly amount")).toHaveCount(0);
-  await page.getByRole("tab", { name: "Tracking only", exact: true }).click();
+  await page.getByRole("tab", { name: "Just track", exact: true }).click();
   await expect(page.getByTestId("set-aside-categories")).toHaveCount(0);
   await page.getByTestId("save-budget").click();
   await expect(page.getByTestId("save-budget")).toBeHidden();
   await page.goto("/briefing");
   await expect(page.getByTestId("calendar")).toBeVisible();
-  if (await page.getByTestId("morning").isVisible()) await page.getByRole("button", { name: /Night/ }).click();
+  // Before 5 pm the morning brief shows, with a "Night" switch; after, the night brief is already up.
+  const night = page.getByRole("button", { name: /Night/ });
+  if (await night.count()) await night.click();
   await expect(page.getByTestId("evening")).toBeVisible();
   await expect(page.getByText("+5 bonus XP")).toHaveCount(0);
   await expect(page.getByTestId("tomorrow")).toHaveCount(0);

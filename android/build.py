@@ -67,7 +67,8 @@ def main():
 
     if not args.skip_web:
         shutil.rmtree(WEB, ignore_errors=True)
-        run("npx", "next", "build", cwd=ROOT, env={**env, "NEXT_STATIC_EXPORT": "1", "NEXT_DIST_DIR": ".next-android"})
+        version_name = re.search(r'android:versionName="([^"]+)"', (SOURCE / "AndroidManifest.xml").read_text()).group(1)
+        run("npx", "next", "build", cwd=ROOT, env={**env, "NEXT_STATIC_EXPORT": "1", "NEXT_DIST_DIR": ".next-android", "NEXT_PUBLIC_CONFIG_URL": config_url(), "NEXT_PUBLIC_APP_VERSION": version_name})
     if not (WEB / "index.html").exists():
         raise SystemExit("No web export at .next-android; run without --skip-web.")
 
@@ -91,6 +92,8 @@ def main():
             apk.write(dex, dex.name)
         for f in sorted(p for p in WEB.rglob("*") if p.is_file()):
             apk.write(f, "assets/web/" + f.relative_to(WEB).as_posix())
+        # The one outside URL the WebView may fetch (remote config); everything else stays blocked.
+        apk.writestr("assets/config-url.txt", config_url())
 
     run(tools / "zipalign", "-f", "4", OUT / "unsigned.apk", OUT / "aligned.apk")
     if args.new_key and not KEY.exists():
@@ -109,6 +112,15 @@ def main():
         raise SystemExit(f"Signed with the wrong key ({digest}); expected {PIN.read_text().strip()}. This APK could not update the installed app.")
     LAST_CODE.write_text(str(version_code()) + "\n")
     print("Built and verified:", apk, f"(versionCode {version_code()}, key {digest[:12]}…)")
+
+
+def config_url() -> str:
+    """Remote config endpoint (backend/), from $DRIP_CONFIG_URL or android/local.json "config_url". Empty = off."""
+    local = json.loads(LOCAL.read_text()) if LOCAL.exists() else {}
+    url = os.environ.get("DRIP_CONFIG_URL") or local.get("config_url") or ""
+    if url and not url.startswith("https://"):
+        raise SystemExit("config_url must be https://")
+    return url
 
 
 def version_code() -> int:

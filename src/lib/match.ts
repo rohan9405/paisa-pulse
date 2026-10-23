@@ -128,7 +128,9 @@ export function learnFromLinked(txns: Transaction[]): Transaction[] {
     const teacher = linked.find((l) => {
       if (t.payee && l.payee) return t.payee === l.payee;
       if (normalize(l.merchant) !== merchant) return false;
-      return !genericMerchant(t.merchant) || Math.abs(t.amountPaise - l.amountPaise) <= l.amountPaise * 0.01;
+      // A name alone is weak: "Airtel" could be the fibre bill or a ₹299 prepaid recharge.
+      // Same name needs a similar amount; nameless "ICICI debit" style SMS need a near-exact one.
+      return Math.abs(t.amountPaise - l.amountPaise) <= l.amountPaise * (genericMerchant(t.merchant) ? 0.01 : 0.3);
     });
     if (teacher) out.push({ ...t, kind: teacher.kind, category: teacher.category, tag: teacher.tag, commitmentId: teacher.commitmentId });
   }

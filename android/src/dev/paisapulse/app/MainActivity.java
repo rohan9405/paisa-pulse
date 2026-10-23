@@ -46,6 +46,8 @@ public class MainActivity extends Activity {
     /** Back in the app within this long after leaving it: no need to unlock again. */
     private static final long RELOCK_AFTER_MS = 60_000;
     private WebView web;
+    /** Remote config URL baked into the APK by android/build.py; null when remote config is off. */
+    private String configUrl;
     private FilesBridge files;
     private ValueCallback<Uri[]> pickCallback;
     private TextView lockCover;
@@ -60,6 +62,7 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(0xff07070a);
         getWindow().setNavigationBarColor(0xff07070a);
 
+        configUrl = readConfigUrl();
         web = new WebView(this);
         web.setBackgroundColor(0xff07070a);
         WebSettings s = web.getSettings();
@@ -92,6 +95,8 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 Uri url = req.getUrl();
+                // The only outside request allowed: a GET of the remote config file (see backend/).
+                if (configUrl != null && "GET".equals(req.getMethod()) && configUrl.equals(url.toString())) return null;
                 if (!HOST.equals(url.getHost())) return blocked();
                 return serve(url.getPath());
             }
@@ -139,6 +144,17 @@ public class MainActivity extends Activity {
     private static String widgetRoute(Intent intent) {
         String route = intent.getStringExtra("widgetRoute");
         return route != null && (route.equals("/dashboard/") || route.equals("/briefing/") || route.matches("/briefing/\\?day=\\d{4}-\\d{2}-\\d{2}")) ? route : "/";
+    }
+
+    private String readConfigUrl() {
+        try (InputStream in = getAssets().open("config-url.txt")) {
+            byte[] buf = new byte[512];
+            int n = in.read(buf);
+            String url = n > 0 ? new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8).trim() : "";
+            return url.startsWith("https://") ? url : null;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     private WebResourceResponse serve(String path) {

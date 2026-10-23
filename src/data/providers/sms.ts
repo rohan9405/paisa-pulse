@@ -5,6 +5,7 @@
  */
 import { autoLinkRefund, learnFromLinked } from "@/lib/match";
 import { toISTKey } from "@/lib/dates";
+import { getConfig } from "@/lib/remoteConfig";
 import { type ParsedMandate, type RawSms, parseBalance, parseMandate, smsToCandidate } from "@/lib/sms";
 import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
 import { type FinanceDB, uid } from "../db";
@@ -72,7 +73,8 @@ async function doSync(db: FinanceDB): Promise<number> {
   const startOfTracking = istMidnight(profile.trackingStart) - 1;
   const from = conn?.syncedFrom;
   // A newer parser re-reads everything already scanned once, to pick up messages it used to miss.
-  const reread = !!from && (conn?.parserVersion ?? 1) < SMS_PARSER_VERSION;
+  // A newer parser, or a new remote config (rules may have changed), re-reads the inbox once.
+  const reread = !!from && ((conn?.parserVersion ?? 1) < SMS_PARSER_VERSION || (conn?.configVersion ?? 0) !== getConfig().version);
   // Each range scans messages received in (after, before).
   const ranges: [number, number][] = [];
   if (!from || reread) ranges.push([Math.min(startOfTracking, from ? istMidnight(from) - 1 : startOfTracking), Infinity]);
@@ -90,7 +92,7 @@ async function doSync(db: FinanceDB): Promise<number> {
   const batchId = uid("sms-");
   const created: Transaction[] = [];
   const corrected: Transaction[] = [];
-  const readBalances = profile.prefs?.balances ?? DEFAULT_PREFS.balances;
+  const readBalances = getConfig().features.balances && (profile.prefs?.balances ?? DEFAULT_PREFS.balances);
   const balances = new Map<string, Account>();
   const mandates: { m: ParsedMandate; on: string }[] = [];
 
@@ -173,6 +175,7 @@ async function doSync(db: FinanceDB): Promise<number> {
       cursor: String(Math.max(cursor, Number(conn?.cursor ?? 0))),
       syncedFrom: from && from < profile.trackingStart ? from : profile.trackingStart,
       parserVersion: SMS_PARSER_VERSION,
+      configVersion: getConfig().version,
     });
   });
   // Payments to a payee you've linked to a planned line (rent, SIP…) get linked too, in any month.

@@ -7,12 +7,13 @@ import { RecipientTagger } from "@/components/RecipientTagger";
 import { recipientKey, taggingFlow, recipientNeedsTagging, withinTaggingWindow } from "@/lib/recipients";
 import { CATEGORIES } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, monthKey, relativeDayLabel, startOfMonth } from "@/lib/dates";
-import { matchCommitment, planForDate } from "@/lib/budget";
+import { hasBudget, matchCommitment, modeOf, planForDate } from "@/lib/budget";
 import { commitmentCandidates, transferPairs } from "@/lib/match";
 import { formatINR } from "@/lib/money";
 import type { Transaction, TxnKind } from "@/lib/types";
-import { updateTxn } from "@/data/repo";
+import { dismissSuggestion, updateTxn } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
+import { useRemoteConfig } from "@/data/remoteConfigLoader";
 import { useQuickAdd } from "@/components/AppShell";
 import { KIND_LABEL, TxnEditor } from "@/components/TxnEditor";
 import { TxnRow } from "@/components/TxnRow";
@@ -31,6 +32,7 @@ export default function TransactionsPage() {
 }
 
 function Transactions() {
+  const config = useRemoteConfig();
   const params = useSearchParams();
   const { data, derived, today, db } = useBudget();
   const { open } = useQuickAdd();
@@ -42,7 +44,6 @@ function Transactions() {
   const [cat, setCat] = useState("");
   const [period, setPeriod] = useState<Period>(params.get("review") ? "all" : "month");
   const [editing, setEditing] = useState<Transaction | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const range = useMemo((): [DateKey, DateKey] => {
     if (period === "7d") return [addDays(today, -6), today];
@@ -107,30 +108,44 @@ function Transactions() {
 
   const suggestions = useMemo(() => {
     if (!data) return { pairs: [], matches: [] };
+    const dismissed = new Set(data.profile?.dismissedSuggestions ?? []);
     const recent = data.txns.filter((t) => t.date >= addDays(today, -62));
-    const pairs = transferPairs(recent).filter((p) => !dismissed.has(p.out.id));
+    const pairs = transferPairs(recent)
+      .map((p) => ({ ...p, key: `transfer:${p.out.id}:${p.in.id}` }))
+      .filter((p) => !dismissed.has(p.key));
+    // Planned lines only matter in planned set-aside mode. One card per payee and line;
+    // a "No" covers that payee's other payments too, so the card doesn't come back next month.
+    const seen = new Set<string>();
     const matches = recent
-      // Payments already matched to a planned line automatically need no suggestion.
-      .filter((t) => t.kind === "expense" && !dismissed.has(t.id) && !matchCommitment(t, planForDate(data.plans, t.date)))
-      .map((t) => ({ t, c: commitmentCandidates(t, data.plans, data.txns)[0] }))
-      .filter((x) => x.c && x.c.score >= 60);
+      .filter((t) => {
+        const plan = planForDate(data.plans, t.date);
+        return t.kind === "expense" && hasBudget(plan) && modeOf(plan) === "planned" && !matchCommitment(t, plan);
+      })
+      .map((t) => {
+        const c = commitmentCandidates(t, data.plans, data.txns)[0];
+        return { t, c, key: c ? `match:${recipientKey(t) ?? t.id}:${c.commitment.id}` : "" };
+      })
+      .filter((x) => x.c && x.c.score >= 60 && !dismissed.has(x.key) && !seen.has(x.key) && seen.add(x.key));
     return { pairs, matches };
-  }, [data, today, dismissed]);
+  }, [data, today]);
 
   if (!data || !derived) return null;
   const commitmentName = (id?: string) => data.plans.flatMap((p) => p.commitments).find((c) => c.id === id)?.name;
   const reviewCount = data.txns.filter((t) => t.needsReview).length;
-  const dismiss = (id: string) => setDismissed((s) => new Set(s).add(id));
+  const dismiss = (key: string) => db && dismissSuggestion(db, key);
 
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader
+        screen="activity"
         title="Activity"
         subtitle={`${filtered.length} transaction${filtered.length === 1 ? "" : "s"}`}
         right={
-          <Link href="/import" className="btn-ghost">
-            Import CSV
-          </Link>
+          config.features.csvImport ? (
+            <Link href="/import" className="btn-ghost">
+              Import CSV
+            </Link>
+          ) : undefined
         }
       />
 
@@ -173,14 +188,14 @@ function Transactions() {
         <>
           <SectionTitle>Smart matches</SectionTitle>
           <div className="space-y-2">
-            {suggestions.matches.slice(0, 3).map(({ t, c }) => (
-              <Card key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+            {suggestions.matches.slice(0, 3).map(({ t, c, key }) => (
+              <Card key={key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                 <span className="min-w-0">
                   <b>{t.merchant}</b> {formatINR(t.amountPaise)} looks like <b className="text-sky">{c!.commitment.name}</b>
                   <span className="block text-xs text-ink-400">{c!.reason} · matching stops it counting against your daily budget</span>
                 </span>
                 <span className="flex gap-1.5">
-                  <button className="btn-ghost min-h-[36px] text-xs" onClick={() => dismiss(t.id)}>
+                  <button className="btn-ghost min-h-[36px] text-xs" onClick={() => dismiss(key)}>
                     No
                   </button>
                   <button className="btn-primary min-h-[36px] text-xs" onClick={() => db && updateTxn(db, t.id, { kind: "commitment", commitmentId: c!.commitment.id })}>
@@ -190,13 +205,13 @@ function Transactions() {
               </Card>
             ))}
             {suggestions.pairs.slice(0, 3).map((p) => (
-              <Card key={p.out.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+              <Card key={p.key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                 <span className="min-w-0">
                   {formatINR(p.out.amountPaise)} out ({p.out.merchant}) and in ({p.in.merchant}) — <b>own-account transfer?</b>
                   <span className="block text-xs text-ink-400">Transfers are excluded from spending and income</span>
                 </span>
                 <span className="flex gap-1.5">
-                  <button className="btn-ghost min-h-[36px] text-xs" onClick={() => dismiss(p.out.id)}>
+                  <button className="btn-ghost min-h-[36px] text-xs" onClick={() => dismiss(p.key)}>
                     No
                   </button>
                   <button

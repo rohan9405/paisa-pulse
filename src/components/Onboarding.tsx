@@ -96,30 +96,41 @@ export function Onboarding() {
           <Field label="Your name (optional)">
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Priya" maxLength={40} />
           </Field>
-          {planned && (
-            <Field label="Monthly take-home income">
-              <AmountInput big value={income} onChange={setIncome} placeholder="75,000" data-testid="ob-income" aria-label="Monthly take-home income" />
-            </Field>
-          )}
-          <label className="flex items-start gap-3 rounded-2xl bg-white/[0.04] p-4 text-sm">
-            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-lime" checked={trackOnly} onChange={(e) => setTrackOnly(e.target.checked)} />
-            <span>
-              <span className="font-semibold">Just track spending</span>
-              <span className="block text-ink-400">Skip the budget. You'll see where money goes, without a daily limit. You can add a budget later.</span>
-            </span>
-          </label>
+          <div className="grid grid-cols-2 gap-2" data-testid="ob-budget-mode">
+            {(
+              [
+                [false, "💧 Daily budget", "Know what you can spend each day."],
+                [true, "👀 Just track", "See where money goes, no daily limit."],
+              ] as const
+            ).map(([track, label, help]) => (
+              <button key={label} onClick={() => setTrackOnly(track)} className={cx("rounded-2xl border p-3 text-left text-sm", trackOnly === track ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={trackOnly === track} data-testid={track ? "ob-track" : "ob-budget"}>
+                <span className="font-semibold">{label}</span>
+                <span className="mt-1 block text-xs text-ink-400">{help}</span>
+              </button>
+            ))}
+          </div>
           {!trackOnly && (
-            <div className="grid gap-2 sm:grid-cols-2" data-testid="ob-mode">
+            <div className="space-y-3 rounded-3xl border border-white/10 p-3" data-testid="ob-mode">
+              <span className="label px-1">How should bills and investments come off?</span>
               {(
                 [
-                  ["planned", "Plan the amounts", "Enter what you expect to pay. If a bill comes in higher or lower, that day's budget adjusts."],
-                  ["actual", "Use actual payments", "No amounts to enter. Recorded income funds your allowance; tagged bills, investments and savings reduce it as they arrive."],
+                  ["planned", "Plan the amounts", "Enter your income and what you expect to pay. If a bill comes in higher or lower, that day's budget adjusts."],
+                  ["actual", "Use actual payments", "Nothing to enter. Income that arrives funds your allowance; bills, investments and savings reduce it as they're paid."],
                 ] as const
               ).map(([v, label, help]) => (
-                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
-                  <span className="font-semibold">{label}</span>
-                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
-                </button>
+                <div key={v} className={cx("rounded-2xl border", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")}>
+                  <button onClick={() => setSaMode(v)} className="w-full p-3 text-left text-sm" aria-pressed={saMode === v}>
+                    <span className="font-semibold">{label}</span>
+                    <span className="mt-1 block text-xs text-ink-400">{help}</span>
+                  </button>
+                  {v === "planned" && saMode === "planned" && (
+                    <div className="px-3 pb-3">
+                      <Field label="Monthly take-home income">
+                        <AmountInput big value={income} onChange={setIncome} placeholder="75,000" data-testid="ob-income" aria-label="Monthly take-home income" />
+                      </Field>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}

@@ -50,7 +50,7 @@ Short, a little cheeky, Gen Z without being cringe. Roast the spending, never th
 **Long description:**
 drip answers one question: how much can I spend today?
 Bills and savings come off first. The rest becomes a daily drip that refills at midnight. Spend less and it rolls over. Spend more and later days quietly patch the leak.
-Your bank's transaction SMS are read on the phone, so spending shows up without typing. No server, no internet permission, no analytics.
+Your bank's transaction SMS are read on the phone, so spending shows up without typing. No accounts, no analytics, and nothing about you ever leaves the phone.
 
 ## Social / launch hooks
 

@@ -4,6 +4,7 @@
  * every function here must be safe to run twice.
  */
 import { DEFAULT_RULES, categorize } from "@/lib/categorize";
+import { getConfig } from "@/lib/remoteConfig";
 import type { BudgetPlan, CategoryRule, Commitment, Transaction } from "@/lib/types";
 
 const builtIns: CategoryRule[] = DEFAULT_RULES.map((r, i) => ({ ...r, id: `builtin-${i}` }));
@@ -57,6 +58,10 @@ export function migratePlan(p: BudgetPlan): BudgetPlan {
 }
 
 /** The current built-in rules, with stable ids. */
+/** Built-in rules plus the remote config's rules, minus built-ins it switched off. */
 export function currentBuiltInRules(): CategoryRule[] {
-  return builtIns.map((r) => ({ ...r }));
+  const { rules, disabledRules } = getConfig();
+  const off = new Set(disabledRules);
+  const remote: CategoryRule[] = rules.map((r, i) => ({ id: `remote-${i}-${r.contains}`, pattern: r.contains, category: r.category, tag: r.tag, kind: r.kind, direction: r.direction, priority: r.priority, builtIn: true }));
+  return [...builtIns.filter((r) => !off.has(r.pattern.trim().toLowerCase())).map((r) => ({ ...r })), ...remote];
 }

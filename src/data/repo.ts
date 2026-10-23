@@ -19,7 +19,7 @@ export async function ensureRules(db: FinanceDB) {
   const have = await db.rules.filter((r) => !!r.builtIn).toArray();
   const same = have.length === fresh.length && fresh.every((r) => {
     const h = have.find((x) => x.id === r.id);
-    return h && h.pattern === r.pattern && h.category === r.category && h.tag === r.tag && h.kind === r.kind;
+    return h && h.pattern === r.pattern && h.category === r.category && h.tag === r.tag && h.kind === r.kind && h.direction === r.direction && h.priority === r.priority;
   });
   if (same) return;
   await db.transaction("rw", db.rules, async () => {
@@ -370,6 +370,13 @@ export async function recategorizeAll(db: FinanceDB) {
     if (changed.length) await db.txns.bulkPut(changed);
     return changed.length;
   });
+}
+
+/** Remember a "No" on a suggestion so it never comes back, across visits and devices restored from backup. */
+export async function dismissSuggestion(db: FinanceDB, key: string) {
+  const p = await db.profile.get("me");
+  if (!p || p.dismissedSuggestions?.includes(key)) return;
+  await db.profile.update("me", { dismissedSuggestions: [...(p.dismissedSuggestions ?? []), key] });
 }
 
 export async function markCommitmentPaid(db: FinanceDB, key: string, paid: boolean) {

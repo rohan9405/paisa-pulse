@@ -2,11 +2,20 @@ import { normalize } from "./categorize";
 import { addMonths, dueDateInMonth, parseKey, toISTKey } from "./dates";
 import type { Transaction } from "./types";
 
+/**
+ * Placeholder names the SMS parser uses when a message names no payee
+ * ("HDFC debit", "ATM cash", "UPI Lite top-up"). They aren't one recipient, so
+ * they never get recipient rules or bulk edits.
+ */
+export function isGenericName(name: string): boolean {
+  const n = normalize(name);
+  return !n || n === "unknown" || n === "expense" || n === "atm cash" || n === "upi lite top-up" || /^(hdfc|icici|sbi|axis|kotak) (debit|credit)$/.test(n);
+}
+
 export function recipientKey(t: Pick<Transaction, "payee" | "merchant">): string | null {
   const payee = normalize(t.payee ?? "");
   if (payee) return `p:${payee}`;
-  const name = normalize(t.merchant);
-  return !name || name === "unknown" ? null : `n:${name}`;
+  return isGenericName(t.merchant) ? null : `n:${normalize(t.merchant)}`;
 }
 
 export function taggingFlow(t: Pick<Transaction, "kind">): string {

@@ -59,6 +59,8 @@ export interface Profile {
    * transaction (e.g. rent paid before tracking began). Key: `${commitmentId}@${MonthKey}`.
    */
   manuallyPaid: string[];
+  /** Suggestions you answered "No" to (smart matches, transfer pairs); never shown again. */
+  dismissedSuggestions?: string[];
   /** App preferences; missing keys use the defaults in DEFAULT_PREFS. */
   prefs?: Partial<Prefs>;
 }
@@ -173,6 +175,8 @@ export interface ProviderConnection {
   syncedFrom?: string;
   /** SMS: parser version that last read the inbox; an older one triggers a one-time re-read. */
   parserVersion?: number;
+  /** SMS: remote config version the inbox was last read with; a new one re-reads once. */
+  configVersion?: number;
   /** SMS: fingerprints of imported transactions you deleted, so a re-read never brings them back. */
   dismissed?: string[];
 }

@@ -2,6 +2,7 @@
  * Clean merchant names from SMS / statements: "MAKEMYTRIP INDI" → "MakeMyTrip",
  * "BUNDL TECHNOLOGIES PVT" → "Swiggy", "CHAI POINT PVT LTD" → "Chai Point".
  */
+import { getConfig } from "./remoteConfig";
 
 /** Brand keys (lowercase, letters/digits only) → display name. Includes legal names seen on card SMS. */
 const BRANDS: [string, string][] = [
@@ -111,6 +112,7 @@ function titleCase(s: string) {
 export function cleanMerchantName(raw: string): string {
   const spaced = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const compact = spaced.replace(/ /g, "");
+  for (const m of getConfig().merchants) if (compact.includes(m.contains)) return m.name;
   for (const [key, name] of BRANDS) if (compact.includes(key)) return name;
   for (const [re, name] of SHORT_BRANDS) if (re.test(spaced)) return name;
 

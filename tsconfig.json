@@ -37,6 +37,7 @@
     ".next-preview/types/**/*.ts"
   ],
   "exclude": [
+    "backend",
     "node_modules"
   ]
 }

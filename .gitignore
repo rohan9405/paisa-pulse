@@ -10,3 +10,8 @@ android/build
 android/*.keystore
 android/local.json
 .next-preview
+private/
+backend/node_modules
+backend/.wrangler
+backend/.dev.vars
+.next-cfgtest

@@ -71,7 +71,7 @@ export default function ImportPage() {
   if (mode === "demo") {
     return (
       <div className="mx-auto max-w-2xl">
-        <PageHeader title="Import CSV" />
+        <PageHeader screen="import" title="Import CSV" />
         <EmptyState emoji="🎭" title="CSV import is for personal mode" body="Demo mode only holds fictional data. Switch to personal mode to import your own bank statement — it stays separate from the demo." />
       </div>
     );
@@ -101,7 +101,7 @@ export default function ImportPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="Import CSV" subtitle="Bank or card statement → transactions. Parsed only in this browser." />
+      <PageHeader screen="import" title="Import CSV" subtitle="Bank or card statement → transactions. Parsed only in this browser." />
 
       {result && (
         <Card className="mb-4 border-lime/30 bg-lime/[0.06]" data-testid="import-result">

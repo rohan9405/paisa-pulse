@@ -3,6 +3,7 @@
  * this week's days, the month calendar, your usual spend and one insight.
  * Pure functions over the ledger and transactions.
  */
+import { getConfig } from "./remoteConfig";
 import { type Ledger, categoryBreakdown } from "./budget";
 import { type DateKey, addDays, daysInMonth, diffDays, eachDay, endOfMonth, parseKey, startOfMonth, startOfWeek } from "./dates";
 import type { BudgetPlan, Transaction } from "./types";
@@ -101,13 +102,14 @@ export interface Insight {
   tone: "warn" | "good";
 }
 
-const MIN_DIFF = 300_00; // ₹300: smaller swings aren't worth a nudge
-
 /**
  * One nudge comparing the last 7 days with the 4 weeks before: the category that
  * rose the most, or, failing that, a note if overall spending is well below usual.
  */
 export function weeklyInsight(txns: Transaction[], plans: BudgetPlan[], today: DateKey): Insight | null {
+  // Thresholds (default: ₹300 and +25%) come from the remote config.
+  const minDiff = getConfig().budget.insightMinRupees * 100;
+  const risePct = getConfig().budget.insightRisePct;
   // Everyday spending only: rent day shouldn't read as "Bills up 900%".
   const week = categoryBreakdown(txns, plans, addDays(today, -6), today, { exclude: ["Bills"] });
   const before = categoryBreakdown(txns, plans, addDays(today, -34), addDays(today, -7), { exclude: ["Bills"] });
@@ -118,14 +120,14 @@ export function weeklyInsight(txns: Transaction[], plans: BudgetPlan[], today: D
   for (const c of week) {
     const u = usual.get(c.category) ?? 0;
     const diff = c.amountPaise - u;
-    if (u < 100_00 || diff < MIN_DIFF || c.amountPaise < u * 1.25) continue;
+    if (u < 100_00 || diff < minDiff || c.amountPaise < u * (1 + risePct / 100)) continue;
     if (!best || diff > best.diff) best = { category: c.category, pct: Math.round((diff / u) * 100), diff };
   }
   if (best) return { text: `${best.category} is ${best.pct}% above your usual this week`, tone: "warn" };
 
   const weekTotal = week.reduce((s, c) => s + c.amountPaise, 0);
   const usualTotal = before.reduce((s, c) => s + c.amountPaise, 0) / 4;
-  if (usualTotal > 0 && usualTotal - weekTotal >= MIN_DIFF && weekTotal <= usualTotal * 0.85) {
+  if (usualTotal > 0 && usualTotal - weekTotal >= minDiff && weekTotal <= usualTotal * 0.85) {
     return { text: `This week's spending is ${Math.round((1 - weekTotal / usualTotal) * 100)}% below your usual`, tone: "good" };
   }
   return null;

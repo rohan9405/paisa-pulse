@@ -45,7 +45,7 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 **B. Pause Play Protect briefly**: Play Store → profile → Play Protect → ⚙️ → turn off *Scan apps with Play Protect*, install the downloaded APK, then turn it straight back on.
 
 **First run**
-1. Tap **Allow** when asked to read SMS. It's the only permission the app has; it has no internet access.
+1. Tap **Allow** when asked to read SMS. SMS are read on the phone only; the app's internet access is download-only, for its settings file.
 2. **Set up my budget**: choose tracking, planned set-aside (income and planned amounts), or actual set-aside (no budget amounts; uses recorded income/payments), then the **tracking start date**. Bank SMS from that date onwards are imported.
 3. Need older history later? Settings → Tracking → move **Tracking start** earlier and save; the app reads your SMS back to that date.
 
@@ -151,7 +151,8 @@ docs/               budget rules, data integration, roadmap, marketing
 
 - **Demo mode** is labelled on every screen and uses deterministic, fictional Indian transactions tagged `providerId: "demo"`. It lives in its own IndexedDB database (`paisa-pulse-demo`) and never reads SMS.
 - **Personal mode** (`paisa-pulse-personal`) holds manual entries, CSV imports and, in the Android app, bank SMS.
-- No server, no analytics, no external AI calls. Fonts are self-hosted at build time. The Android app has no internet permission.
+- No analytics, no external AI calls, no accounts. Fonts are self-hosted at build time.
+- **Internet is download-only:** the Android app fetches one settings file (tabs, text, categorisation rules, feature switches) from the [config backend](backend/README.md) and blocks every other outside address. Nothing about you or your transactions is ever sent; offline, it uses the last copy.
 - **Turn on automatic backup in the Android app.** In a browser, data lives only in that browser: export from Settings.
 - The app never asks for bank passwords, PINs or OTPs.
 - **Old name inside, on purpose.** The app was renamed from Paisa Pulse to drip, but the Android package (`dev.paisapulse.app`), the WebView origin (`paisapulse.local`), the database names, storage keys and the backup format / file prefix (`paisa-pulse-backup-`) keep the old name. Changing any of them would orphan existing data or backups. The APK file is still `PaisaPulse.apk` because the install QR and release link point to it.

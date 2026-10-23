@@ -29,6 +29,7 @@ import {
   startOfMonth,
 } from "./dates";
 import type { Paise } from "./money";
+import { getConfig } from "./remoteConfig";
 import type { BudgetPlan, Commitment, CommitmentKind, Profile, SetAsideMode, Transaction } from "./types";
 
 // ---------------------------------------------------------------- plans/pool
@@ -158,9 +159,6 @@ export function matchCommitment(t: Transaction, plan: BudgetPlan | null): Commit
   return scored[0].c;
 }
 
-/** From this day of the month, a salary counts for the next month. */
-const LATE_SALARY_DAY = 25;
-const BIG_CREDIT = 10_000_00;
 
 /**
  * The day a credit starts funding the budget (actual mode). A salary, or any
@@ -168,7 +166,9 @@ const BIG_CREDIT = 10_000_00;
  * the next month, so a salary paid on 31 Aug pays for September.
  */
 export function incomeDate(t: Pick<Transaction, "date" | "tag" | "amountPaise">): DateKey {
-  if (parseKey(t.date).d >= LATE_SALARY_DAY && (t.tag === "Salary" || t.amountPaise >= BIG_CREDIT)) return addDays(endOfMonth(t.date), 1);
+  // Thresholds (default: from the 25th, ₹10,000+) come from the remote config.
+  const { lateSalaryDay, bigCreditRupees } = getConfig().budget;
+  if (parseKey(t.date).d >= lateSalaryDay && (t.tag === "Salary" || t.amountPaise >= bigCreditRupees * 100)) return addDays(endOfMonth(t.date), 1);
   return t.date;
 }
 

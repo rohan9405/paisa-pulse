@@ -8,7 +8,7 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
 ## Answers first (items 5, 6, 9)
 
-**Does it need a server or internet? (6)** No. The app already runs fully offline: everything is parsed and stored on the phone, and the Android app has no internet permission at all. The Mac was only used to *deliver* the APK, not to run anything. The friends leaderboard (8) needs a server. Planned Gmail import also needs opt-in internet access; its authentication and sync architecture still needs a decision. Currency conversion can stay offline with manually entered or imported rates; automatic rate updates would also need opt-in internet. The existing SMS import, budget, and planned local notifications stay offline.
+**Does it need a server or internet? (6)** Not for your data. (Since 0.7.0 the app downloads one settings file from the config backend; nothing is uploaded.) The app already runs fully offline: everything is parsed and stored on the phone, and the Android app has no internet permission at all. The Mac was only used to *deliver* the APK, not to run anything. The friends leaderboard (8) needs a server. Planned Gmail import also needs opt-in internet access; its authentication and sync architecture still needs a decision. Currency conversion can stay offline with manually entered or imported rates; automatic rate updates would also need opt-in internet. The existing SMS import, budget, and planned local notifications stay offline.
 
 **How does it refresh? (9)** It reads new SMS when the app opens, when you switch back to it, and every 60 seconds while it's on screen. Each check reads only messages newer than the last one already read (a saved cursor), so nothing is parsed twice. Nothing runs while the app is closed, but your inbox keeps the messages, so they appear next time you open it. **Decision: no background refresh and no refresh schedule.** The only work done while closed is the morning/night brief (see Phase 3).
 
@@ -200,7 +200,7 @@ Make drip fun to open without making anything up. Other apps either report the p
 - **Zero effort:** comes from SMS the app already reads. Nothing to type.
 - **Organic:** fires only when something actually happened. No random draws, no made-up points.
 - **Variable:** different from day to day because spending is.
-- **Offline:** plain rules and counting on the phone. No LLM, no internet; the app has no internet permission anyway. An LLM could later *reword* messages as an optional extra, with the templates as the fallback, but detection never depends on it.
+- **Offline:** plain rules and counting on the phone. No LLM, and nothing leaves the phone (the app's internet is download-only, for its settings). An LLM could later *reword* messages as an optional extra, with the templates as the fallback, but detection never depends on it.
 - **No new notifications:** surprises appear on app open and in the Phase 3 morning/night briefs (per-transaction notifications stay off, as decided).
 
 ### "You skipped it" ⭐ · M
