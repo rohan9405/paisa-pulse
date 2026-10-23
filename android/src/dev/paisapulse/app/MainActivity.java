@@ -104,6 +104,8 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 if (HOST.equals(req.getUrl().getHost())) return false;
+                // Outside links open in the browser (never in this WebView, which has the SMS and file bridges), https only.
+                if (!"https".equals(req.getUrl().getScheme())) return true;
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, req.getUrl()));
                 } catch (Exception ignored) {
@@ -114,7 +116,7 @@ public class MainActivity extends Activity {
         });
         // App lock: a cover over the page until the fingerprint / screen lock is confirmed.
         lockCover = new TextView(this);
-        lockCover.setText("🔒\n\nDrip is locked\nTap to unlock");
+        lockCover.setText("🔒\n\ndrip is locked\nTap to unlock");
         lockCover.setGravity(Gravity.CENTER);
         lockCover.setTextColor(0xffe8e8ef);
         lockCover.setTextSize(18);

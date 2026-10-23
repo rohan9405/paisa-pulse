@@ -51,8 +51,7 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   const half = Math.ceil(NAV.length / 2);
   // Remote config: cached copy first, then the latest from the server; on change, rules are refreshed and SMS re-read.
   useEffect(() => {
-    loadCachedConfig();
-    refreshConfig();
+    loadCachedConfig().then(refreshConfig);
     window.addEventListener("paisa-resume", refreshConfig);
     return () => window.removeEventListener("paisa-resume", refreshConfig);
   }, []);

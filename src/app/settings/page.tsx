@@ -145,7 +145,8 @@ export default function SettingsPage() {
             </Group>
           )}
           <Group>
-            {config.features.appLock && <AppLock prefs={prefs} onToast={setToast} />}
+            {/* The config can hide this switch, but never while the lock is on, so it can't strand you or weaken a lock you set. */}
+            {(config.features.appLock || prefs.appLock) && <AppLock prefs={prefs} onToast={setToast} />}
             <Toggle
               icon="📳"
               title="Haptic feedback"

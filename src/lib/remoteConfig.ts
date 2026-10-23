@@ -98,10 +98,19 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const str = (v: unknown, max: number, min = 1) => (typeof v === "string" && v.trim().length >= min && v.trim().length <= max ? v.trim() : undefined);
 const int = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : undefined);
 const bool = (v: unknown) => (typeof v === "boolean" ? v : undefined);
-const httpsUrl = (v: unknown) => {
+/**
+ * Links in a config (banner, update notice) may only point here. Built into the
+ * app, so even a correctly signed config can't send people to a phishing page
+ * or a fake APK.
+ */
+export const ALLOWED_LINK_PREFIXES = ["https://github.com/rohan9405/paisa-pulse/", "https://github.com/rohan9405/paisa-pulse#"];
+const allowedUrl = (v: unknown) => {
   const s = str(v, 300);
+  if (!s) return undefined;
   try {
-    return s && new URL(s).protocol === "https:" ? s : undefined;
+    const u = new URL(s);
+    const normal = u.href;
+    return u.protocol === "https:" && !u.username && !u.password && ALLOWED_LINK_PREFIXES.some((p) => normal.startsWith(p) || normal === p.slice(0, -1)) ? normal : undefined;
   } catch {
     return undefined;
   }
@@ -179,7 +188,8 @@ export function parseRemoteConfig(input: unknown): ParseResult {
       if (!isObj(b)) continue;
       const sender = str(b.sender, 12, 3)?.toUpperCase();
       const bank = str(b.bank, 20);
-      if (sender && /^[A-Z0-9]+$/.test(sender) && bank) c.banks.push({ sender, bank });
+      // Must contain letters: a phone number can never become a "bank".
+      if (sender && /^[A-Z0-9]+$/.test(sender) && /[A-Z]{3}/.test(sender) && bank) c.banks.push({ sender, bank });
       else errors.push(`banks: "${String(b.sender)}" isn't a sender ID like YESBNK`);
     }
   }
@@ -208,16 +218,18 @@ export function parseRemoteConfig(input: unknown): ParseResult {
     const a = input.announcement;
     const id = str(a.id, 40);
     const text = str(a.text, 200);
-    if (id && text) c.announcement = { id, text, link: httpsUrl(a.link), tone: a.tone === "warn" ? "warn" : "info" };
+    const link = a.link === undefined || a.link === "" ? undefined : allowedUrl(a.link);
+    if (a.link && !link) errors.push(`announcement: links must start ${ALLOWED_LINK_PREFIXES[0]}`);
+    else if (id && text) c.announcement = { id, text, link, tone: a.tone === "warn" ? "warn" : "info" };
     else errors.push("announcement: needs an id and text");
   }
 
   if (isObj(input.update)) {
     const u = input.update;
     const latestVersion = typeof u.latestVersion === "string" && /^\d+\.\d+\.\d+$/.test(u.latestVersion) ? u.latestVersion : undefined;
-    const url = httpsUrl(u.url);
+    const url = allowedUrl(u.url);
     if (latestVersion && url) c.update = { latestVersion, url, message: str(u.message, 160) };
-    else errors.push("update: needs latestVersion like 0.7.0 and an https url");
+    else errors.push(`update: needs latestVersion like 0.7.0 and a link starting ${ALLOWED_LINK_PREFIXES[0]}`);
   }
 
   return { config: c, errors };

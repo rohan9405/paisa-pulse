@@ -29,9 +29,9 @@ describe("parsing", () => {
     expect(config.rules).toEqual([{ contains: "pharmacy", category: "Health", tag: undefined, kind: undefined, direction: undefined, priority: 5 }]);
     expect(config.banks).toEqual([{ sender: "YESBNK", bank: "Yes Bank" }]);
     expect(config.budget).toMatchObject({ lateSalaryDay: 25, nightBriefHour: 20 });
-    expect(config.announcement).toEqual({ id: "a1", text: "Hi", link: undefined, tone: "info" }); // non-https link removed
+    expect(config.announcement).toBeNull(); // a disallowed link drops the whole banner
     expect(config.update).toBeNull();
-    expect(errors.length).toBe(4); // 2 rules, 1 bank, the update; out-of-range numbers just use defaults
+    expect(errors.length).toBe(5); // 2 rules, 1 bank, the javascript: link, the update; out-of-range numbers just use defaults
   });
 
   it("compares versions", () => {
