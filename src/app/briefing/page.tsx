@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { addDays, diffDays, formatDay, istHour } from "@/lib/dates";
+import { useEffect, useState } from "react";
+import { addDays, diffDays, formatDay, istHour, isDateKey } from "@/lib/dates";
 import { categoryEmoji } from "@/lib/categorize";
 import { formatINR } from "@/lib/money";
+import { hasBudget as budgetOnDate, planForDate, outgoingsInRange } from "@/lib/budget";
 import { badges, eveningReport, morningBriefing } from "@/lib/insights";
 import { monthCalendar, monthPace, tomorrowAllocation, weekDays, weeklyInsight } from "@/lib/overview";
 import { useBudget } from "@/data/useBudget";
@@ -18,9 +19,16 @@ export default function BriefingPage() {
   // Morning brief until 5 pm, night brief after; a day picked on the calendar shows that day's report.
   const [night, setNight] = useState(() => istHour() >= 17);
   const [day, setDay] = useState<string | null>(null);
+  useEffect(() => {
+    const selected = new URLSearchParams(window.location.search).get("day");
+    if (selected && isDateKey(selected) && data?.profile && selected >= data.profile.trackingStart && selected <= today) {
+      setDay(selected);
+      setNight(true);
+    }
+  }, [data?.profile?.trackingStart, today]);
   if (!data || !derived) return null;
   const { ledger } = derived;
-  const hasBudget = ledger.hasBudget;
+  const hasBudget = ledger.days.find((d) => d.date === (day ?? today))?.hasBudget ?? ledger.hasBudget;
   const showingPast = day !== null && day !== today;
   const isNight = night || showingPast;
   const reportDay = day ?? today;
@@ -66,7 +74,7 @@ function Morning() {
   const b = morningBriefing(ledger, statuses, data.txns, today);
   const yesterday = addDays(today, -1);
   const yTop = eveningReport(ledger, data.txns, data.plans, yesterday).byCategory[0];
-  const dueToday = [...b.overdue, ...b.billsSoon].filter((s) => diffDays(today, s.dueDate) <= 1);
+  const dueToday = derived.upcoming.filter((s) => diffDays(today, s.dueDate) <= 1);
   const insight = weeklyInsight(data.txns, data.plans, today);
 
   return (
@@ -94,10 +102,10 @@ function Morning() {
         <Card className="text-sm">
           <div className="flex items-center justify-between gap-2">
             <span>
-              <span className="text-ink-400">Yesterday:</span> <Money paise={b.yesterday.spentPaise} decimals="never" className="font-semibold" />
+              <span className="text-ink-400">{b.yesterday.hasBudget ? "Yesterday:" : "Yesterday, everyday spending:"}</span> <Money paise={b.yesterday.spentPaise} decimals="never" className="font-semibold" />
               {yTop && <span className="text-ink-400"> · mostly {yTop.category}</span>}
             </span>
-            {ledger.hasBudget && <Pill tone={b.yesterday.underBudget ? "lime" : "coral"}>{b.yesterday.underBudget ? "under ✓" : `${Math.round((b.yesterday.spentPaise / Math.max(1, b.yesterday.allocationPaise) - 1) * 100)}% over`}</Pill>}
+            {b.yesterday.hasBudget && <Pill tone={b.yesterday.underBudget ? "lime" : "coral"}>{b.yesterday.underBudget ? "under ✓" : `${Math.round((b.yesterday.spentPaise / Math.max(1, b.yesterday.allocationPaise) - 1) * 100)}% over`}</Pill>}
           </div>
         </Card>
       )}
@@ -106,14 +114,14 @@ function Morning() {
         <Card className="space-y-2 text-sm">
           <div className="font-semibold">Due today or tomorrow</div>
           {dueToday.map((s) => (
-            <div key={s.commitment.id} className="flex justify-between">
+            <div key={s.key} className="flex justify-between">
               <span>
-                {s.commitment.name} <span className="text-xs text-ink-400">· {s.state === "overdue" ? "overdue" : s.dueDate === today ? "today" : "tomorrow"}</span>
+                {s.name} <span className="text-xs text-ink-400">· {s.state === "overdue" ? "overdue" : s.dueDate === today ? "today" : "tomorrow"}</span>
               </span>
-              <Money paise={s.commitment.amountPaise - s.paidPaise} decimals="never" className={s.state === "overdue" ? "text-coral" : ""} />
+              <Money paise={s.amountPaise} decimals="never" className={s.state === "overdue" ? "text-coral" : ""} />
             </div>
           ))}
-          <p className="text-[11px] text-ink-400">Already set aside, so they don't come out of today's budget.</p>
+          <p className="text-[11px] text-ink-400">Due payments are reminders. Their amounts are included when the payment is recorded.</p>
         </Card>
       )}
 
@@ -125,29 +133,30 @@ function Morning() {
 function Night({ day, isToday }: { day: string; isToday: boolean }) {
   const { data, derived, today } = useBudget();
   if (!data || !derived) return null;
-  const { ledger, statuses } = derived;
+  const { ledger } = derived;
   const r = eveningReport(ledger, data.txns, data.plans, day);
+  const out = outgoingsInRange(data.txns, day, day);
   const row = ledger.days.find((d) => d.date === day) ?? ledger.todayRow;
   const startOfDay = row.carriedInPaise + row.allocationPaise;
   const total = r.byCategory.reduce((s, c) => s + c.amountPaise, 0);
   const top = r.byCategory.slice(0, SPLIT.length);
   const tomorrow = addDays(today, 1);
   const tomorrowBase = tomorrowAllocation(derived.ledger);
-  const dueTomorrow = statuses.filter((s) => s.state !== "paid" && s.dueDate === tomorrow);
+  const dueTomorrow = derived.upcoming.filter((s) => s.dueDate === tomorrow);
 
   return (
     <>
       <Card className="bg-gradient-to-br from-violet/20 to-ink-850 text-center" data-testid="evening">
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-violet">{isToday ? "Today" : "Spent"}</div>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-violet">{r.hasBudget ? isToday ? "Today" : "Spent" : "Everyday spent"}</div>
         <div className="num mt-1 text-5xl font-bold">
           <Money paise={r.spentPaise} decimals="never" />
-          {ledger.hasBudget && (
+          {r.hasBudget && (
             <span className="ml-1 text-base font-semibold text-ink-400">
               of <Money paise={startOfDay} decimals="never" />
             </span>
           )}
         </div>
-        {ledger.hasBudget && (
+        {r.hasBudget && (
           <div className="mt-3">
             <Pill tone={r.closingPaise >= 0 ? "lime" : "coral"}>
               {r.closingPaise >= 0 ? `${formatINR(r.closingPaise, { decimals: "never" })} rolls into ${isToday ? "tomorrow" : "the next day"}` : `${formatINR(-r.closingPaise, { decimals: "never" })} deficit carried forward`}
@@ -156,15 +165,19 @@ function Night({ day, isToday }: { day: string; isToday: boolean }) {
         )}
       </Card>
 
+      {!r.hasBudget && out.totalPaise > out.everydayPaise && <Card className="text-sm" data-testid="tracking-outgoings">
+        Total outgoings: <Money paise={out.totalPaise} />
+        <p className="mt-1 text-xs text-ink-400">Bills <Money paise={out.billsPaise} /> · Investments <Money paise={out.investmentsPaise} /> · Savings <Money paise={out.savingsPaise} /></p>
+      </Card>}
       {r.noSpend ? (
         <Card className="text-center">
           <div className="text-3xl">🧘</div>
           <div className="mt-1 font-semibold">Zero-spend day</div>
-          <div className="text-xs text-ink-400">+5 bonus XP</div>
+          {r.hasBudget && <div className="text-xs text-ink-400">+5 bonus XP</div>}
         </Card>
-      ) : (
+      ) : top.length === 0 ? <Card className="text-sm text-ink-400">No everyday spending recorded.</Card> : (
         <Card data-testid="where-it-went">
-          <div className="mb-3 text-sm font-semibold">Where it went</div>
+          <div className="mb-3 text-sm font-semibold">{r.hasBudget ? "Where it went" : "Everyday spending breakdown"}</div>
           <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full">
             {top.map((c, i) => (
               <div key={c.category} className={SPLIT[i]} style={{ flex: c.amountPaise }} />
@@ -190,7 +203,11 @@ function Night({ day, isToday }: { day: string; isToday: boolean }) {
         </Card>
       )}
 
-      {isToday && ledger.hasBudget && (
+      {isToday && dueTomorrow.length > 0 && <Card className="text-sm">
+        <div className="mb-2 font-semibold">Due tomorrow</div>
+        {dueTomorrow.map((s) => <div key={s.key} className="flex justify-between"><span>{s.name}</span><Money paise={s.amountPaise} /></div>)}
+      </Card>}
+      {isToday && r.hasBudget && budgetOnDate(planForDate(data.plans, tomorrow)) && (
         <Card className="text-sm" data-testid="tomorrow">
           <div className="flex items-center justify-between">
             <span className="text-ink-400">Tomorrow you can spend</span>
@@ -199,11 +216,6 @@ function Night({ day, isToday }: { day: string; isToday: boolean }) {
           <div className="mt-1 text-xs text-ink-400">
             {r.underBudget ? `🔥 Streak becomes ${r.streakIfHeld} if today stays under.` : "Streak resets tonight. Tomorrow's a fresh start 🌱"}
           </div>
-          {dueTomorrow.map((s) => (
-            <div key={s.commitment.id} className="mt-1 text-xs text-ink-400">
-              Due: {s.commitment.name} <Money paise={s.commitment.amountPaise - s.paidPaise} decimals="never" /> (set aside)
-            </div>
-          ))}
         </Card>
       )}
     </>

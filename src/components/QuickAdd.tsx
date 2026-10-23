@@ -61,8 +61,8 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
     if (date > today) return setError("Date can't be in the future");
     setSaving(true);
     try {
-      await addManualTxn(db, { amountPaise: paise, merchant: merchant || category || "Expense", category: category || undefined, date, method, note });
-      const warn = trackingStart && date < trackingStart ? " (before tracking start — not counted in budget)" : "";
+      await addManualTxn(db, { amountPaise: paise, merchant: merchant || category || "Expense", category: category || undefined, kind: category === "Income" ? "income" : undefined, date, method, note });
+      const warn = trackingStart && date < trackingStart ? " (before tracking start — outside tracking summaries)" : "";
       setToast(`Added ${formatINR(paise)}${warn}`);
       onClose();
     } catch (e) {
@@ -72,7 +72,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
     }
   };
 
-  const allCats = useMemo(() => CATEGORIES.filter((c) => !["Income", "Refunds", "Transfers", "Savings", "Investments"].includes(c)), []);
+  const allCats = useMemo(() => CATEGORIES.filter((c) => !["Refunds", "Transfers"].includes(c)), []);
 
   return (
     <>

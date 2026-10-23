@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { modeOf, planForDate, poolSummary, setAsideOf } from "@/lib/budget";
+import { hasBudget, modeOf, planForDate, poolSummary, setAsideOf } from "@/lib/budget";
 import { CATEGORIES, DEFAULT_SET_ASIDE, SET_ASIDE_OPTIONS, TAGS, categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
@@ -345,7 +345,7 @@ function BudgetEditor() {
   useEffect(() => {
     if (!editing) return;
     setIncome(plan?.incomePaise ? paiseToRupeeInput(plan.incomePaise) : "");
-    setTrackOnly(!plan?.incomePaise);
+    setTrackOnly(!hasBudget(plan));
     setSetAside(setAsideOf(plan));
     setSaMode(modeOf(plan));
     setDrafts((plan?.commitments ?? []).map(draftFromCommitment));
@@ -356,7 +356,7 @@ function BudgetEditor() {
 
   const preview = useMemo(() => {
     const { commitments } = validateDrafts(drafts);
-    return poolSummary({ id: "", effectiveFrom: from, incomePaise: trackOnly ? null : rupeesInputToPaise(income), commitments, setAside, setAsideMode: saMode, createdAt: 0 });
+    return poolSummary({ id: "", effectiveFrom: from, budgetMode: trackOnly ? "tracking" : "set-aside", incomePaise: trackOnly || saMode === "actual" ? null : rupeesInputToPaise(income), commitments, setAside, setAsideMode: saMode, createdAt: 0 });
   }, [drafts, income, trackOnly, from, setAside, saMode]);
 
   if (!data || !derived) return null;
@@ -364,13 +364,14 @@ function BudgetEditor() {
 
   const save = async () => {
     if (!db) return;
-    const inc = trackOnly ? null : rupeesInputToPaise(income);
-    if (!trackOnly && !inc) return setErr("Enter your monthly take-home income, or choose tracking only.");
-    const { commitments, errors } = validateDrafts(drafts);
+    const planned = !trackOnly && saMode === "planned";
+    const inc = planned ? rupeesInputToPaise(income) : null;
+    if (planned && !inc) return setErr("Enter your monthly take-home income, or choose actual set-aside or tracking only.");
+    const { commitments, errors } = planned ? validateDrafts(drafts) : { commitments: plan?.commitments ?? [], errors: {} };
     setErrors(errors);
     if (Object.keys(errors).length) return;
     if (!from || from < data.profile!.trackingStart) return setErr(`Effective date must be on or after tracking start (${formatDay(data.profile!.trackingStart, { year: true })}).`);
-    await addPlanVersion(db, { effectiveFrom: from, incomePaise: inc, commitments, setAside, setAsideMode: saMode });
+    await addPlanVersion(db, { effectiveFrom: from, budgetMode: trackOnly ? "tracking" : "set-aside", incomePaise: inc, commitments, setAside, setAsideMode: saMode });
     setEditing(false);
   };
 
@@ -385,7 +386,7 @@ function BudgetEditor() {
         </div>
         {pool.hasBudget ? (
           <>
-            <Line label="Take-home" value={formatINR(pool.incomePaise)} />
+            {pool.mode === "planned" && <Line label="Take-home" value={formatINR(pool.incomePaise)} />}
             <p className="text-xs text-ink-400">Set aside first: {pool.setAside.join(", ") || "nothing"}</p>
             {pool.mode === "planned" ? (
               <>
@@ -395,12 +396,12 @@ function BudgetEditor() {
                 <Line label="Spending pool" value={formatINR(pool.poolPaise)} strong />
               </>
             ) : (
-              <p className="text-xs text-ink-400">Each set-aside payment comes out of the month's pool when it arrives; the remaining days are recalculated.</p>
+              <p className="text-xs text-ink-400">No amount inputs. Recorded income funds your allowance; tagged set-aside payments reduce it. The remainder is spread across the days left this month.</p>
             )}
             {pool.shortfallPaise > 0 && <p className="text-coral">Planned payments exceed income by {formatINR(pool.shortfallPaise)}, so the daily allowance is ₹0.</p>}
           </>
         ) : (
-          <p className="text-ink-400">No daily budget. Spending is tracked and categorised. Add your income to get a daily allowance.</p>
+          <p className="text-ink-400">No daily budget. Spending is tracked and categorised. Tagging and automatic payee rules work in this mode too.</p>
         )}
       </Card>
     );
@@ -421,9 +422,27 @@ function BudgetEditor() {
         <p className="text-xs text-ink-400">No daily budget, just expense tracking. Bills, investments and savings are still shown separately in Stats.</p>
       ) : (
         <>
-          <Field label="Monthly take-home income">
-            <AmountInput value={income} onChange={setIncome} aria-label="Monthly income" data-testid="settings-income" />
-          </Field>
+          <div>
+            <span className="label">How should drip work out your budget?</span>
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="set-aside-mode">
+              {(
+                [
+                  ["actual", "Actual", "Nothing to enter. Income is your salary and other credits as they arrive; bills and investments come off as they're paid. A salary that lands in the last week of a month counts for the next month."],
+                  ["planned", "Planned", "You enter your monthly income and the expected bills and investments (rent ₹22,000). If a real payment differs, the difference lands in that day's budget."],
+                ] as const
+              ).map(([v, label, help]) => (
+                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
+                  <span className="font-semibold">{label}</span>
+                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {saMode === "planned" && (
+            <Field label="Monthly take-home income">
+              <AmountInput value={income} onChange={setIncome} aria-label="Monthly income" data-testid="settings-income" />
+            </Field>
+          )}
           <div>
             <span className="label">Take these off income first</span>
             <div className="flex flex-wrap gap-1.5" data-testid="set-aside-categories">
@@ -435,29 +454,15 @@ function BudgetEditor() {
             </div>
             <p className="mt-1.5 text-xs text-ink-400">Payments in these categories don't count against your daily budget. Anything not ticked comes out of the daily budget.</p>
           </div>
-          <div>
-            <span className="label">How set-aside amounts work</span>
-            <div className="grid gap-2 sm:grid-cols-2" data-testid="set-aside-mode">
-              {(
-                [
-                  ["planned", "Planned", "You enter expected amounts (rent ₹22,000). If the real payment differs, the difference lands in that day's budget: over at once, under at month end."],
-                  ["actual", "Actual", "Nothing to enter. Each set-aside payment comes out of the month's pool when it arrives, and the remaining days are recalculated."],
-                ] as const
-              ).map(([v, label, help]) => (
-                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
-                  <span className="font-semibold">{label}</span>
-                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
-                </button>
-              ))}
+          {saMode === "planned" && (
+            <div>
+              <span className="label">Planned bills and investments</span>
+              <CommitmentList drafts={drafts} onChange={setDrafts} errors={errors} />
             </div>
-          </div>
+          )}
         </>
       )}
-      <div>
-        <span className="label">{!trackOnly && saMode === "planned" ? "Planned payments" : "Regular payments (for reminders)"}</span>
-        <CommitmentList drafts={drafts} onChange={setDrafts} errors={errors} />
-      </div>
-      <Field label="Effective from" hint="Earlier days keep the old budget. Changing a past date recalculates from then.">
+      <Field label="Effective from" hint="Earlier days keep their mode. A budget started after tracking begins with no carried balance; tracking spending never becomes a budget deficit. Changing a past date recalculates from then.">
         <input type="date" className="input" value={from} min={data.profile!.trackingStart} onChange={(e) => setFrom(e.target.value)} data-testid="settings-effective" />
       </Field>
       {!trackOnly && saMode === "planned" && (
@@ -489,11 +494,11 @@ function recurringSummary(rs: Recurring[]) {
 function RecurringList() {
   const { data, db } = useBudget();
   if (!data || !db) return null;
-  const rs = [...data.recurring].sort((a, b) => (a.status === b.status ? a.dueDay - b.dueDay : a.status === "active" ? -1 : 1));
+  const rs = [...data.recurring].filter((r) => r.source === "mandate").sort((a, b) => (a.status === b.status ? a.dueDay - b.dueDay : a.status === "active" ? -1 : 1));
   return (
     <Card className="space-y-2 text-sm" data-testid="recurring-list">
       {rs.length === 0 ? (
-        <p className="text-ink-400">Autopays and e-mandates show up here automatically from your bank SMS. You can also open any transaction and switch on “Repeats every month”.</p>
+        <p className="text-ink-400">Autopays and e-mandates show up here automatically from your bank SMS (created, changed or cancelled).</p>
       ) : (
         rs.map((r) => (
           <div key={r.id} className={cx("flex items-center justify-between gap-2", r.status === "revoked" && "opacity-50")}>
@@ -521,14 +526,15 @@ function RecurringList() {
 }
 
 function TrackingEditor({ profile: p, onSaved }: { profile: Profile; onSaved: (smsAdded: number) => void }) {
-  const { data, today, db } = useBudget();
+  const { data, derived, today, db } = useBudget();
+  const showOpening = !!derived?.ledger.hasBudget && derived.ledger.mode === "planned";
   const [start, setStart] = useState(p.trackingStart);
   const [opening, setOpening] = useState(paiseToRupeeInput(p.openingAdjustmentPaise));
   const [err, setErr] = useState<string | null>(null);
   if (!db) return null;
-  const dirty = start !== p.trackingStart || parseAmountToPaise(opening || "0") !== p.openingAdjustmentPaise;
+  const dirty = start !== p.trackingStart || (showOpening && parseAmountToPaise(opening || "0") !== p.openingAdjustmentPaise);
   const save = async () => {
-    const adj = parseAmountToPaise(opening || "0");
+    const adj = showOpening ? parseAmountToPaise(opening || "0") : p.openingAdjustmentPaise;
     if (adj === null) return setErr("Opening adjustment isn't a valid amount");
     if (!start || start > today) return setErr("Start date must be today or earlier");
     await db.profile.update("me", { trackingStart: start, openingAdjustmentPaise: adj });
@@ -542,17 +548,17 @@ function TrackingEditor({ profile: p, onSaved }: { profile: Profile; onSaved: (s
   return (
     <Card className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Tracking start" hint={smsBridge() ? "Allowance accrues from this date. Moving it earlier reads your bank SMS from then." : "Allowance accrues from this date."}>
+        <Field label="Tracking start" hint={`Summaries start from this date.${smsBridge() ? " Moving it earlier reads your bank SMS from then." : ""}`}>
           <input type="date" className="input" value={start} max={today} onChange={(e) => setStart(e.target.value)} />
         </Field>
-        <Field label="Opening adjustment (₹)" hint="One-time, default 0. Negative = start in deficit.">
+        {showOpening && <Field label="Opening adjustment (₹)" hint="One-time, default 0. Negative = start in deficit.">
           <input className="input num" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value.replace(/[^\d.,\-]/g, ""))} />
-        </Field>
+        </Field>}
       </div>
       {err && <p className="text-sm text-coral">{err}</p>}
       {dirty && (
         <button className="btn-primary w-full" onClick={save}>
-          Save — recalculates balance history
+          Save tracking settings
         </button>
       )}
     </Card>
@@ -620,7 +626,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
       )}
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost text-xs" onClick={async () => onToast(`Re-categorised ${await recategorizeAll(db)} transaction(s)`)}>
-          Re-apply rules to existing transactions
+          Re-apply rules to the last 12 months
         </button>
         <button className="btn-ghost text-xs" onClick={() => setShowBuiltIn((s) => !s)}>
           {showBuiltIn ? "Hide" : "Show"} {builtIn.length} built-in rules

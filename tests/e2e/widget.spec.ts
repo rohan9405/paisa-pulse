@@ -40,3 +40,38 @@ test("personal budget reaches the launcher bridge; demo stays private and widget
   await page.getByRole("button", { name: "Add to home screen" }).click();
   expect(await page.evaluate(() => (window as unknown as { widgetCapture: { pins: number } }).widgetCapture.pins)).toBe(1);
 });
+
+test("widget refresh imports bank SMS in the background route without showing app UI", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.assign(window, { widgetJobResult: null, widgetResult: null });
+    window.PaisaWidget = {
+      update: (json: string) => Object.assign(window, { widgetResult: JSON.parse(json) }),
+      clear: () => {}, canPin: () => false, requestPin: () => {},
+    };
+    window.PaisaWidgetJob = { finish: (ok: boolean) => { Object.assign(window, { widgetJobResult: ok }); } };
+    window.PaisaSms = {
+      hasPermission: () => true, requestPermission: () => {},
+      list: (since: number) => {
+        const at = Date.now() - 1000;
+        const messages = location.pathname.startsWith("/widget-sync") && since < at ? [{
+          id: "widget-test", address: "VM-HDFCBK", date: at,
+          body: "Sent Rs.250.00 From HDFC Bank A/C *1234 To SWIGGY Ref 123456789012",
+        }] : [];
+        return JSON.stringify({ messages, until: messages.length ? at : since, more: false });
+      },
+    };
+  });
+  await page.goto("/");
+  await page.getByTestId("start-personal").click();
+  await page.getByTestId("ob-income").fill("60000");
+  await page.getByTestId("ob-next").click();
+  await page.getByTestId("ob-next").click();
+  await page.getByTestId("ob-finish").click();
+  await expect(page.getByTestId("available")).toBeVisible();
+  await page.goto("/widget-sync/");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { widgetJobResult: boolean | null }).widgetJobResult)).toBe(true);
+  const snapshot = await page.evaluate(() => (window as unknown as { widgetResult: { capturedDate: string; rows: { date: string; spent: number }[] } }).widgetResult);
+  expect(snapshot.rows.find((r) => r.date === snapshot.capturedDate)?.spent).toBe(25000);
+  await expect(page.getByTestId("available")).toHaveCount(0);
+  await expect(page.getByTestId("start-personal")).toHaveCount(0);
+});

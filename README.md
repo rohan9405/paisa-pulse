@@ -46,7 +46,7 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 
 **First run**
 1. Tap **Allow** when asked to read SMS. It's the only permission the app has; it has no internet access.
-2. **Set up my budget**: income, bills & savings, and the **tracking start date**. Bank SMS from that date onwards are imported.
+2. **Set up my budget**: choose tracking, planned set-aside (income and planned amounts), or actual set-aside (no budget amounts; uses recorded income/payments), then the **tracking start date**. Bank SMS from that date onwards are imported.
 3. Need older history later? Settings → Tracking → move **Tracking start** earlier and save; the app reads your SMS back to that date.
 
 ### Your data across updates
@@ -171,3 +171,11 @@ docs/               budget rules, data integration, roadmap, marketing
 - [docs/ROADMAP.md](docs/ROADMAP.md): what's built, what's next, and decisions, including friends (Phase 5) and offline engagement like "You skipped it" (Phase 6), with what to avoid.
 - [docs/MARKETING.md](docs/MARKETING.md): the name, icon, voice, copy ideas and store listing draft.
 - [docs/DATA_INTEGRATION.md](docs/DATA_INTEGRATION.md): bank data options in India (SMS, CSV, Account Aggregator).
+
+### Tagging by recipient
+
+In Activity, switch to **Recipients** to apply a category and tag to matching payments for one recipient within the last 12 months. Bulk edits use the date index to skip older history, and only write payments whose category or tag needs to change. Matching uses the UPI ID when present, otherwise an exact name (ignoring case and extra spaces). Incoming and outgoing payments are grouped separately; refunds and own transfers stay in the transaction editor.
+
+When editing a transaction, drip offers to apply the same category and tag to matching payments in the last 12 months, checked by default. Older payments stay unchanged by bulk edits; they can still be edited individually. **Remember for future payments** is checked by default and saves the choice for new SMS, CSV, and manual transactions. Uncheck it for one-off exceptions. Remembering by itself does not rewrite past payments.
+
+Recipients defaults to **Needs tagging**. Consistently categorized recipients move to **Archived**, where they remain editable. A category is sufficient; finer tags are optional. New untagged or inconsistent payments bring the recipient back into the queue. Archive status checks only the last 12 months, so older untouched history cannot keep a recipient pending.

@@ -8,7 +8,7 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
 ## Answers first (items 5, 6, 9)
 
-**Does it need a server or internet? (6)** No. The app already runs fully offline: everything is parsed and stored on the phone, and the Android app has no internet permission at all. The Mac was only used to *deliver* the APK, not to run anything. Only one roadmap item needs a server: the friends leaderboard (8). Everything else, notifications included, stays offline.
+**Does it need a server or internet? (6)** No. The app already runs fully offline: everything is parsed and stored on the phone, and the Android app has no internet permission at all. The Mac was only used to *deliver* the APK, not to run anything. The friends leaderboard (8) needs a server. Planned Gmail import also needs opt-in internet access; its authentication and sync architecture still needs a decision. Currency conversion can stay offline with manually entered or imported rates; automatic rate updates would also need opt-in internet. The existing SMS import, budget, and planned local notifications stay offline.
 
 **How does it refresh? (9)** It reads new SMS when the app opens, when you switch back to it, and every 60 seconds while it's on screen. Each check reads only messages newer than the last one already read (a saved cursor), so nothing is parsed twice. Nothing runs while the app is closed, but your inbox keeps the messages, so they appear next time you open it. **Decision: no background refresh and no refresh schedule.** The only work done while closed is the morning/night brief (see Phase 3).
 
@@ -27,7 +27,7 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 - **Budget modes** (Settings → Budget mode, and at setup):
   - **Set-aside budget:** the categories you tick (Bills, Investments, Savings by default; Subscriptions and Education optional) come off income first; the rest ÷ days in the month is the daily budget. Two ways to set aside:
     - **Planned:** you enter expected amounts. Payments are matched to their planned line automatically (UPI ID, text hint, tag or name). Paying more takes the difference from that day; paying less gives it back at month end; a set-aside payment with no planned line counts in full.
-    - **Actual:** nothing to enter. Each set-aside payment comes out of the month's pool when it arrives and the remaining days are recalculated; anything beyond what's left becomes a deficit.
+    - **Actual:** no income or planned amount inputs. Recorded income funds the pool; tagged set-aside payments reduce it and the remaining days are recalculated; anything beyond what's left becomes a deficit.
   - **Tracking only:** no daily budget, just expenses.
 - **Dividend income** tag on incoming ACH credits ("ACH C- ITC LTD"), plus Salary and Interest tags.
 - **Stats:** outgoings split into Everyday · Bills · Investments · Savings; the expense breakdown leaves out Investments and Savings.
@@ -81,6 +81,57 @@ While the app is open, a check runs every 60 s. Today each check loads every tra
 - ✅ **0.3.1:** UPI Lite top-ups are read as an **expense** in **Bills & Utilities** (Lite payments themselves send no SMS). Money credited from a shop or service ("from WWW MYNTRA COM") is a **refund**, not income, with a clean merchant name. A parser upgrade re-reads the inbox once: it adds missed messages, corrects unedited old ones, and never brings back deleted ones.
 - **Sample messages needed:** paste a few missed SMS (the top-up one included) and they become test cases. Likely causes are an unrecognised sender ID, or wording without "debited / spent / sent" (e.g. "Rs 2000 **added to UPI Lite**").
 - **"Couldn't read" inbox:** bank-sender SMS that mention an amount but didn't parse are listed in Settings → Bank SMS ("3 messages not understood"), with **Add as expense / Ignore**. Nothing gets lost silently.
+
+## Added 23 Oct: currencies, email, rewards and bank coverage
+
+These are planned features, not implemented. Build shared source reconciliation and currency-aware amounts before combining new feeds into totals.
+
+### Broader bank SMS coverage · M per batch, ongoing
+- Extend the current HDFC / ICICI / SBI / Axis / Kotak support to more banks and more formats from existing banks, including credit cards, refunds, international purchases, fees and mandate changes.
+- Choose each batch from real anonymised samples; keep a bank/format coverage matrix and regression fixtures. Do not claim support for an entire bank from one sample.
+- Normalise sender variants, references, masked account/card IDs, timestamps and currency into the same transaction model. Unsupported messages go to the “couldn't read” inbox; never silently assume INR for an unknown currency.
+- Reprocessing adds missed transactions and enriches existing ones while preserving edits, ignored messages and deleted transactions.
+
+### Multiple Gmail accounts + cross-source deduplication · L
+- Connect multiple Gmail accounts independently, each with explicit consent, its own sync cursor, status, backfill date and disconnect control. Import supported financial alerts only; expose which account and message supplied each record.
+- **One transaction, multiple pieces of evidence:** an SMS, bank email, card email or statement describing the same payment must enrich one canonical transaction, not create additional spending. Retain all source links and import IDs for audit and safe re-sync.
+- Match strong bank/network references with account/card identity first. Without a shared reference, use amount **and currency**, direction, account/card, merchant and a bounded time window; suggest uncertain matches for confirmation. Equal amounts on the same day alone are insufficient.
+- Distinguish pending authorisations from posted payments, refunds from duplicate alerts, and card purchases from credit-card bill payments. Preserve user corrections; allow merge undo and recovery from a false match. Reconnect/backfill must be idempotent.
+- Disconnect stops access and removes credentials; offer a separate explicit choice to remove imported evidence. Keep a transaction if other source evidence or a manual record still supports it.
+- **Privacy change:** Gmail requires opt-in internet access and authentication. Decide device-side versus backend sync, credential storage, permissions and retention before implementation; update the no-internet promise and onboarding accordingly. SMS-only use must remain available offline. No scheduled email sync is implied by this item.
+
+### Multi-currency support · L
+- Choose a reporting/base currency; retain every original amount and ISO currency code. Replace INR-only paise assumptions with integer minor units appropriate to each currency, including currencies with zero or three decimal places.
+- Store original purchase currency and settled card/account currency when both are known. They describe one purchase, not two expenses. Capture FX fees separately when explicitly reported.
+- For combined totals, use the actual settled base amount when available; otherwise use a stored dated conversion rate with source and rounding rules. Show original and converted amounts and label estimates. Missing rates remain visible as unconverted amounts, never silently omitted or added across currencies.
+- Manual/imported rates work offline; automatic historical rates are a separate opt-in internet feature. Freeze booked conversions so refreshing rates does not silently rewrite past reports. Changing base currency requires an explicit historical conversion policy and preview.
+- Match cross-currency own-account transfers as linked legs, keeping fees separate. Migrate existing amounts as INR without changing their values; include currencies, rates and source evidence in backup/export/restore.
+- **Budget mode:** income, planned lines, daily allowance and rollover use the base currency. **Tracking only:** conversions are for reporting; no allowance or FX-driven deficit is created.
+
+### Credit card points tracking · M–L
+- Per-card/rewards-program view: reported points balance with an as-of date, earned/redeemed/expired/adjusted points, and upcoming expiry when a source provides it. Start with manual updates and supported SMS/email/statement formats.
+- Keep points in their own units and ledger, separate from cash spending, income and budget. A balance snapshot reconciles the ledger; it must not be counted as new earned points.
+- Optional earning estimates need versioned card rules, exclusions, caps and refund reversals. Mark estimates separately from issuer-confirmed points and show unknowns rather than inventing accrual or expiry.
+- Deduplicate reward events across email, SMS and statements. Redemption is a points movement; only a separately confirmed cash credit affects the money ledger, once.
+- Optional redemption value estimates must state their assumption and must not inflate available cash. Works equally in tracking-only and budget modes.
+
+## Tracking-only: behavior across the product
+
+Tracking-only is a full money-tracking experience with no allowance or budget judgement. Income transactions may still be imported and reported; a salary is not required to use it. New plans store an explicit tracking/set-aside choice; actual set-aside can have null planned income without being mistaken for tracking.
+
+| Area | Tracking-only behavior |
+|---|---|
+| Setup / Settings | Hide salary, set-aside and planned-payment amount inputs. Keep tracking start, accounts and import controls. Existing recurring reminders remain available. |
+| Today | “Spent today”, usual daily spend and this week's spend replace “Left to spend”, base, carried balance and deficit. Label everyday spend clearly; show Bills / Investments / Savings separately so a rent day is not mistaken for no outgoings. |
+| Month pace / Stats | Show actual spending, income, outgoings, category mix and comparable prior periods. Hide allowance lines, budget progress, “on track”, remaining pool and deficit recovery. Investments / Savings remain separate from expenses; own-account transfers remain excluded. |
+| Briefings / widget | Morning: yesterday's spend, notable changes and payments due. Night: actual spend, categories and biggest payment. Widget: “Spent today”. No “safe to spend”, rollover or tomorrow's allowance. Notifications follow the same mode-specific copy. |
+| Bills / recurring | Keep due/overdue reminders, missed-payment detection and committed monthly totals. “Due” never implies money has been reserved; hide “already set aside” copy. |
+| Tagging | Keep categories, tags, payee rules, refunds and transfer corrections. Ask when it materially improves reports or recurring detection, rather than only when it changes a budget. Retain the low-effort thresholds and dismiss behavior. |
+| Imports / currencies / points | SMS, CSV, future multi-account Gmail, source deduplication, FX reporting and credit-card points all work without a budget. |
+| Insights / rewards / friends | Keep factual comparisons, habit changes and optional no-spend records. Hide under-budget streaks, budget XP, drip Score, allowance rings and budget-ranked leagues; no invented score when there is no allowance. Sharing can show an explicitly chosen factual summary. |
+| Switching modes | Preserve transactions, rules, accounts, rewards and source links. Keep dated plan history. Budget activation after tracking starts at zero on the effective date; earlier tracking spending does not become a deficit. |
+
+**Implemented 23 Oct:** tracking and actual setup skip all budget amount inputs; planned setup retains income and planned lines. Tagging and automatic rules remain shared. Tracking balances stay zero; activation after tracking starts a fresh budget period. Actual mode uses received income, not an entered estimate. Reports retain each day's mode, label everyday spending, show other outgoings separately, and hide tracking budget/XP copy. Regression tests cover mode changes, actual income and tracking tagging. Future quick-action cards must use report/recurring relevance in tracking mode.
 
 ## Phase 2: Money model
 
@@ -226,13 +277,14 @@ Count only real under-drip days, with one freeze earned weekly (as in NoBuy: one
 
 1. **Release 0.6.0** (money model), after checking real autopay SMS samples.
 2. **Next up:** quick-action cards for tagging.
-3. **Phase 1:** lighter refresh, "couldn't read" inbox.
+3. **Phase 1:** lighter refresh, "couldn't read" inbox, broader bank SMS formats backed by real samples; finish tracking-only copy and mode-switch behavior.
 4. **Phase 2 leftovers:** planned amounts from last month, missed-payment flags, recurring totals.
 5. **Phase 3:** splash screen, widget, then morning/night brief notifications once templates are ready.
 6. **Phase 4:** backup encryption.
-7. **Install route:** decide on Play internal testing vs USB/sideload.
-8. **Phase 6:** "You skipped it" first, then morning reveal, personal records and the Sunday mini-Wrapped. All offline.
-9. **Phase 5:** friends, starting with drip Score, streaks and the no-server share card.
+7. **New import foundations:** currency-aware money model and shared source reconciliation; then multi-account Gmail and credit-card points tracking. Ship in increments, with SMS-only offline use preserved.
+8. **Install route:** decide on Play internal testing vs USB/sideload.
+9. **Phase 6:** "You skipped it" first, then morning reveal, personal records and the Sunday mini-Wrapped. All offline.
+10. **Phase 5:** friends, starting with drip Score, streaks and the no-server share card.
 
 **Decided:** UPI Lite top-ups → everyday expense (Other · UPI Lite) · no background refresh or per-transaction notifications · Bills and Investments separate, with tags · budget modes: set-aside (Planned or Actual, categories configurable) or tracking only · recurring only from mandate SMS or explicit marking · credit card bill payments are own transfers · no review inbox tab; quick-action cards instead.
 
@@ -240,3 +292,7 @@ Count only real under-drip days, with one freeze earned weekly (as in NoBuy: one
 - Morning/night brief templates (you).
 - Whether to pursue Google Play distribution.
 - Whether the friends feature gets a backend (adds internet permission) or stays share-card only.
+
+- First additional banks and card reward programs, based on available samples.
+- Gmail authentication/sync architecture and first supported email formats.
+- Initial currencies, FX-rate source and historical base-currency conversion policy.

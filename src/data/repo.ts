@@ -4,8 +4,9 @@
  */
 import { categorize, detectMethod, normalize, outflowKind } from "@/lib/categorize";
 import { type CandidateRow, fingerprint } from "@/lib/csv";
-import { autoLinkRefund } from "@/lib/match";
-import { type DateKey, parseKey } from "@/lib/dates";
+import { recipientKey, recipientMatches, taggingFlow, taggingCutoff, withinTaggingWindow } from "@/lib/recipients";
+import { autoLinkRefund, learnFromLinked } from "@/lib/match";
+import { type DateKey, parseKey, toISTKey } from "@/lib/dates";
 import type { ParsedMandate } from "@/lib/sms";
 import type { AppMode, SetAsideMode, BudgetPlan, CategoryRule, Commitment, ImportBatch, Prefs, Profile, Recurring, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
@@ -54,6 +55,7 @@ export async function seedDemo(db: FinanceDB, today: DateKey) {
 }
 
 export interface OnboardingInput {
+  budgetMode?: BudgetPlan["budgetMode"];
   name?: string;
   incomePaise: number | null;
   commitments: Commitment[];
@@ -76,7 +78,7 @@ export async function completeOnboarding(db: FinanceDB, input: OnboardingInput) 
     onboardedAt: now,
     manuallyPaid: input.alreadyPaidIds.map((id) => `${id}@${input.paidMonth}`),
   };
-  const plan: BudgetPlan = { id: uid("plan-"), effectiveFrom: input.trackingStart, incomePaise: input.incomePaise, commitments: input.commitments, setAsideMode: input.setAsideMode, createdAt: now };
+  const plan: BudgetPlan = { id: uid("plan-"), effectiveFrom: input.trackingStart, budgetMode: input.budgetMode, incomePaise: input.incomePaise, commitments: input.commitments, setAsideMode: input.setAsideMode, createdAt: now };
   await db.transaction("rw", [db.profile, db.plans, db.rules, db.connections], async () => {
     await db.profile.put(profile);
     await db.plans.clear();
@@ -113,7 +115,7 @@ export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<T
   const guess = categorize(input.merchant, rules);
   const now = Date.now();
   const category = input.category || guess?.category || "Other";
-  const kind: TxnKind = input.kind ?? (guess?.kind === "transfer" ? "transfer" : outflowKind(category));
+  const kind: TxnKind = input.kind ?? (category === "Income" ? "income" : !input.category && guess?.kind === "transfer" ? "transfer" : outflowKind(category));
   let t: Transaction = {
     id: uid("t-"),
     date: input.date,
@@ -142,6 +144,11 @@ export async function updateTxn(db: FinanceDB, id: string, patch: Partial<Transa
   if (patch.refundOf) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });
   if (patch.kind === "commitment" && patch.commitmentId) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });
   await db.txns.update(id, cleaned);
+  // Linking a payment to a planned line teaches drip about that payee's other payments.
+  if (patch.commitmentId) {
+    const learned = learnFromLinked(await db.txns.toArray());
+    if (learned.length) await db.txns.bulkPut(learned);
+  }
 }
 
 export async function deleteTxn(db: FinanceDB, id: string) {
@@ -168,27 +175,47 @@ function classify(t: Transaction, category: string, tag: string | undefined): Pa
   return patch;
 }
 
-/**
- * Set a transaction's category and tag. With `remember`, also save a rule —
- * for the payee's UPI ID when known, otherwise for the merchant name — and
- * apply it to your other transactions with that payee / merchant.
- * Returns how many other transactions changed.
+export interface TaggingOptions {
+  remember: boolean;
+  scope: "one" | "month" | "all";
+}
+
+/** Apply a category and tag to one payment, a recipient's month, or their payments within the last twelve months.
+ * Remembering saves a separate rule for future payments. Boolean options retain
+ * the older API's behavior (true also updates past payments).
+ * Returns the number of other transactions changed.
  */
-export async function applyCategory(db: FinanceDB, txn: Transaction, category: string, tag: string | undefined, remember: boolean): Promise<number> {
-  await updateTxn(db, txn.id, classify(txn, category, tag));
-  if (!remember) return 0;
-  const payee = txn.payee ? normalize(txn.payee) : undefined;
-  const pattern = txn.merchant.trim().toLowerCase();
-  const rules = await db.rules.toArray();
-  const existing = rules.find((r) => !r.builtIn && (payee ? r.payee === payee : !r.payee && r.pattern.toLowerCase() === pattern));
-  const rule: CategoryRule = { id: existing?.id ?? uid("rule-"), pattern: payee ?? pattern, payee, category, tag: tag?.trim() || undefined, priority: 10 };
-  if (category === "Transfers") rule.kind = "transfer";
-  await db.rules.put(rule);
-  const same = (await db.txns.toArray()).filter(
-    (t) => t.id !== txn.id && isOut(t.kind) === isOut(txn.kind) && (payee ? t.payee === payee : !t.payee && t.merchant.trim().toLowerCase() === pattern) && (t.category !== category || t.tag !== rule.tag),
-  );
-  for (const t of same) await db.txns.update(t.id, { ...classify(t, category, tag), updatedAt: Date.now() });
-  return same.length;
+export async function applyCategory(db: FinanceDB, txn: Transaction, category: string, tag: string | undefined, options: boolean | TaggingOptions): Promise<number> {
+  const { remember, scope }: TaggingOptions = typeof options === "boolean" ? { remember: options, scope: options ? "all" : "one" } : options;
+  return db.transaction("rw", [db.txns, db.rules], async () => {
+    const current = await db.txns.get(txn.id);
+    if (!current) throw new Error("This transaction no longer exists.");
+    const today = toISTKey();
+    const cleanTag = tag?.trim() || undefined;
+    // Explicit individual edits can reach older history; bulk edits never do.
+    if ((scope === "one" || withinTaggingWindow(current, today)) && (current.category !== category || current.tag !== cleanTag)) {
+      await updateTxn(db, txn.id, classify(current, category, cleanTag));
+    }
+    const key = recipientKey(txn);
+    if (remember && key) {
+      const payee = txn.payee ? normalize(txn.payee) : undefined;
+      const merchant = payee ? undefined : normalize(txn.merchant);
+      const direction = taggingFlow(txn) === "income" ? "in" : "out";
+      const existing = (await db.rules.toArray()).find((r) => !r.builtIn && (!r.direction || r.direction === direction) && (payee ? normalize(r.payee ?? "") === payee : !r.payee && normalize(r.merchant ?? r.pattern) === merchant));
+      const rule: CategoryRule = { id: existing?.id ?? uid("rule-"), pattern: payee ?? merchant!, payee, merchant, direction, category, tag: cleanTag, priority: 10 };
+      if (category === "Transfers") rule.kind = "transfer";
+      if (txn.kind === "income") rule.kind = "income";
+      await db.rules.put(rule);
+    }
+    // Use the date index so older years are not loaded during a bulk edit.
+    const recent = scope === "one" ? [] : await db.txns.where("date").between(taggingCutoff(today), today, true, true).toArray();
+    const same = scope === "one" ? [] : recipientMatches(recent, txn, scope, today).filter((t) => t.category !== category || t.tag !== cleanTag);
+    if (same.length) {
+      const updatedAt = Date.now();
+      await db.txns.bulkPut(same.map((t) => ({ ...t, ...classify(t, category, cleanTag), updatedAt })));
+    }
+    return same.length;
+  });
 }
 
 /** @deprecated use applyCategory */
@@ -326,19 +353,23 @@ export async function saveRule(db: FinanceDB, rule: Omit<CategoryRule, "id"> & {
 }
 
 export async function recategorizeAll(db: FinanceDB) {
-  const rules = await db.rules.toArray();
-  const txns = await db.txns.toArray();
-  let changed = 0;
-  for (const t of txns) {
-    // Money out only; planned-line links and your own edits stay as they are.
-    if (t.kind !== "expense" && t.kind !== "investment") continue;
-    const c = categorize(`${t.merchant} ${t.source.raw ?? ""}`, rules, t.payee);
-    if (!c || (c.kind && c.kind !== "investment" && c.kind !== "transfer")) continue;
-    if (c.category === t.category && (c.tag ?? t.tag) === t.tag) continue;
-    await db.txns.update(t.id, { ...classify(t, c.category, c.tag ?? (c.category === t.category ? t.tag : undefined)), updatedAt: Date.now() });
-    changed++;
-  }
-  return changed;
+  return db.transaction("rw", [db.txns, db.rules], async () => {
+    const rules = await db.rules.toArray();
+    const today = toISTKey();
+    const txns = await db.txns.where("date").between(taggingCutoff(today), today, true, true).toArray();
+    const changed: Transaction[] = [];
+    for (const t of txns) {
+      // Money out only; preserve explicit planned-line links.
+      if (t.kind !== "expense" && t.kind !== "investment") continue;
+      const c = categorize(`${t.merchant} ${t.source.raw ?? ""}`, rules, t.payee, { merchant: t.merchant, direction: "out" });
+      if (!c || (c.kind && c.kind !== "investment" && c.kind !== "transfer")) continue;
+      const tag = c.tag ?? (c.category === t.category ? t.tag : undefined);
+      if (c.category === t.category && tag === t.tag) continue;
+      changed.push({ ...t, ...classify(t, c.category, tag), updatedAt: Date.now() });
+    }
+    if (changed.length) await db.txns.bulkPut(changed);
+    return changed.length;
+  });
 }
 
 export async function markCommitmentPaid(db: FinanceDB, key: string, paid: boolean) {

@@ -1,7 +1,7 @@
 /**
  * Morning briefing / evening report / gamification — derived, pure data.
  */
-import { type CommitmentStatus, type Ledger, discretionaryEntries, groupSpend } from "./budget";
+import { type CommitmentStatus, type Ledger, discretionaryEntries, everydayEntries, groupSpend, outgoingsInRange } from "./budget";
 import { type DateKey, addDays, diffDays, endOfMonth, parseKey, daysInMonth } from "./dates";
 import type { BudgetPlan, Transaction } from "./types";
 
@@ -28,7 +28,7 @@ export const VIBE_COPY: Record<Vibe, { label: string; emoji: string; line: strin
 
 /** Per-day amount needed to clear a deficit by the end of this month. */
 export function recoveryPlan(ledger: Ledger, today: DateKey) {
-  if (ledger.availablePaise >= 0) return null;
+  if (!ledger.hasBudget || ledger.availablePaise >= 0) return null;
   const daysLeft = diffDays(today, endOfMonth(today)); // excluding today
   const deficit = -ledger.availablePaise;
   if (daysLeft <= 0) return { deficitPaise: deficit, daysLeft: 0, perDayCutPaise: deficit };
@@ -40,7 +40,7 @@ export interface MorningBriefing {
   availablePaise: number;
   allocationPaise: number;
   carriedPaise: number;
-  yesterday: { spentPaise: number; allocationPaise: number; underBudget: boolean } | null;
+  yesterday: { hasBudget: boolean; spentPaise: number; allocationPaise: number; underBudget: boolean } | null;
   billsSoon: CommitmentStatus[];
   overdue: CommitmentStatus[];
   reviewCount: number;
@@ -59,7 +59,7 @@ export function morningBriefing(ledger: Ledger, statuses: CommitmentStatus[], tx
     availablePaise: ledger.todayRow.carriedInPaise + ledger.todayRow.allocationPaise,
     allocationPaise: ledger.todayRow.allocationPaise,
     carriedPaise: ledger.todayRow.carriedInPaise,
-    yesterday: yRow ? { spentPaise: yRow.spentPaise, allocationPaise: yRow.allocationPaise, underBudget: yRow.underBudget } : null,
+    yesterday: yRow ? { hasBudget: yRow.hasBudget, spentPaise: yRow.spentPaise, allocationPaise: yRow.allocationPaise, underBudget: yRow.underBudget } : null,
     billsSoon: statuses.filter((s) => s.state !== "paid" && s.state !== "overdue" && diffDays(today, s.dueDate) <= 7),
     overdue: statuses.filter((s) => s.state === "overdue"),
     reviewCount: txns.filter((t) => t.needsReview).length,
@@ -75,6 +75,7 @@ export function morningBriefing(ledger: Ledger, statuses: CommitmentStatus[], tx
 }
 
 export interface EveningReport {
+  hasBudget: boolean;
   date: DateKey;
   spentPaise: number;
   allocationPaise: number;
@@ -89,13 +90,14 @@ export interface EveningReport {
 
 export function eveningReport(ledger: Ledger, txns: Transaction[], plans: BudgetPlan[], day: DateKey): EveningReport {
   const row = ledger.days.find((d) => d.date === day) ?? ledger.todayRow;
-  const entries = discretionaryEntries(txns, plans, ledger.today).filter((e) => e.date === day);
+  const entries = row.hasBudget ? discretionaryEntries(txns, plans, ledger.today).filter((e) => e.date === day) : everydayEntries(txns, day, ledger.today).filter((e) => e.date === day);
   const biggest = entries.reduce<{ merchant: string; amountPaise: number } | null>(
     (b, e) => (!b || e.amountPaise > b.amountPaise ? { merchant: e.merchant, amountPaise: e.amountPaise } : b),
     null,
   );
   return {
     date: day,
+    hasBudget: row.hasBudget,
     spentPaise: row.spentPaise,
     allocationPaise: row.allocationPaise,
     closingPaise: row.closingPaise,
@@ -103,7 +105,7 @@ export function eveningReport(ledger: Ledger, txns: Transaction[], plans: Budget
     byCategory: groupSpend(entries),
     biggest,
     count: entries.length,
-    noSpend: row.spentPaise === 0,
+    noSpend: row.hasBudget ? row.spentPaise === 0 : outgoingsInRange(txns, day, day).totalPaise === 0,
     streakIfHeld: row.underBudget ? ledger.streak + 1 : 0,
   };
 }
@@ -136,7 +138,8 @@ export function badges(ledger: Ledger): Badge[] {
 }
 
 export function level(ledger: Ledger) {
-  const xp = ledger.days.slice(0, -1).reduce((s, d) => s + (d.allocationPaise > 0 && d.underBudget ? 10 : 0) + (d.spentPaise === 0 ? 5 : 0), 0);
+  if (!ledger.hasBudget) return { xp: 0, level: 1, progress: 0 };
+  const xp = ledger.days.slice(0, -1).filter((d) => d.hasBudget).reduce((s, d) => s + (d.allocationPaise > 0 && d.underBudget ? 10 : 0) + (d.spentPaise === 0 ? 5 : 0), 0);
   const lvl = Math.floor(xp / 100) + 1;
   return { xp, level: lvl, progress: (xp % 100) / 100 };
 }

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { commitmentCategory, matchCommitment, modeOf, planForDate, setAsideOf } from "@/lib/budget";
+import { hasBudget, commitmentCategory, matchCommitment, modeOf, planForDate, setAsideOf } from "@/lib/budget";
 import { CATEGORIES, TAGS, categoryEmoji, outflowKind } from "@/lib/categorize";
 import { formatDay } from "@/lib/dates";
+import { recipientKey, recipientMatches } from "@/lib/recipients";
 import { refundCandidates } from "@/lib/match";
 import { formatINR, paiseToRupeeInput, rupeesInputToPaise } from "@/lib/money";
 import type { Transaction, TxnKind } from "@/lib/types";
-import { applyCategory, deleteTxn, setRecurringFromTxn, updateTxn } from "@/data/repo";
+import { applyCategory, deleteTxn, updateTxn } from "@/data/repo";
 import { useAppData, useStore } from "@/data/store";
 import { providerName } from "@/data/providers/registry";
 import { AmountInput, Field, Pill, Sheet, cx } from "./ui";
@@ -26,8 +27,8 @@ const FLOW_LABEL: Record<Flow, string> = { out: "Money out", transfer: "Own tran
 const FLOW_HELP: Record<Flow, string> = {
   out: "Spending, a bill or an investment: the category decides which.",
   transfer: "Between your own accounts, or paying your credit card bill. Ignored everywhere.",
-  refund: "Money back. Link it to the original payment to restore budget.",
-  income: "Money in, e.g. salary or dividends. Doesn't change the daily budget.",
+  refund: "Money back. Link it to the original payment to reduce its net cost.",
+  income: "Money in, e.g. salary or dividends. Funds the allowance in actual set-aside mode.",
 };
 const flowOf = (k: TxnKind): Flow => (k === "transfer" ? "transfer" : k === "refund" ? "refund" : k === "income" ? "income" : "out");
 
@@ -39,8 +40,9 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("");
   const [tag, setTag] = useState("");
-  const [remember, setRemember] = useState(false);
-  const [recurring, setRecurring] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [applyPast, setApplyPast] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [flow, setFlow] = useState<Flow>("out");
   const [commitmentId, setCommitmentId] = useState("");
   const [refundOf, setRefundOf] = useState("");
@@ -55,8 +57,9 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     setMerchant(txn.merchant);
     setCategory(txn.category);
     setTag(txn.tag ?? "");
-    setRemember(false);
-    setRecurring(!!txn.recurring);
+    setRemember(true);
+    setApplyPast(true);
+    setSaving(false);
     setFlow(flowOf(txn.kind));
     setCommitmentId(txn.kind === "commitment" ? (txn.commitmentId ?? "") : "");
     setRefundOf(txn.refundOf ?? "");
@@ -74,7 +77,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
   const plan = useMemo(() => (draft ? planForDate(plans, draft.date) : null), [draft, plans]);
   // Planned lines this payment could belong to (planned mode, set-aside category).
   const lineOpts = useMemo(
-    () => (plan && modeOf(plan) === "planned" && setAsideOf(plan).includes(category) ? plan.commitments.filter((c) => commitmentCategory(c) === category) : []),
+    () => (hasBudget(plan) && plan && modeOf(plan) === "planned" && setAsideOf(plan).includes(category) ? plan.commitments.filter((c) => commitmentCategory(c) === category) : []),
     [plan, category],
   );
   const autoLine = useMemo(() => (draft && lineOpts.length ? matchCommitment(draft, plan) : null), [draft, plan, lineOpts]);
@@ -88,10 +91,12 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     return [...strong.map((t) => ({ t, suggested: true })), ...recent.map((t) => ({ t, suggested: false }))];
   }, [draft, txns]);
 
+  const matching = draft && txn && flow === flowOf(txn.kind) ? recipientMatches(txns, draft, "all", today).filter((t) => t.category !== category || t.tag !== (tag.trim() || undefined)) : [];
+
   if (!txn) return null;
 
   const save = async () => {
-    if (!db) return;
+    if (!db || saving) return;
     const p = rupeesInputToPaise(amount);
     if (!p) return setError("Enter an amount above ₹0");
     if (!date || date > today) return setError("Pick a date up to today");
@@ -101,6 +106,8 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
       amountPaise: p,
       date,
       merchant: merchant.trim() || "Unknown",
+      category: cat,
+      tag: flow === "refund" || flow === "transfer" ? undefined : tag.trim() || undefined,
       kind,
       note: note.trim() || undefined,
       commitmentId: kind === "commitment" ? commitmentId : undefined,
@@ -108,11 +115,13 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     };
     if (kind === "refund" && !refundOf) Object.assign(patch, { needsReview: true, reviewReason: "No original expense linked" });
     if (kind !== "refund" && txn.needsReview) Object.assign(patch, { needsReview: false, reviewReason: undefined });
-    await updateTxn(db, txn.id, patch);
-    const saved = { ...txn, ...patch } as Transaction;
-    if (cat !== txn.category || (tag || undefined) !== txn.tag || remember) await applyCategory(db, saved, cat, flow === "refund" || flow === "transfer" ? undefined : tag, remember);
-    if (recurring !== !!txn.recurring) await setRecurringFromTxn(db, { ...saved, category: cat, tag: tag || undefined }, recurring);
-    onClose();
+    setSaving(true);
+    try {
+      await updateTxn(db, txn.id, patch);
+      const saved = { ...txn, ...patch } as Transaction;
+      if (cat !== txn.category || (tag || undefined) !== txn.tag || remember || applyPast) await applyCategory(db, saved, cat, flow === "refund" || flow === "transfer" ? undefined : tag, { remember: remember && (flow === "out" || flow === "income"), scope: applyPast && matching.length > 0 ? "all" : "one" });
+      onClose();
+    } catch { setError("Could not save changes. Please try again."); } finally { setSaving(false); }
   };
 
   const remove = async () => {
@@ -141,7 +150,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
             <button className="btn-danger" onClick={() => setConfirmDelete(true)} data-testid="txn-delete">
               Delete
             </button>
-            <button className="btn-primary flex-1" onClick={save} data-testid="txn-save">
+            <button className="btn-primary flex-1" onClick={save} disabled={saving} data-testid="txn-save">
               Save changes
             </button>
           </div>
@@ -154,7 +163,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
           const refunded = txns.filter((t) => t.kind === "refund" && t.refundOf === txn.id).reduce((s, t) => s + t.amountPaise, 0);
           return refunded > 0 ? (
             <p className="rounded-xl bg-lime/10 p-3 text-sm text-lime">
-              ↩️ {formatINR(refunded)} refunded — {formatINR(Math.max(0, txn.amountPaise - refunded))} counts against your budget.
+              ↩️ {formatINR(refunded)} refunded — {formatINR(Math.max(0, txn.amountPaise - refunded))} net payment after refunds.
             </p>
           ) : null;
         })()}
@@ -188,7 +197,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
           <p className="mt-1.5 text-xs text-ink-400">{FLOW_HELP[flow]}</p>
         </div>
         {flow === "refund" && (
-          <Field label="Refund for which expense?" hint="Linked refunds restore budget on the original expense's day. Unlinked refunds stay flagged.">
+          <Field label="Refund for which expense?" hint="Linked refunds reduce the original payment's net cost on its date. Unlinked refunds stay flagged.">
             <select className="input" value={refundOf} onChange={(e) => setRefundOf(e.target.value)}>
               <option value="">Not linked (flag for review)</option>
               {refundOpts.map(({ t, suggested }) => (
@@ -235,24 +244,23 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
                 </select>
               </Field>
             )}
-            <label className="flex items-center gap-2 text-sm text-ink-300">
+            {matching.length > 0 && (
+              <label className="flex items-start gap-2 rounded-xl bg-lime/10 p-3 text-sm text-ink-200">
+                <input type="checkbox" className="mt-1 h-4 w-4 accent-lime" checked={applyPast} onChange={(e) => setApplyPast(e.target.checked)} data-testid="txn-apply-past" />
+                <span>Apply the same category and tag to {matching.length} other transaction{matching.length === 1 ? "" : "s"} in the last 12 months?
+                  <span className="block text-xs text-ink-400">Same recipient: {txn.payee || merchant}. Older payments stay unchanged.</span>
+                </span>
+              </label>
+            )}
+            {recipientKey({ ...txn, merchant }) && <label className="flex items-center gap-2 text-sm text-ink-300">
               <input type="checkbox" className="h-4 w-4 accent-lime" checked={remember} onChange={(e) => setRemember(e.target.checked)} data-testid="txn-remember" />
               <span className="min-w-0">
-                Always use this for{" "}
+                Remember for future payments to{" "}
                 {txn.payee ? <span className="num text-white">{txn.payee}</span> : <>“{merchant || "this merchant"}”</>}
-                <span className="block text-xs text-ink-400">Also updates your past payments {txn.payee ? "to this UPI ID" : "with this name"}.</span>
+                <span className="block text-xs text-ink-400">New transactions will use this category and tag automatically.</span>
               </span>
-            </label>
+            </label>}
           </>
-        )}
-        {flow === "out" && (
-          <label className="flex items-center gap-2 text-sm text-ink-300">
-            <input type="checkbox" className="h-4 w-4 accent-lime" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} data-testid="txn-recurring" />
-            <span>
-              Repeats every month
-              <span className="block text-xs text-ink-400">Shows up in “Coming up” before it's due.</span>
-            </span>
-          </label>
         )}
 
         <Field label="Note">

@@ -38,7 +38,7 @@ describe("home widget snapshot", () => {
   });
 
   it("includes actual-mode set-aside adjustments in today's budget and future allowances", () => {
-    const input = { profile: me("2026-09-01"), plans: [plan({ incomePaise: 60_000_00, setAsideMode: "actual" })], txns: [txn({ date: "2026-09-11", amountPaise: 20_000_00, category: "Bills" })], today: "2026-09-11" };
+    const input = { profile: me("2026-09-01"), plans: [plan({ budgetMode: "set-aside", incomePaise: null, setAsideMode: "actual" })], txns: [txn({ date: "2026-09-01", amountPaise: 60_000_00, kind: "income", category: "Income" }), txn({ date: "2026-09-11", amountPaise: 20_000_00, category: "Bills" })], today: "2026-09-11" };
     const snapshot = widgetSnapshot(input);
     expect(snapshot.rows.find((r) => r.date === "2026-09-11")).toMatchObject({ allocation: 1_000_00, spent: 0 });
     expect(snapshot.rows.find((r) => r.date === "2026-09-12")).toMatchObject({ allocation: 1_000_00 });

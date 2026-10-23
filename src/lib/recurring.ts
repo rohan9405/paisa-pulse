@@ -95,7 +95,8 @@ export function upcomingPayments(input: { statuses: CommitmentStatus[]; recurrin
     if (c.matchHint) seen.add(normalize(c.matchHint));
   }
   for (const r of recurring) {
-    if (r.status !== "active") continue;
+    // Reminders come only from autopay / e-mandate SMS, never from manual entries.
+    if (r.status !== "active" || r.source !== "mandate") continue;
     if (seen.has(normalize(r.name)) || (r.payee && seen.has(normalize(r.payee)))) continue;
     const due = nextDue(r, txns, today);
     if (diffDays(today, due) > days || diffDays(due, today) > GRACE_DAYS) continue;

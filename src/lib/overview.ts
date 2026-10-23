@@ -14,7 +14,7 @@ export interface MonthPace {
   allocatedPaise: number;
   dayOfMonth: number;
   daysInMonth: number;
-  onTrack: boolean;
+  onTrack: boolean | null;
   /**
    * Expected allowance minus expected spend at month end, at the pace of the
    * completed days (positive = under). Null until there are 3 completed days.
@@ -27,27 +27,28 @@ export function monthPace(ledger: Ledger, today: DateKey): MonthPace {
   const dim = daysInMonth(y, m);
   const rows = ledger.days.filter((r) => r.date >= startOfMonth(today) && r.date <= today);
   const done = rows.filter((r) => r.date < today);
-  const spent = rows.reduce((s, r) => s + r.spentPaise, 0);
+  const spent = rows.reduce((s, r) => s + (ledger.hasBudget ? r.hasBudget ? r.spentPaise : 0 : r.everydayPaise), 0);
   const allocated = rows.reduce((s, r) => s + r.allocationPaise, 0);
   let projected: number | null = null;
-  if (ledger.hasBudget && done.length >= 3) {
+  if (ledger.hasBudget && ledger.mode === "planned" && rows.every((r) => r.hasBudget) && done.length >= 3) {
     const rate = done.reduce((s, r) => s + r.spentPaise, 0) / done.length;
     const daysLeft = dim - d; // after today
     const expectedSpend = spent + rate * daysLeft;
     const expectedAllowance = allocated + (allocated / rows.length) * daysLeft;
     projected = Math.round(expectedAllowance - expectedSpend);
   }
-  return { spentPaise: spent, allocatedPaise: allocated, dayOfMonth: d, daysInMonth: dim, onTrack: spent <= allocated, projectedDeltaPaise: projected };
+  return { spentPaise: spent, allocatedPaise: allocated, dayOfMonth: d, daysInMonth: dim, onTrack: ledger.hasBudget ? spent <= allocated : null, projectedDeltaPaise: projected };
 }
 
 /** Average daily spend over the last `days` completed days that were tracked (0 if none). */
 export function usualDailySpend(ledger: Ledger, today: DateKey, days = 28): number {
   const from = addDays(today, -days);
   const rows = ledger.days.filter((r) => r.date >= from && r.date < today);
-  return rows.length ? Math.round(rows.reduce((s, r) => s + r.spentPaise, 0) / rows.length) : 0;
+  return rows.length ? Math.round(rows.reduce((s, r) => s + (ledger.hasBudget ? r.hasBudget ? r.spentPaise : 0 : r.everydayPaise), 0) / rows.length) : 0;
 }
 
 export interface WeekDay {
+  hasBudget: boolean;
   date: DateKey;
   spentPaise: number;
   allocationPaise: number;
@@ -61,13 +62,14 @@ export function weekDays(ledger: Ledger, today: DateKey): WeekDay[] {
   const start = startOfWeek(today);
   return eachDay(start, addDays(start, 6)).map((date) => {
     const row = ledger.days.find((r) => r.date === date);
-    return { date, spentPaise: row?.spentPaise ?? 0, allocationPaise: row?.allocationPaise ?? 0, future: date > today, untracked: !row && date <= today };
+    return { date, hasBudget: row?.hasBudget ?? false, spentPaise: ledger.hasBudget ? row?.spentPaise ?? 0 : row?.everydayPaise ?? 0, allocationPaise: row?.allocationPaise ?? 0, future: date > today, untracked: !row && date <= today };
   });
 }
 
 export type CalendarState = "under" | "over" | "nospend" | "spent" | "today" | "future" | "untracked";
 
 export interface CalendarDay {
+  hasBudget: boolean;
   date: DateKey;
   state: CalendarState;
   spentPaise: number;
@@ -79,12 +81,12 @@ export function monthCalendar(ledger: Ledger, day: DateKey): { blanks: number; d
   const blanks = diffDays(startOfWeek(first), first);
   const days = eachDay(first, endOfMonth(day)).map((date): CalendarDay => {
     const row = ledger.days.find((r) => r.date === date);
-    if (date > ledger.today) return { date, state: "future", spentPaise: 0 };
-    if (!row) return { date, state: "untracked", spentPaise: 0 };
-    if (date === ledger.today) return { date, state: "today", spentPaise: row.spentPaise };
-    if (row.spentPaise === 0) return { date, state: "nospend", spentPaise: 0 };
-    if (!ledger.hasBudget) return { date, state: "spent", spentPaise: row.spentPaise };
-    return { date, state: row.underBudget ? "under" : "over", spentPaise: row.spentPaise };
+    if (date > ledger.today) return { date, hasBudget: row?.hasBudget ?? false, state: "future", spentPaise: 0 };
+    if (!row) return { date, hasBudget: false, state: "untracked", spentPaise: 0 };
+    if (date === ledger.today) return { date, hasBudget: row?.hasBudget ?? false, state: "today", spentPaise: row.spentPaise };
+    if (row.spentPaise === 0 && (row.hasBudget || row.setAsidePaise === 0)) return { date, hasBudget: row?.hasBudget ?? false, state: "nospend", spentPaise: 0 };
+    if (!row.hasBudget) return { date, hasBudget: row?.hasBudget ?? false, state: "spent", spentPaise: row.spentPaise };
+    return { date, hasBudget: row?.hasBudget ?? false, state: row.underBudget ? "under" : "over", spentPaise: row.spentPaise };
   });
   return { blanks, days };
 }

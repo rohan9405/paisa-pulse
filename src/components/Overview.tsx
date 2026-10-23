@@ -14,7 +14,7 @@ export function PaceCard({ pace, hasBudget, lastMonthByNowPaise }: { pace: Month
     return (
       <Card data-testid="pace">
         <div className="flex items-baseline justify-between text-sm">
-          <span className="font-semibold">{month} so far</span>
+          <span className="font-semibold">{month} everyday spending</span>
           <Money paise={pace.spentPaise} className="num font-semibold" />
         </div>
         {lastMonthByNowPaise !== undefined && lastMonthByNowPaise > 0 && (
@@ -54,12 +54,12 @@ export function WeekBars({ days, hasBudget, today }: { days: WeekDay[]; hasBudge
       <div className="mb-3 text-sm font-semibold">This week</div>
       <div className="flex h-20 items-end gap-2">
         {days.map((d) => {
-          const over = hasBudget && d.spentPaise > d.allocationPaise;
+          const over = hasBudget && d.hasBudget && d.spentPaise > d.allocationPaise;
           return (
             <div key={d.date} className="relative flex h-full flex-1 items-end" title={`${formatDay(d.date, { weekday: true })}: ${formatINR(d.spentPaise)}`}>
-              {hasBudget && d.allocationPaise > 0 && <div className="absolute inset-x-0 border-t border-dashed border-white/25" style={{ bottom: `${(d.allocationPaise / max) * 100}%` }} />}
+              {hasBudget && d.hasBudget && d.allocationPaise > 0 && <div className="absolute inset-x-0 border-t border-dashed border-white/25" style={{ bottom: `${(d.allocationPaise / max) * 100}%` }} />}
               <div
-                className={cx("w-full rounded-md", d.future || d.untracked ? "bg-white/[0.06]" : over ? "bg-coral" : "bg-lime", d.date === today && "ring-2 ring-white/40")}
+                className={cx("w-full rounded-md", d.future || d.untracked ? "bg-white/[0.06]" : !hasBudget || !d.hasBudget ? "bg-violet" : over ? "bg-coral" : "bg-lime", d.date === today && "ring-2 ring-white/40")}
                 style={{ height: d.future || d.untracked ? "6%" : `${Math.max(4, (d.spentPaise / max) * 100)}%` }}
               />
             </div>
@@ -89,7 +89,7 @@ const CAL_TONE: Record<CalendarDay["state"], string> = {
 
 /** Month at a glance; tapping a tracked day opens its report. */
 export function MonthCalendar({ blanks, days, hasBudget, selected, onPick }: { blanks: number; days: CalendarDay[]; hasBudget: boolean; selected?: string; onPick: (date: string) => void }) {
-  const good = days.filter((d) => d.state === "under" || d.state === "nospend").length;
+  const good = days.filter((d) => d.hasBudget && (d.state === "under" || d.state === "nospend")).length;
   return (
     <Card data-testid="calendar">
       <div className="mb-3 flex items-baseline justify-between text-sm">

@@ -100,10 +100,13 @@ export const DEFAULT_RULES: Omit<CategoryRule, "id">[] = [
   ...["emi", "loan repayment", "bajaj finance", "home loan"].map((p) => R(p, "Bills", undefined, "EMI")),
   ...["lic", "insurance premium", "hdfc life", "icici pru", "star health", "acko", "policybazaar"].map((p) => R(p, "Bills", undefined, "Insurance")),
   ...["apollo", "pharmeasy", "1mg", "netmeds", "practo", "medplus", "hospital", "clinic", "cult.fit", "cultfit"].map((p) => R(p, "Health")),
+  // Any merchant with "pharmacy" / "chemist" in the name. Payments only, so a "… Pharma" dividend stays a dividend.
+  ...["pharmacy", "pharma", "chemist", "medical store", "medicals"].map((p) => ({ ...R(p, "Health"), direction: "out" as const })),
   ...["makemytrip", "goibibo", "cleartrip", "indigo", "air india", "vistara", "akasa", "oyo", "airbnb", "booking.com"].map((p) => R(p, "Travel")),
   ...["udemy", "coursera", "byju", "unacademy", "school fee", "college"].map((p) => R(p, "Education")),
   ...["urban company", "salon", "lakme"].map((p) => R(p, "Personal Care")),
-  ...["sip ", "mutual fund", "bse star mf", "bse ltd", "cams", "kfintech", "kuvera", "coin by zerodha", "nach mf"].map((p) => R(p, "Investments", "investment", "SIP")),
+  // Indian Clearing Corporation settles BSE StAR MF / exchange purchases ("INDIAN CLEARING CORP" on bank SMS).
+  ...["sip ", "mutual fund", "bse star mf", "bse ltd", "cams", "kfintech", "kuvera", "coin by zerodha", "nach mf", "indian clearing", "iccl", "clearing corp"].map((p) => R(p, "Investments", "investment", "SIP")),
   ...["zerodha", "groww", "upstox", "indmoney", "indstocks", "angel one", "dhan"].map((p) => R(p, "Investments", "investment", "Stocks")),
   ...["nps ", "ppf"].map((p) => R(p, "Investments", "investment", "NPS / PPF")),
   ...["recurring deposit", "fixed deposit", " rd ", " fd "].map((p) => R(p, "Savings", "investment", "RD / FD")),
@@ -112,6 +115,8 @@ export const DEFAULT_RULES: Omit<CategoryRule, "id">[] = [
   ...["interest credit", "int.pd", "int pd", "interest paid"].map((p) => R(p, "Income", "income", "Interest")),
   // Dividends arrive as ACH credits, e.g. "ACH C- ITC LTD" / "ACH CR".
   ...["dividend", "ach c-", "ach-cr", "achcr"].map((p) => R(p, "Income", "income", "Dividend income")),
+  // Any credit with "ACH" in it ("ACH ITC LTD DIV"). Credits only: ACH debits are SIPs and EMIs.
+  { ...R("ach", "Income", "income", "Dividend income"), direction: "in" as const },
 ];
 
 export function normalize(s: string): string {
@@ -129,16 +134,19 @@ export interface CategorizeResult {
  * A rule for this exact payee (UPI ID) wins outright. Otherwise the
  * highest-priority text rule wins; ties → longest pattern (more specific).
  */
-export function categorize(text: string, rules: CategoryRule[], payee?: string): CategorizeResult | null {
+export function categorize(text: string, rules: CategoryRule[], payee?: string, context?: { merchant?: string; direction?: "in" | "out" }): CategorizeResult | null {
+  rules = rules.filter((r) => !r.direction || !context?.direction || r.direction === context.direction);
   const pay = payee ? normalize(payee) : "";
   if (pay) {
     const byPayee = rules.filter((r) => r.payee && normalize(r.payee) === pay).sort((a, b) => b.priority - a.priority)[0];
     if (byPayee) return { category: byPayee.category, kind: byPayee.kind, tag: byPayee.tag, ruleId: byPayee.id };
   }
+  const exact = rules.filter((r) => r.merchant && !pay && normalize(r.merchant) === normalize(context?.merchant ?? text)).sort((a, b) => b.priority - a.priority)[0];
+  if (exact) return { category: exact.category, kind: exact.kind, tag: exact.tag, ruleId: exact.id };
   const hay = ` ${normalize(text)} `;
   let best: CategoryRule | null = null;
   for (const r of rules) {
-    if (r.payee) continue;
+    if (r.payee || r.merchant) continue;
     const p = normalize(r.pattern);
     if (!p) continue;
     if (!matchesPattern(hay, p)) continue;

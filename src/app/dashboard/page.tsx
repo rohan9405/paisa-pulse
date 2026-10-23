@@ -40,15 +40,16 @@ export default function DashboardPage() {
       daySpent: d.spentPaise / 100,
       dayBudget: d.budgetPaise / 100,
     }));
+    const periodHasBudget = derived.ledger.hasBudget && derived.ledger.days.filter((d) => d.date >= from && d.date <= toClamped).every((d) => d.hasBudget);
     const budgetTotal = series.at(-1)?.Budget ?? 0;
     const budgetSpent = Math.round((series.at(-1)?.Spent ?? 0) * 100);
     const catTotal = cats.reduce((s, c) => s + c.amountPaise, 0);
-    return { out, cats, series, budgetTotal, budgetSpent, catTotal };
+    return { out, cats, series, periodHasBudget, budgetTotal, budgetSpent, catTotal };
   }, [data, derived, from, toClamped]);
 
   if (!data || !derived || !view) return null;
   const { out, cats, series, budgetTotal, budgetSpent, catTotal } = view;
-  const hasBudget = derived.ledger.hasBudget;
+  const hasBudget = view.periodHasBudget;
   const catMax = Math.max(1, ...cats.map((c) => c.amountPaise));
   const future = from > today;
   const mk = monthKey(today);
@@ -118,7 +119,7 @@ export default function DashboardPage() {
 
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative spending"}</h2>
+              <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative everyday spending"}</h2>
               <InfoTip label="About spend vs budget">{hasBudget ? "Below the dashed line = on track." : "Set an income in Settings to compare against a budget."}</InfoTip>
             </div>
             {series.length === 0 ? (
@@ -143,7 +144,7 @@ export default function DashboardPage() {
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="font-semibold">Daily spending</h2>
-              <InfoTip label="About daily spending">Each bar is one day's everyday spending.</InfoTip>
+              <InfoTip label="About daily spending">Each bar shows recorded spending; budget periods include payments that count against the budget.</InfoTip>
             </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>

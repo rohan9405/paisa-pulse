@@ -9,3 +9,4 @@ playwright-report
 android/build
 android/*.keystore
 android/local.json
+.next-preview

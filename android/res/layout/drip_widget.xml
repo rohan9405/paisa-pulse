@@ -1,6 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_image"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:scaleType="fitXY"
-    android:contentDescription="drip daily budget and month calendar. Tap to open drip." />
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_background" android:padding="12dp">
+    <LinearLayout android:id="@+id/widget_data" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1.05" android:layout_height="match_parent" android:orientation="vertical">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center_vertical">
+                <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="drip" android:textColor="#c6ff3d" android:textSize="16sp" android:fontFamily="sans-serif-medium" android:includeFontPadding="false" />
+                <TextView android:id="@+id/widget_date" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#9696a8" android:textSize="10sp" android:includeFontPadding="false" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/widget_today" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center_vertical" android:orientation="horizontal">
+                <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+                    <TextView android:id="@+id/widget_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#9696a8" android:textSize="11sp" android:includeFontPadding="false" />
+                    <TextView android:id="@+id/widget_amount" android:layout_width="match_parent" android:layout_height="36dp" android:gravity="center_vertical" android:textColor="#f4f4f7" android:textSize="28sp" android:fontFamily="sans-serif-medium" android:singleLine="true" android:includeFontPadding="false" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="16sp" android:autoSizeMaxTextSize="28sp" android:autoSizeStepGranularity="1sp" />
+                    <TextView android:id="@+id/widget_allowance" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#9696a8" android:textSize="10sp" android:singleLine="true" android:ellipsize="end" android:includeFontPadding="false" />
+                </LinearLayout>
+                <ImageView android:id="@+id/widget_drop" android:layout_width="34dp" android:layout_height="52dp" android:layout_marginStart="4dp" android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            </LinearLayout>
+            <TextView android:id="@+id/widget_spent" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#b4b4c4" android:textSize="11sp" android:singleLine="true" android:includeFontPadding="false" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center_vertical">
+                <TextView android:id="@+id/widget_updated" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:textColor="#9696a8" android:textSize="9sp" android:maxLines="2" android:includeFontPadding="false" />
+                <TextView android:id="@+id/widget_refresh" android:layout_width="32dp" android:layout_height="match_parent" android:gravity="center" android:text="↻" android:textColor="#c6ff3d" android:textSize="25sp" android:contentDescription="Refresh bank SMS and widget" />
+            </LinearLayout>
+        </LinearLayout>
+        <LinearLayout android:layout_width="1dp" android:layout_height="match_parent" android:layout_marginStart="10dp" android:layout_marginEnd="10dp" android:background="#292932" />
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:orientation="vertical">
+            <LinearLayout android:id="@+id/widget_month_header" android:layout_width="match_parent" android:layout_height="24dp" android:gravity="center_vertical">
+                <TextView android:id="@+id/widget_month" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:textSize="11sp" android:textColor="#f4f4f7" android:fontFamily="sans-serif-medium" android:includeFontPadding="false" />
+                <TextView android:id="@+id/widget_under" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="9sp" android:textColor="#9696a8" android:includeFontPadding="false" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/widget_weekdays" android:layout_width="match_parent" android:layout_height="14dp" android:orientation="horizontal" />
+            <LinearLayout android:id="@+id/widget_calendar" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical" />
+            <LinearLayout android:id="@+id/widget_month_total" android:layout_width="match_parent" android:layout_height="26dp" android:gravity="center_vertical">
+                <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Month" android:textSize="10sp" android:textColor="#9696a8" android:includeFontPadding="false" />
+                <TextView android:id="@+id/widget_month_spent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="11sp" android:textColor="#f4f4f7" android:fontFamily="sans-serif-medium" android:includeFontPadding="false" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center_vertical" android:visibility="gone">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="drip" android:textColor="#c6ff3d" android:textSize="16sp" />
+        <TextView android:id="@+id/widget_empty_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textSize="22sp" android:textColor="#f4f4f7" />
+        <TextView android:id="@+id/widget_empty_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textSize="12sp" android:textColor="#9696a8" />
+    </LinearLayout>
+</FrameLayout>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { outgoingsInRange } from "@/lib/budget";
-import { addDays, diffDays, formatDay, istHour, startOfMonth, startOfWeek } from "@/lib/dates";
+import { addDays, diffDays, endOfMonth, formatDay, istHour, startOfMonth, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { VIBE_COPY, level, recoveryPlan, vibe } from "@/lib/insights";
 import { monthPace, usualDailySpend, weeklyInsight } from "@/lib/overview";
@@ -49,7 +49,9 @@ export default function TodayPage() {
   const lv = level(ledger);
   // Tracking mode compares with the same stretch of last month.
   const lastMonthStart = startOfMonth(addDays(startOfMonth(today), -1));
-  const lastMonthByNow = ledger.hasBudget ? undefined : outgoingsInRange(data.txns, lastMonthStart, addDays(lastMonthStart, pace.dayOfMonth - 1)).everydayPaise;
+  const lastMonthTo = [addDays(lastMonthStart, pace.dayOfMonth - 1), endOfMonth(lastMonthStart)].sort()[0];
+  const lastMonthByNow = ledger.hasBudget || data.profile!.trackingStart > lastMonthStart ? undefined : outgoingsInRange(data.txns, lastMonthStart, lastMonthTo).everydayPaise;
+  const dayOut = outgoingsInRange(data.txns, today, today);
 
   return (
     <div className="md:grid md:grid-cols-[1.1fr_1fr] md:gap-6">
@@ -63,13 +65,18 @@ export default function TodayPage() {
         </div>
 
         {!ledger.started ? (
-          <EmptyState emoji="⏳" title={`Tracking starts ${formatDay(data.profile!.trackingStart, { weekday: true })}`} body="Your daily allowance starts accruing on that date." />
+          <EmptyState emoji="⏳" title={`Tracking starts ${formatDay(data.profile!.trackingStart, { weekday: true })}`} body="Your spending summaries start on that date." />
         ) : ledger.hasBudget ? (
           <HeroBudget available={ledger.availablePaise} base={row.allocationPaise} carried={row.carriedInPaise} spent={row.spentPaise} adjust={row.adjustPaise} line={VIBE_COPY[vibe(ledger)].line} />
         ) : (
-          <HeroTracking spent={row.spentPaise} usual={usualDailySpend(ledger, today)} week={outgoingsInRange(data.txns, startOfWeek(today), today).everydayPaise} />
+          <HeroTracking spent={row.everydayPaise} usual={usualDailySpend(ledger, today)} week={outgoingsInRange(data.txns, startOfWeek(today), today).everydayPaise} />
         )}
 
+        {!ledger.hasBudget && ledger.started && dayOut.totalPaise > dayOut.everydayPaise && <Card className="mt-3 text-sm" data-testid="tracking-outgoings">
+          Total outgoings today: <Money paise={dayOut.totalPaise} />
+          <p className="mt-1 text-xs text-ink-400">Bills <Money paise={dayOut.billsPaise} /> · Investments <Money paise={dayOut.investmentsPaise} /> · Savings <Money paise={dayOut.savingsPaise} /></p>
+        </Card>}
+        {ledger.hasBudget && ledger.mode === "actual" && <p className="mt-3 text-xs text-ink-400">Based on recorded income and tagged payments. No future income is assumed. Review income, transfer and set-aside tags in Activity.</p>}
         {pool.shortfallPaise > 0 && (
           <Card className="mt-3 border-coral/30 bg-coral/[0.07] text-sm">
             <b className="text-coral">Set-aside payments exceed income</b> by <Money paise={pool.shortfallPaise} />. Daily allowance is ₹0 until you{" "}
@@ -214,7 +221,7 @@ function heroSize(p: number) {
 function HeroTracking({ spent, usual, week }: { spent: number; usual: number; week: number }) {
   return (
     <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-violet/15 to-ink-850 p-6 text-center">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-300">Spent today</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-300">Everyday spent today</div>
       <div className="num mt-1 text-5xl font-bold" data-testid="spent-today">
         <Money paise={spent} decimals="never" />
       </div>

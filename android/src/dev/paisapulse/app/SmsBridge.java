@@ -2,6 +2,7 @@ package dev.paisapulse.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
@@ -16,9 +17,9 @@ import org.json.JSONObject;
  */
 final class SmsBridge {
     private static final Uri INBOX = Uri.parse("content://sms/inbox");
-    private final Activity activity;
+    private final Context activity;
 
-    SmsBridge(Activity activity) {
+    SmsBridge(Context activity) {
         this.activity = activity;
     }
 
@@ -29,7 +30,10 @@ final class SmsBridge {
 
     @JavascriptInterface
     public void requestPermission() {
-        activity.runOnUiThread(() -> activity.requestPermissions(new String[] {Manifest.permission.READ_SMS}, MainActivity.SMS_REQUEST));
+        if (activity instanceof Activity) {
+            Activity screen = (Activity) activity;
+            screen.runOnUiThread(() -> screen.requestPermissions(new String[] {Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS}, MainActivity.SMS_REQUEST));
+        }
     }
 
     /**

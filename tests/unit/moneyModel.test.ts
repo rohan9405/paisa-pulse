@@ -61,16 +61,18 @@ describe("set-aside budget, planned amounts", () => {
 });
 
 describe("set-aside budget, actual payments", () => {
-  const actual = plan({ incomePaise: 60_000_00, commitments: [], setAsideMode: "actual" });
+  const actual = plan({ budgetMode: "set-aside", incomePaise: null, commitments: [], setAsideMode: "actual" });
+
+  const salary = txn({ date: "2026-09-01", amountPaise: 60_000_00, kind: "income", category: "Income" });
 
   it("with nothing set aside yet, income is spread over the month", () => {
-    const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns: [], today: "2026-09-01" });
+    const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns: [salary], today: "2026-09-01" });
     expect(l.todayRow.allocationPaise).toBe(2_000_00);
   });
 
   it("a set-aside payment shrinks the pool and the remaining days are recalculated", () => {
     // Rent ₹20,000 on day 11 → ₹60,000 − ₹20,000 (10 days × ₹2,000) − ₹20,000 = ₹20,000 over 20 days.
-    const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns: [rentPaid(20_000_00, "2026-09-11")], today: "2026-09-12" });
+    const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns: [salary, rentPaid(20_000_00, "2026-09-11")], today: "2026-09-12" });
     expect(l.days[9].allocationPaise).toBe(2_000_00);
     expect(l.days[10].allocationPaise).toBe(1_000_00);
     expect(l.days[10].spentPaise).toBe(0);
@@ -79,13 +81,13 @@ describe("set-aside budget, actual payments", () => {
   });
 
   it("allocations add up exactly to income minus what was set aside", () => {
-    const txns = [rentPaid(20_000_00, "2026-09-03"), sipPaid(7_777_77, "2026-09-17")];
+    const txns = [salary, rentPaid(20_000_00, "2026-09-03"), sipPaid(7_777_77, "2026-09-17")];
     const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns, today: "2026-09-30" });
     expect(l.totalAllocatedPaise).toBe(60_000_00 - 20_000_00 - 7_777_77);
   });
 
   it("set-aside payments beyond what's left become a deficit, not negative allowances", () => {
-    const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns: [rentPaid(55_000_00, "2026-09-28")], today: "2026-09-29" });
+    const l = computeLedger({ plans: [actual], profile: profile("2026-09-01"), txns: [salary, rentPaid(55_000_00, "2026-09-28")], today: "2026-09-29" });
     // 27 days × ₹2,000 = ₹54,000 already allocated; ₹6,000 left − ₹55,000 → ₹49,000 deficit charged on the 28th.
     expect(l.days[27].allocationPaise).toBe(0);
     expect(l.days[27].adjustPaise).toBe(-49_000_00);
@@ -94,14 +96,14 @@ describe("set-aside budget, actual payments", () => {
     expect(l.availablePaise).toBe(54_000_00 - 49_000_00);
   });
 
-  it("a mid-month start only counts income for the tracked days", () => {
-    const l = computeLedger({ plans: [actual], profile: profile("2026-09-16"), txns: [], today: "2026-09-30" });
-    expect(l.totalAllocatedPaise).toBe(30_000_00);
+  it("a mid-month start counts received income in full, without prorating", () => {
+    const l = computeLedger({ plans: [actual], profile: profile("2026-09-16"), txns: [{ ...salary, date: "2026-09-16" }], today: "2026-09-30" });
+    expect(l.totalAllocatedPaise).toBe(60_000_00);
   });
 
   it("daily allocations never lose paise to rounding", () => {
-    const odd = plan({ incomePaise: 33_333_33, setAsideMode: "actual" });
-    const l = computeLedger({ plans: [odd], profile: profile("2026-02-01"), txns: [], today: "2026-02-28" });
+    const odd = plan({ budgetMode: "set-aside", incomePaise: null, setAsideMode: "actual" });
+    const l = computeLedger({ plans: [odd], profile: profile("2026-02-01"), txns: [{ ...salary, date: "2026-02-01", amountPaise: 33_333_33 }], today: "2026-02-28" });
     expect(l.totalAllocatedPaise).toBe(33_333_33);
     expect(eachDay("2026-02-01", "2026-02-28")).toHaveLength(l.days.length);
   });

@@ -207,7 +207,7 @@ export function validateRows(
 
     const fp = fingerprint({ date, amountPaise, direction, description, reference });
     const payee = findPayee(description);
-    const rule = categorize(description, opts.rules, payee);
+    const rule = categorize(description, opts.rules, payee, { merchant: base.merchant, direction });
     let kind: TxnKind = direction === "out" ? "expense" : "income";
     if (rule?.kind && (rule.kind === "transfer" || (direction === "out" && rule.kind !== "income" && rule.kind !== "refund") || (direction === "in" && rule.kind === "income"))) kind = rule.kind;
     if (direction === "in" && kind === "income" && /refund|reversal|cashback|rev\b/i.test(description)) kind = "refund";

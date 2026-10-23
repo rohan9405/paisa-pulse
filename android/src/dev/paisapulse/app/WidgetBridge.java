@@ -28,7 +28,7 @@ final class WidgetBridge {
             if (snapshot.length() > 100_000) return;
             JSONObject data = new JSONObject(snapshot);
             if (data.optInt("version") != 1 || data.optJSONArray("rows") == null) return;
-            context.getSharedPreferences("widget", 0).edit().putString("snapshot", snapshot).apply();
+            context.getSharedPreferences("widget", 0).edit().putString("snapshot", snapshot).putString("syncStatus", "").apply();
             DripWidgetProvider.refresh(context);
         } catch (Exception ignored) { /* Keep the last valid snapshot. */ }
     }

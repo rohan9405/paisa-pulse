@@ -23,8 +23,8 @@ export interface Commitment {
 /**
  * - planned: you enter expected amounts; when a payment differs, the difference
  *   lands in that day's budget (over at once, under at month end).
- * - actual: nothing is entered; each set-aside payment comes out of the month's
- *   pool when it arrives and the remaining days are recalculated.
+ * - actual: no amounts are entered; recorded income funds the pool, tagged
+ *   set-aside payments reduce it and the remaining days are recalculated.
  */
 export type SetAsideMode = "planned" | "actual";
 
@@ -35,7 +35,9 @@ export type SetAsideMode = "planned" | "actual";
 export interface BudgetPlan {
   id: string;
   effectiveFrom: DateKey;
-  /** Monthly take-home income. 0 / null means "no budget, just track". */
+  /** Explicit choice; older plans infer tracking from missing income. */
+  budgetMode?: "tracking" | "set-aside";
+  /** Planned monthly take-home income. Actual mode uses income transactions. */
   incomePaise: Paise | null;
   commitments: Commitment[];
   /** Categories taken off income before the daily budget. Missing = DEFAULT_SET_ASIDE. */
@@ -141,6 +143,9 @@ export interface CategoryRule {
   id: string;
   /** Case-insensitive substring matched against merchant / narration. Ignored when `payee` is set. */
   pattern: string;
+  /** Exact merchant fallback for remembered recipient choices. */
+  merchant?: string;
+  direction?: "in" | "out";
   /** Exact payee (UPI ID) this rule applies to. Payee rules beat text rules. */
   payee?: string;
   category: string;

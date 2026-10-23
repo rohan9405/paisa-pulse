@@ -30,6 +30,12 @@ const NAV_EXTRA = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const path = usePathname();
+  if (path === "/widget-sync" || path === "/widget-sync/") return <>{children}</>;
+  return <InteractiveShell>{children}</InteractiveShell>;
+}
+
+function InteractiveShell({ children }: { children: ReactNode }) {
   const { ready, mode, setMode, db, today } = useStore();
   const data = useAppData();
   useSmsSync(mode === "personal" && data?.profile ? db : null);

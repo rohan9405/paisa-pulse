@@ -11,10 +11,10 @@ Implemented in `src/lib/budget.ts`; tested in `tests/unit/budget.test.ts` and `t
 
 Each budget plan (effective from a date) picks one:
 
-- **Tracking only** (no income): no allowance. Spending is categorised and charted.
-- **Set-aside budget**: the categories in `plan.setAside` (default Bills, Investments, Savings) come off income before the daily budget. Everything else is everyday spending. Two ways to set aside (`plan.setAsideMode`):
-  - **planned** (default): you enter expected amounts as planned lines (`Commitment`: Bills / Investments / Savings, with a tag).
-  - **actual**: nothing is entered; real payments are taken as they arrive.
+- **Tracking only:** no budget inputs, set-aside calculation, allowance, balance or deficit. Spending is categorised and charted; income transactions are still imported and reported. Tagging and automatic payee rules work in every mode.
+- **Set-aside budget** (`budgetMode: "set-aside"`): the categories in `plan.setAside` (default Bills, Investments, Savings) come off income before the daily budget. Everything else is everyday spending. Two ways to set aside (`plan.setAsideMode`):
+  - **planned** (default): you enter monthly income and expected amounts as planned lines (`Commitment`: Bills / Investments / Savings, with a tag).
+  - **actual**: no income or planned-payment amount inputs. Recorded income transactions fund the pool; tagged set-aside payments reduce it as they arrive. Transfers and refunds are not income. Before income arrives, allocation is zero. Older plans without `budgetMode` retain their inferred tracking/budget selection; new plans store the explicit selection.
 
 Categories: **Bills** (tags Rent, Utility, Phone & internet, EMI, Insurance, Maintenance), **Investments** (SIP, Stocks, Mutual fund, NPS / PPF), **Savings** (RD / FD, Emergency fund). Investments and Savings are never expenses: Stats leaves them out of the expense breakdown.
 
@@ -40,12 +40,12 @@ A payment in a set-aside category is matched to a planned line in the same categ
 For each day `d` of month `M` (only tracked days count):
 
 ```
-income_M  = floor(income × trackedDaysInM / daysInM)
+income_M  = sum(recorded income in M since the current budget period began, through d)
 remaining = income_M − Σ set-aside payments in M through d − Σ allocations earlier in M + Σ deficit already charged in M
 allocation(d) = remaining / days left in M (floored; the last day takes the rest)
 ```
 
-A payment on day `d` lowers `d`'s allocation and every later one. If `remaining < 0` (payments beyond what's left), the allocation is ₹0 and the overshoot is charged once as a deficit that day. Allocations in a month add up exactly to income minus set-aside payments.
+A payment on day `d` lowers `d`'s allocation and every later one. If `remaining < 0` (payments beyond what's left), the allocation is ₹0 and the overshoot is charged once as a deficit that day. Allocations plus shortfall adjustments add up exactly to recorded income minus set-aside payments. Received income is never prorated or forecast; refreshing imports or correcting an income/transfer tag recalculates the ledger. An imported income dated before tracking or before a budget activation after tracking does not fund that budget.
 
 ## Daily allocation and rounding
 
@@ -69,6 +69,7 @@ available(today) = Σ allocation(tracking start … today)
 - Unspent money carries forward; overspending produces a negative balance (deficit), never extra money.
 - **Mid-month start:** accrual begins on the chosen tracking date. Earlier days are not credited and earlier spending is ignored. The opening adjustment is explicit and defaults to ₹0.
 - Future-dated transactions don't count until their date.
+- **Mode changes:** tracking days retain spending for reports but have zero carried/closing budget balance. Starting a budget after tracking begins at zero on its effective date; prior tracking spending, income, set-asides and any old opening adjustment do not carry into it. Earlier budget days retain their historical balances. Actual mode also ignores the manual opening adjustment.
 - **Budget changes** create a new plan with an `effectiveFrom` date. Each day uses the plan in force on that day, so history isn't rewritten.
 
 ## What counts against the daily budget

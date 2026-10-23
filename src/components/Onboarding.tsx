@@ -29,7 +29,9 @@ export function Onboarding() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const incomePaise = trackOnly ? null : rupeesInputToPaise(income);
+  const planned = !trackOnly && saMode === "planned";
+  const steps = planned ? STEPS : ["Mode", "Start"];
+  const incomePaise = planned ? rupeesInputToPaise(income) : null;
   const preview = useMemo(() => {
     const { commitments } = validateDrafts(drafts);
     const s = poolSummary({ id: "", effectiveFrom: start, incomePaise, commitments, setAsideMode: saMode, createdAt: 0 });
@@ -38,31 +40,32 @@ export function Onboarding() {
 
   const next = () => {
     setErr(null);
-    if (step === 0 && !trackOnly && !incomePaise) return setErr("Enter your monthly take-home pay, or choose “Just track spending”.");
+    if (step === 0 && planned && !incomePaise) return setErr("Enter your monthly take-home pay, or choose actual set-aside or tracking only.");
     if (step === 1) {
       const { errors } = validateDrafts(drafts);
       setDraftErrors(errors);
       if (Object.keys(errors).length) return;
     }
-    setStep((s) => s + 1);
+    setStep((s) => s === 0 && !planned ? 2 : s + 1);
   };
 
   const finish = async () => {
     if (!db) return;
     setErr(null);
-    const openingPaise = opening.trim() ? parseAmountToPaise(opening.replace(/^\+/, "")) : 0;
+    const openingPaise = planned && opening.trim() ? parseAmountToPaise(opening.replace(/^\+/, "")) : 0;
     if (openingPaise === null) return setErr("Opening adjustment isn't a valid amount");
     if (!start || start > today) return setErr("Tracking can start today or earlier");
     const { commitments } = validateDrafts(drafts);
     setSaving(true);
     await completeOnboarding(db, {
       name,
+      budgetMode: trackOnly ? "tracking" : "set-aside",
       incomePaise,
-      commitments,
+      commitments: planned ? commitments : [],
       setAsideMode: saMode,
       trackingStart: start,
       openingAdjustmentPaise: openingPaise,
-      alreadyPaidIds: drafts.filter((d) => d.alreadyPaid).map((d) => d.id),
+      alreadyPaidIds: (planned ? drafts : []).filter((d) => d.alreadyPaid).map((d) => d.id),
       paidMonth: today.slice(0, 7),
     });
     router.replace("/");
@@ -71,15 +74,15 @@ export function Onboarding() {
   return (
     <div className="pt-[max(24px,env(safe-area-inset-top))]">
       <div className="mb-6 flex items-center justify-between">
-        <button className="text-sm text-ink-400" onClick={() => (step ? setStep(step - 1) : setMode(null))}>
+        <button className="text-sm text-ink-400" onClick={() => (step ? setStep(step === 2 && !planned ? 0 : step - 1) : setMode(null))}>
           ← {step ? "Back" : "Exit"}
         </button>
         <span className="text-xs font-semibold uppercase tracking-widest text-ink-400">
-          Step {step + 1} / {STEPS.length}
+          Step {step === 2 && !planned ? 2 : step + 1} / {steps.length}
         </span>
       </div>
       <div className="mb-6 flex gap-1.5">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <div key={s} className={cx("h-1.5 flex-1 rounded-full", i <= step ? "bg-lime" : "bg-white/10")} />
         ))}
       </div>
@@ -87,13 +90,13 @@ export function Onboarding() {
       {step === 0 && (
         <section className="space-y-5">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">What lands in your account each month?</h1>
-            <p className="mt-2 text-sm text-ink-400">Take-home pay after tax and deductions. Stored only in this browser.</p>
+            <h1 className="text-3xl font-bold tracking-tight">How would you like to track your money?</h1>
+            <p className="mt-2 text-sm text-ink-400">Tagging and automatic categorisation work in every mode. Your data stays on this device.</p>
           </div>
           <Field label="Your name (optional)">
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Priya" maxLength={40} />
           </Field>
-          {!trackOnly && (
+          {planned && (
             <Field label="Monthly take-home income">
               <AmountInput big value={income} onChange={setIncome} placeholder="75,000" data-testid="ob-income" aria-label="Monthly take-home income" />
             </Field>
@@ -105,6 +108,21 @@ export function Onboarding() {
               <span className="block text-ink-400">Skip the budget. You'll see where money goes, without a daily limit. You can add a budget later.</span>
             </span>
           </label>
+          {!trackOnly && (
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="ob-mode">
+              {(
+                [
+                  ["planned", "Plan the amounts", "Enter what you expect to pay. If a bill comes in higher or lower, that day's budget adjusts."],
+                  ["actual", "Use actual payments", "No amounts to enter. Recorded income funds your allowance; tagged bills, investments and savings reduce it as they arrive."],
+                ] as const
+              ).map(([v, label, help]) => (
+                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
+                  <span className="font-semibold">{label}</span>
+                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -118,21 +136,6 @@ export function Onboarding() {
                 : "Bills (rent, electricity, EMIs), investments (SIPs) and savings are set aside before your daily budget. You can change which in Settings."}
             </p>
           </div>
-          {!trackOnly && (
-            <div className="grid gap-2 sm:grid-cols-2" data-testid="ob-mode">
-              {(
-                [
-                  ["planned", "Plan the amounts", "Enter what you expect to pay. If a bill comes in higher or lower, that day's budget adjusts."],
-                  ["actual", "Use actual payments", "Skip the amounts. Each bill or SIP comes out of the month's pool when it's paid, and the remaining days are recalculated."],
-                ] as const
-              ).map(([v, label, help]) => (
-                <button key={v} onClick={() => setSaMode(v)} className={cx("rounded-2xl border p-3 text-left text-sm", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={saMode === v}>
-                  <span className="font-semibold">{label}</span>
-                  <span className="mt-1 block text-xs text-ink-400">{help}</span>
-                </button>
-              ))}
-            </div>
-          )}
           {!trackOnly && saMode === "planned" && <p className="text-xs text-ink-400">Include payments you've already made this month and tick “Paid this month” so they don't show as upcoming.</p>}
           <CommitmentList drafts={drafts} onChange={setDrafts} errors={draftErrors} showPaid />
           {drafts.length === 0 && <p className="text-sm text-ink-400">{saMode === "actual" || trackOnly ? "Optional. Add them to get reminders, or skip ahead." : "No regular payments? That's fine, skip ahead."}</p>}
@@ -143,23 +146,18 @@ export function Onboarding() {
         <section className="space-y-5">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">When do we start counting?</h1>
-            <p className="mt-2 text-sm text-ink-400">Your daily allowance starts accruing on this date. Earlier days aren't credited and earlier spending isn't guessed.</p>
+            <p className="mt-2 text-sm text-ink-400">{trackOnly ? "Transactions from this date appear in your spending summaries." : saMode === "actual" ? "Your allowance is calculated from income and tagged payments recorded from this date. No estimated income is added." : "Your daily allowance starts accruing on this date. Earlier days aren't credited and earlier spending isn't guessed."}</p>
           </div>
           <Field label="Tracking start date" hint={`Starts ${formatDay(start, { weekday: true, year: true })}${smsBridge() ? ". Bank SMS from this date onwards are read in automatically." : ""}`}>
             <input type="date" className="input" value={start} max={today} min={addDays(startOfMonth(today), -62)} onChange={(e) => setStart(e.target.value)} data-testid="ob-start" />
           </Field>
-          {!trackOnly && (
+          {planned && (
             <Field label="Opening adjustment (optional)" hint="Default ₹0. Add cash you want to start with, or a negative amount if you've already overspent this month.">
               <input className="input num" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value.replace(/[^\d.,\-+]/g, ""))} placeholder="0" aria-label="Opening adjustment" />
             </Field>
           )}
 
-          {!trackOnly && saMode === "actual" && (
-            <div className="card space-y-2 text-sm" data-testid="ob-summary">
-              <Row label="Take-home" value={formatINR(preview.incomePaise)} />
-              <p className="text-xs text-ink-400">Your daily allowance starts at about {formatINR(preview.daily)} and drops as bills, investments and savings are paid.</p>
-            </div>
-          )}
+          {!trackOnly && saMode === "actual" && <p className="text-sm text-ink-400">Nothing to enter. Income, bills, investments and savings come from tagged transactions. Until income is recorded, the allowance is zero. You can correct tags in Activity.</p>}
           {!trackOnly && saMode === "planned" && (
             <div className="card space-y-2 text-sm" data-testid="ob-summary">
               <Row label="Take-home" value={formatINR(preview.incomePaise)} />

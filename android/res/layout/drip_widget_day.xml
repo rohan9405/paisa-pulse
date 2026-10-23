@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_day" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:layout_margin="1dp" android:gravity="center" android:textSize="10sp" android:textColor="#9696a8" android:includeFontPadding="false" android:singleLine="true" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="8sp" android:autoSizeMaxTextSize="11sp" android:autoSizeStepGranularity="1sp" />

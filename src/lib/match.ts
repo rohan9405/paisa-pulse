@@ -103,3 +103,34 @@ export function transferPairs(txns: Transaction[]): TransferPair[] {
   }
   return pairs;
 }
+
+/** "ICICI debit", "HDFC credit": SMS with no payee name. Only an exact-ish amount can tie these together. */
+function genericMerchant(m: string) {
+  return /\b(debit|credit)$/i.test(m.trim());
+}
+
+/**
+ * Learn from links you made: a payment you linked to a planned line (rent, SIP…)
+ * teaches drip that other payments to the same payee belong there too, in any
+ * month, including older SMS read in later. Matches by UPI ID; for payments
+ * without one, by merchant name, and for nameless "ICICI debit" style SMS by
+ * merchant plus amount within 1%. Only touches imported payments you haven't
+ * edited. Returns the transactions to update.
+ */
+export function learnFromLinked(txns: Transaction[]): Transaction[] {
+  const linked = txns.filter((t) => t.commitmentId && t.kind !== "income" && t.kind !== "refund").sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!linked.length) return [];
+  const out: Transaction[] = [];
+  for (const t of txns) {
+    if (t.commitmentId || t.kind === "income" || t.kind === "refund" || t.kind === "transfer") continue;
+    if (t.source.providerId === "manual" || t.updatedAt !== t.createdAt) continue;
+    const merchant = normalize(t.merchant);
+    const teacher = linked.find((l) => {
+      if (t.payee && l.payee) return t.payee === l.payee;
+      if (normalize(l.merchant) !== merchant) return false;
+      return !genericMerchant(t.merchant) || Math.abs(t.amountPaise - l.amountPaise) <= l.amountPaise * 0.01;
+    });
+    if (teacher) out.push({ ...t, kind: teacher.kind, category: teacher.category, tag: teacher.tag, commitmentId: teacher.commitmentId });
+  }
+  return out;
+}

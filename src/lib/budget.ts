@@ -10,7 +10,7 @@
  *    under at month end. An unplanned set-aside payment counts in full.
  *  - actual mode: nothing is planned; each set-aside payment comes out of the
  *    month's pool when it arrives and the remaining days are recalculated.
- *  - no income: tracking only, no allocation.
+ *  - tracking only: explicit mode, no allocation or budget balance.
  *  - available = Σ allocations (tracking start → today) + opening adjustment
  *                − everyday spending + adjustments
  */
@@ -67,7 +67,9 @@ export interface PoolSummary {
 }
 
 export function hasBudget(plan: BudgetPlan | null | undefined): boolean {
-  return !!plan && plan.incomePaise !== null && plan.incomePaise > 0;
+  if (!plan || plan.budgetMode === "tracking") return false;
+  if (plan.budgetMode === "set-aside" && modeOf(plan) === "actual") return true;
+  return plan.incomePaise !== null && plan.incomePaise > 0;
 }
 
 export function poolSummary(plan: BudgetPlan | null | undefined): PoolSummary {
@@ -156,6 +158,20 @@ export function matchCommitment(t: Transaction, plan: BudgetPlan | null): Commit
   return scored[0].c;
 }
 
+/** From this day of the month, a salary counts for the next month. */
+const LATE_SALARY_DAY = 25;
+const BIG_CREDIT = 10_000_00;
+
+/**
+ * The day a credit starts funding the budget (actual mode). A salary, or any
+ * credit of ₹10,000+, that lands on the 25th or later counts from the 1st of
+ * the next month, so a salary paid on 31 Aug pays for September.
+ */
+export function incomeDate(t: Pick<Transaction, "date" | "tag" | "amountPaise">): DateKey {
+  if (parseKey(t.date).d >= LATE_SALARY_DAY && (t.tag === "Salary" || t.amountPaise >= BIG_CREDIT)) return addDays(endOfMonth(t.date), 1);
+  return t.date;
+}
+
 // ------------------------------------------------------ budget entries
 
 export interface SpendEntry {
@@ -206,7 +222,7 @@ export function budgetEntries(txns: Transaction[], plans: BudgetPlan[], asOf: Da
 
   const spend: SpendEntry[] = [];
   const setAside: SetAsideEntry[] = [];
-  const paid = new Map<string, { paid: Paise; planned: Paise; name: string; month: MonthKey; commitmentId: string }>();
+  const paid = new Map<string, { paid: Paise; planned: Paise; name: string; month: MonthKey; commitmentId: string; planId: string }>();
 
   for (const t of live.filter(isOutflow).sort(byDateThenCreated)) {
     const net = Math.max(0, t.amountPaise - (refunds.get(t.id) ?? 0));
@@ -215,7 +231,7 @@ export function budgetEntries(txns: Transaction[], plans: BudgetPlan[], asOf: Da
     const base = { date: t.date, category: t.category, txnId: t.id, merchant: t.merchant };
     const linked = t.commitmentId ? plan?.commitments.find((c) => c.id === t.commitmentId) : undefined;
     const category = linked ? commitmentCategory(linked) : t.category;
-    if (!setAsideOf(plan).includes(category)) {
+    if (!(hasBudget(plan) ? setAsideOf(plan) : DEFAULT_SET_ASIDE).includes(category)) {
       spend.push({ ...base, amountPaise: net, source: "expense" });
       continue;
     }
@@ -228,8 +244,8 @@ export function budgetEntries(txns: Transaction[], plans: BudgetPlan[], asOf: Da
       spend.push({ ...base, amountPaise: net, source: "unplanned" });
       continue;
     }
-    const key = `${c.id}@${monthKey(t.date)}`;
-    const cur = paid.get(key) ?? { paid: 0, planned: c.amountPaise, name: c.name, month: monthKey(t.date), commitmentId: c.id };
+    const key = `${plan!.id}:${c.id}@${monthKey(t.date)}`;
+    const cur = paid.get(key) ?? { paid: 0, planned: c.amountPaise, name: c.name, month: monthKey(t.date), commitmentId: c.id, planId: plan!.id };
     const before = cur.paid;
     cur.paid += net;
     paid.set(key, cur);
@@ -241,7 +257,7 @@ export function budgetEntries(txns: Transaction[], plans: BudgetPlan[], asOf: Da
   const credits: CreditEntry[] = [];
   for (const v of paid.values()) {
     const end = endOfMonth(`${v.month}-01`);
-    if (v.paid < v.planned && end <= asOf) credits.push({ date: end, amountPaise: v.planned - v.paid, commitmentId: v.commitmentId, label: `${v.name} came in under` });
+    if (v.paid < v.planned && end <= asOf && planForDate(plans, end)?.id === v.planId) credits.push({ date: end, amountPaise: v.planned - v.paid, commitmentId: v.commitmentId, label: `${v.name} came in under` });
   }
   return { spend, setAside, credits };
 }
@@ -259,6 +275,8 @@ function byDateThenCreated(a: Transaction, b: Transaction) {
 
 export interface DayRow {
   date: DateKey;
+  hasBudget: boolean;
+  everydayPaise: Paise;
   allocationPaise: Paise;
   spentPaise: Paise;
   /** Plan adjustments that day: + a planned payment came in under, − actual-mode payments beyond the pool. */
@@ -308,6 +326,7 @@ export function computeLedger(input: {
     return m;
   };
   const spentByDay = byDay(entries.spend);
+  const everydayByDay = byDay(everydayEntries(txns, start, today));
   const setAsideByDay = byDay(entries.setAside);
   const creditByDay = byDay(entries.credits);
 
@@ -316,12 +335,20 @@ export function computeLedger(input: {
   let allocated = 0; // allocated so far this month
   let charged = 0; // set-aside overshoot already charged as a deficit this month
   let setAsideSoFar = 0;
-  const actualAllocation = (day: DateKey, plan: BudgetPlan) => {
+  let budgetStart = start;
+  const actualAllocation = (day: DateKey) => {
     const { y, m, d } = parseKey(day);
     const dim = daysInMonth(y, m);
-    const firstTracked = start > startOfMonth(day) ? start : startOfMonth(day);
-    const trackedDays = diffDays(firstTracked, endOfMonth(day)) + 1;
-    const income = Math.floor(((plan.incomePaise ?? 0) * trackedDays) / dim);
+    const firstTracked = budgetStart > startOfMonth(day) ? budgetStart : startOfMonth(day);
+    const income = sum(
+      txns
+        .filter((t) => t.kind === "income")
+        .filter((t) => {
+          const on = incomeDate(t);
+          return on >= firstTracked && on <= day;
+        })
+        .map((t) => t.amountPaise),
+    );
     // What's left to spread; overshoot already charged doesn't count twice.
     const remaining = income - setAsideSoFar - allocated + charged;
     if (remaining < 0) return { allocation: 0, charge: -remaining };
@@ -330,12 +357,23 @@ export function computeLedger(input: {
   };
 
   const days: DayRow[] = [];
-  let balance = profile.openingAdjustmentPaise;
+  let balance = hasBudget(planForDate(plans, start)) && modeOf(planForDate(plans, start)) === "planned" ? profile.openingAdjustmentPaise : 0;
+  let wasBudget = hasBudget(planForDate(plans, start));
   let totalAlloc = 0;
   let totalSpent = 0;
   if (started) {
     for (const day of eachDay(start, today)) {
       const plan = planForDate(plans, day);
+      const dayHasBudget = hasBudget(plan);
+      // Tracking has no balance. Starting a budget after tracking starts fresh.
+      if (dayHasBudget !== wasBudget) {
+        balance = 0;
+        allocated = 0;
+        charged = 0;
+        setAsideSoFar = 0;
+        budgetStart = day;
+      }
+      wasBudget = dayHasBudget;
       if (monthKey(day) !== month) {
         month = monthKey(day);
         allocated = 0;
@@ -343,11 +381,11 @@ export function computeLedger(input: {
         setAsideSoFar = 0;
       }
       const setAsideToday = setAsideByDay.get(day) ?? 0;
-      setAsideSoFar += setAsideToday;
+      if (dayHasBudget) setAsideSoFar += setAsideToday;
       let allocation = 0;
-      let adjust = creditByDay.get(day) ?? 0;
+      let adjust = dayHasBudget && modeOf(plan) === "planned" ? creditByDay.get(day) ?? 0 : 0;
       if (hasBudget(plan) && modeOf(plan) === "actual") {
-        const a = actualAllocation(day, plan!);
+        const a = actualAllocation(day);
         allocation = a.allocation;
         adjust -= a.charge;
         allocated += a.allocation;
@@ -358,28 +396,30 @@ export function computeLedger(input: {
       }
       const spent = spentByDay.get(day) ?? 0;
       const carriedIn = balance;
-      balance = carriedIn + allocation - spent + adjust;
+      balance = dayHasBudget ? carriedIn + allocation - spent + adjust : 0;
       totalAlloc += allocation;
       totalSpent += spent;
       days.push({
         date: day,
+        hasBudget: dayHasBudget,
+        everydayPaise: everydayByDay.get(day) ?? 0,
         allocationPaise: allocation,
         spentPaise: spent,
         adjustPaise: adjust,
         setAsidePaise: setAsideToday,
         carriedInPaise: carriedIn,
         closingPaise: balance,
-        underBudget: spent - adjust <= allocation,
+        underBudget: dayHasBudget && spent - adjust <= allocation,
       });
     }
   }
 
   const todayRow: DayRow =
     days[days.length - 1] ??
-    { date: today, allocationPaise: 0, spentPaise: 0, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: 0, underBudget: true };
+    { date: today, hasBudget: budget, everydayPaise: 0, allocationPaise: 0, spentPaise: 0, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: 0, underBudget: true };
 
   let streak = 0;
-  for (let i = days.length - 2; i >= 0; i--) {
+  for (let i = budget ? days.length - 2 : -1; i >= 0; i--) {
     if (days[i].underBudget && days[i].allocationPaise > 0) streak++;
     else break;
   }
@@ -389,12 +429,13 @@ export function computeLedger(input: {
   let next = 0;
   if (hasBudget(tomorrowPlan)) {
     if (modeOf(tomorrowPlan) === "actual") {
-      if (monthKey(tomorrow) !== month) {
+      if (!budget || monthKey(tomorrow) !== month) {
+        if (!budget) budgetStart = tomorrow;
         allocated = 0;
         charged = 0;
         setAsideSoFar = 0;
       }
-      next = actualAllocation(tomorrow, tomorrowPlan!).allocation;
+      next = actualAllocation(tomorrow).allocation;
     } else next = allocationForDay(plans, tomorrow);
   }
 
@@ -475,6 +516,13 @@ export interface Outgoings {
   incomePaise: Paise;
 }
 
+/** Everyday reporting never depends on the user's set-aside preferences. */
+export function everydayEntries(txns: Transaction[], from: DateKey, to: DateKey): SpendEntry[] {
+  return netOutflows(txns, from, to)
+    .filter(({ t }) => !DEFAULT_SET_ASIDE.includes(t.category))
+    .map(({ t, net }) => ({ date: t.date, amountPaise: net, category: t.category, txnId: t.id, merchant: t.merchant, source: "expense" }));
+}
+
 /** Net outflows (after linked refunds) in a date range, by what they're for. */
 function netOutflows(txns: Transaction[], from: DateKey, to: DateKey) {
   const refunds = new Map<string, Paise>();
@@ -549,7 +597,7 @@ export function spendVsBudgetSeries(ledger: Ledger, from: DateKey, to: DateKey) 
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const row = byDate.get(d);
     const b = (row?.allocationPaise ?? 0) + Math.max(0, row?.adjustPaise ?? 0);
-    const s = (row?.spentPaise ?? 0) + Math.max(0, -(row?.adjustPaise ?? 0));
+    const s = (ledger.hasBudget ? row?.spentPaise ?? 0 : row?.everydayPaise ?? 0) + (ledger.hasBudget ? Math.max(0, -(row?.adjustPaise ?? 0)) : 0);
     cumBudget += b;
     cumSpent += s;
     out.push({ date: d, budgetPaise: b, spentPaise: s, cumBudgetPaise: cumBudget, cumSpentPaise: cumSpent });

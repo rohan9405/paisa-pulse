@@ -237,7 +237,7 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
   const p = parseBankSms(sms);
   if (!p) return null;
   const merchant = p.upiLiteTopUp ? "UPI Lite top-up" : (p.counterparty ?? (p.method === "cash" ? "ATM cash" : `${p.bank} ${p.direction === "out" ? "debit" : "credit"}`));
-  const rule = categorize(`${merchant} ${sms.body}`, rules, p.payee);
+  const rule = categorize(`${merchant} ${sms.body}`, rules, p.payee, { merchant, direction: p.direction });
 
   let kind: TxnKind = p.direction === "out" ? "expense" : "income";
   // Same precedence as CSV import (csv.ts validateRows).

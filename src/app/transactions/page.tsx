@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
+import { RecipientTagger } from "@/components/RecipientTagger";
+import { recipientKey, taggingFlow, recipientNeedsTagging, withinTaggingWindow } from "@/lib/recipients";
 import { CATEGORIES } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, monthKey, relativeDayLabel, startOfMonth } from "@/lib/dates";
 import { matchCommitment, planForDate } from "@/lib/budget";
@@ -32,6 +34,9 @@ function Transactions() {
   const params = useSearchParams();
   const { data, derived, today, db } = useBudget();
   const { open } = useQuickAdd();
+  const [view, setView] = useState<"transactions" | "recipients">("transactions");
+  const [recipientTab, setRecipientTab] = useState<"pending" | "archived">("pending");
+  const [recipient, setRecipient] = useState<Transaction[] | null>(null);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<KindFilter>(params.get("review") ? "review" : "all");
   const [cat, setCat] = useState("");
@@ -56,7 +61,7 @@ function Transactions() {
       .filter((t) => t.date >= range[0] && t.date <= range[1])
       .filter((t) => (kind === "all" ? true : kind === "review" ? t.needsReview : t.kind === kind))
       .filter((t) => !cat || t.category === cat)
-      .filter((t) => !needle || [t.merchant, t.category, t.note, t.source.raw, (t.amountPaise / 100).toString()].some((s) => s?.toLowerCase().includes(needle)))
+      .filter((t) => !needle || [t.merchant, t.payee, t.category, t.note, t.source.raw, (t.amountPaise / 100).toString()].some((s) => s?.toLowerCase().includes(needle)))
       .sort((a, b) => (a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1));
   }, [data, q, kind, cat, range]);
 
@@ -65,6 +70,40 @@ function Transactions() {
     for (const t of filtered) m.set(t.date, [...(m.get(t.date) ?? []), t]);
     return [...m.entries()];
   }, [filtered]);
+
+  // Group once so every recipient row does not rescan the entire history.
+  const allRecipients = useMemo(() => {
+    const result = new Map<string, Transaction[]>();
+    for (const t of data?.txns ?? []) {
+      const key = recipientKey(t);
+      if (!key || !["out", "income"].includes(taggingFlow(t))) continue;
+      const groupKey = `${key}:${taggingFlow(t)}`;
+      const group = result.get(groupKey);
+      if (group) group.push(t);
+      else result.set(groupKey, [t]);
+    }
+    return result;
+  }, [data?.txns]);
+
+  const recipients = useMemo(() => {
+    const result = new Map<string, Transaction[]>();
+    for (const t of filtered) {
+      const key = recipientKey(t);
+      if (!key || !["out", "income"].includes(taggingFlow(t))) continue;
+      const groupKey = `${key}:${taggingFlow(t)}`;
+      result.set(groupKey, [...(result.get(groupKey) ?? []), t]);
+    }
+    return [...result.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [filtered]);
+
+  const recipientQueues = useMemo(() => {
+    const pending: typeof recipients = [];
+    const archived: typeof recipients = [];
+    for (const group of recipients) {
+      (recipientNeedsTagging(allRecipients.get(group[0]) ?? group[1], today) ? pending : archived).push(group);
+    }
+    return { pending, archived };
+  }, [recipients, allRecipients, today]);
 
   const suggestions = useMemo(() => {
     if (!data) return { pairs: [], matches: [] };
@@ -95,6 +134,10 @@ function Transactions() {
         }
       />
 
+      <div className="mb-3 flex gap-2" aria-label="Activity view">
+        <button className={cx("chip", view === "transactions" && "chip-on")} onClick={() => setView("transactions")}>Transactions</button>
+        <button className={cx("chip", view === "recipients" && "chip-on")} onClick={() => setView("recipients")}>Recipients</button>
+      </div>
       <div className="relative">
         <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400">
           <IconSearch />
@@ -173,7 +216,24 @@ function Transactions() {
         </>
       )}
 
-      <div className="mt-4">
+      {view === "recipients" ? <div className="mt-4 space-y-2">
+        <div className="mb-3 flex flex-wrap gap-2" aria-label="Recipient queue">
+          <button className={cx("chip", recipientTab === "pending" && "chip-on")} onClick={() => setRecipientTab("pending")} data-testid="recipients-pending">Needs tagging ({recipientQueues.pending.length})</button>
+          <button className={cx("chip", recipientTab === "archived" && "chip-on")} onClick={() => setRecipientTab("archived")} data-testid="recipients-archived">Archived ({recipientQueues.archived.length})</button>
+        </div>
+        <p className="mb-3 text-xs text-ink-400">{recipientTab === "pending" ? "Tag a recipient to move them to Archived. New untagged or inconsistent payments bring them back here." : "Recipients with consistent categories and tags. Open one to edit it again."} Bulk edits cover the last 12 months; older history stays unchanged.</p>
+        {recipientQueues[recipientTab].length === 0 && <EmptyState emoji={recipientTab === "pending" ? "✓" : "🔍"} title={recipientTab === "pending" ? "No recipients need tagging" : "No archived recipients"} body="Counts follow your search, category and period filters. Refunds and own transfers are edited individually." />}
+        {recipientQueues[recipientTab].map(([key, ts]) => {
+          const t = ts[0];
+          const all = allRecipients.get(key) ?? ts;
+          const recent = all.filter((other) => withinTaggingWindow(other, today));
+          const labels = new Set((recent.length ? recent : all).map((other) => `${other.category}${other.tag ? ` · ${other.tag}` : ""}`));
+          return <button key={key} className="card flex w-full items-center justify-between gap-3 p-4 text-left" onClick={() => setRecipient(all)} data-testid="recipient-row">
+            <span className="min-w-0"><span className="block truncate font-semibold">{t.merchant}</span>{t.payee && <span className="block truncate text-xs text-ink-400">{t.payee}</span>}<span className="block text-xs text-ink-300">{ts.length} transaction{ts.length === 1 ? "" : "s"} · {labels.size === 1 ? [...labels][0] : "Mixed categories / tags"}</span></span>
+            <span className="shrink-0 text-sm text-lime">{recipientTab === "pending" ? "Tag all →" : "Edit tags →"}</span>
+          </button>;
+        })}
+      </div> : <div className="mt-4">
         {data.txns.length === 0 ? (
           <EmptyState
             emoji="🫙"
@@ -210,7 +270,8 @@ function Transactions() {
             );
           })
         )}
-      </div>
+      </div>}
+      {recipient && <RecipientTagger txns={recipient} onClose={() => setRecipient(null)} />}
       <TxnEditor txn={editing} onClose={() => setEditing(null)} />
     </div>
   );

@@ -3,7 +3,7 @@
  * exposes the phone's SMS inbox to the page as `window.PaisaSms`. Messages are
  * read and parsed on the device; nothing is uploaded anywhere.
  */
-import { autoLinkRefund } from "@/lib/match";
+import { autoLinkRefund, learnFromLinked } from "@/lib/match";
 import { toISTKey } from "@/lib/dates";
 import { type ParsedMandate, type RawSms, parseBalance, parseMandate, smsToCandidate } from "@/lib/sms";
 import { type Account, DEFAULT_PREFS, type Transaction } from "@/lib/types";
@@ -38,7 +38,7 @@ export function smsBridge(): SmsBridge | null {
 
 const PAGE = 500;
 /** Bump when the parser learns new message formats: the next sync re-reads the inbox once. */
-export const SMS_PARSER_VERSION = 4;
+export const SMS_PARSER_VERSION = 5;
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -47,7 +47,11 @@ let queue: Promise<unknown> = Promise.resolve();
  * Returns how many transactions were added. Calls run one at a time.
  */
 export function syncSms(db: FinanceDB): Promise<number> {
-  const next = queue.then(() => doSync(db));
+  // A home-widget job and the foreground app may use separate WebViews.
+  // The origin-wide lock keeps their cursor/deduplication writes serial too.
+  const next = queue.then(async () => typeof navigator !== "undefined" && navigator.locks?.request
+    ? await navigator.locks.request("drip-bank-sms-sync", () => doSync(db))
+    : await doSync(db));
   queue = next.catch(() => undefined);
   return next;
 }
@@ -171,5 +175,8 @@ async function doSync(db: FinanceDB): Promise<number> {
       parserVersion: SMS_PARSER_VERSION,
     });
   });
+  // Payments to a payee you've linked to a planned line (rent, SIP…) get linked too, in any month.
+  const learned = learnFromLinked(await db.txns.toArray());
+  if (learned.length) await db.txns.bulkPut(learned);
   return created.length;
 }

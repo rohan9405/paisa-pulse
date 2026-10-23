@@ -122,10 +122,10 @@ public class MainActivity extends Activity {
         root.addView(lockCover);
         setContentView(root);
         if (saved != null && !"dev.paisapulse.app.WIDGET_OPEN".equals(getIntent().getAction())) web.restoreState(saved);
-        else web.loadUrl("https://" + HOST + "/");
+        else web.loadUrl("https://" + HOST + widgetRoute(getIntent()));
 
-        if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] {Manifest.permission.READ_SMS}, SMS_REQUEST);
+        if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS}, SMS_REQUEST);
         }
     }
 
@@ -133,7 +133,12 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if ("dev.paisapulse.app.WIDGET_OPEN".equals(intent.getAction())) web.loadUrl("https://" + HOST + "/");
+        if ("dev.paisapulse.app.WIDGET_OPEN".equals(intent.getAction())) web.loadUrl("https://" + HOST + widgetRoute(intent));
+    }
+
+    private static String widgetRoute(Intent intent) {
+        String route = intent.getStringExtra("widgetRoute");
+        return route != null && (route.equals("/dashboard/") || route.equals("/briefing/") || route.matches("/briefing/\\?day=\\d{4}-\\d{2}-\\d{2}")) ? route : "/";
     }
 
     private WebResourceResponse serve(String path) {
