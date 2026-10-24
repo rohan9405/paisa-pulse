@@ -1,57 +1,90 @@
 /**
  * drip config backend (Cloudflare Worker).
  *
- *   GET  /config.json               public signed envelope { payload, sig, kid }; no cookies, callers aren't logged
- *   GET  /admin                     editor (HTTP Basic auth: user "admin", password = ADMIN_PASSWORD secret)
- *   GET  /admin/api/config          current config, defaults, history
- *   GET  /admin/api/version/:n      an older version, to load into the editor
- *   POST /admin/api/prepare         { config } → validated payload for the next version, to be signed
- *   POST /admin/api/publish         { payload, sig, note } → stored only if signed with the owner's key
+ *   GET    /config.json             public signed envelope { payload, sig, kid }; no cookies, callers aren't logged
+ *   GET    /admin                   editor (HTTP Basic auth: user "admin", password = ADMIN_PASSWORD secret)
+ *   GET    /admin/api/state         published config, draft, history
+ *   PUT    /admin/api/draft         { config } → validated and saved as the draft (not live)
+ *   DELETE /admin/api/draft         reset: discard all unpublished changes
+ *   POST   /admin/api/publish       { note } → draft becomes the next version, signed here
+ *   POST   /admin/api/revert        { version, note } → that version republished as the next version
+ *   GET    /admin/api/version/:n    one version's config
  *
- * Security model (see SECURITY.md): the password lets you use the editor, but
- * apps only accept configs signed with a private key that never leaves the
- * owner's Mac (the editor signs in the browser). So a leaked password, a
- * compromised Cloudflare account or edited storage can't change any app.
+ * Apps only accept configs signed with the key whose public half is built into
+ * them. The Worker signs on publish with that key (SIGNING_KEY secret), so the
+ * admin password is what guards publishing; see SECURITY.md for what a config
+ * can and can't do even then.
  */
 import { CATEGORIES, TAGS } from "../../src/lib/categorize";
+import { SECTION_FIELDS, SECTION_LABEL, SECTIONS, describeChanges } from "../../src/lib/configDiff";
 import { CONFIG_PUBLIC_KEY } from "../../src/lib/configKey";
-import { MAX_CONFIG_BYTES, verifyEnvelope } from "../../src/lib/configSignature";
+import { MAX_CONFIG_BYTES, bytesToBase64url, verifyEnvelope } from "../../src/lib/configSignature";
 import { ALLOWED_LINK_PREFIXES, DEFAULT_CONFIG, type RemoteConfig, SCREEN_IDS, TAB_IDS, parseRemoteConfig } from "../../src/lib/remoteConfig";
 import { adminPage } from "./admin";
 
 export interface Env {
   CONFIG: KVNamespace;
   ADMIN_PASSWORD?: string;
+  SIGNING_KEY?: string;
 }
 
 interface HistoryItem {
   version: number;
   publishedAt: string;
   note: string;
+  changes: string[];
+  /** Set when this version republished an older one. */
+  revertOf?: number;
 }
 
 const MAX_FAILED_LOGINS = 10;
 const LOCKOUT_SECONDS = 900;
+const MAX_HISTORY = 2000;
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", ...headers } });
 
-async function currentEnvelope(env: Env): Promise<string | null> {
-  return env.CONFIG.get("current");
-}
-
-async function currentConfig(env: Env): Promise<RemoteConfig> {
-  const raw = await currentEnvelope(env);
+async function published(env: Env): Promise<RemoteConfig> {
+  const raw = await env.CONFIG.get("current");
   const payload = raw ? await verifyEnvelope(JSON.parse(raw)) : null;
   return payload ? parseRemoteConfig(payload).config : DEFAULT_CONFIG;
+}
+
+async function draft(env: Env): Promise<RemoteConfig | null> {
+  const raw = await env.CONFIG.get("draft");
+  return raw ? parseRemoteConfig(JSON.parse(raw)).config : null;
 }
 
 async function history(env: Env): Promise<HistoryItem[]> {
   return JSON.parse((await env.CONFIG.get("history")) ?? "[]");
 }
 
-async function nextVersion(env: Env): Promise<number> {
-  return Math.max((await history(env))[0]?.version ?? 0, (await currentConfig(env)).version) + 1;
+async function signer(env: Env): Promise<CryptoKey | null> {
+  if (!env.SIGNING_KEY) return null;
+  const jwk = JSON.parse(env.SIGNING_KEY) as JsonWebKey & { kid?: string };
+  if (jwk.kid !== CONFIG_PUBLIC_KEY.kid || jwk.x !== CONFIG_PUBLIC_KEY.x || jwk.y !== CONFIG_PUBLIC_KEY.y) return null; // must match the key built into apps
+  return crypto.subtle.importKey("jwk", { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d }, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+}
+
+/** Sign `config` as the next version and make it live. */
+async function release(env: Env, config: RemoteConfig, note: string, revertOf?: number): Promise<{ ok: true; version: number } | { ok: false; error: string }> {
+  const key = await signer(env);
+  if (!key) return { ok: false, error: "Publishing is off: the SIGNING_KEY secret is missing or isn't the key the app trusts." };
+  const before = await published(env);
+  const items = await history(env);
+  const version = Math.max(items[0]?.version ?? 0, before.version) + 1;
+  const payload = JSON.stringify({ ...config, version, publishedAt: new Date().toISOString() });
+  const sig = bytesToBase64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(payload)));
+  const envelope = { payload, sig, kid: CONFIG_PUBLIC_KEY.kid };
+  if (!(await verifyEnvelope(envelope))) return { ok: false, error: "Signing check failed; nothing was published." }; // apps would reject it
+  const stored = JSON.stringify(envelope);
+  const changes = describeChanges(before, config);
+  const item: HistoryItem = { version, publishedAt: JSON.parse(payload).publishedAt, note: note.slice(0, 200), changes, ...(revertOf ? { revertOf } : {}) };
+  await env.CONFIG.put(`v:${version}`, stored);
+  await env.CONFIG.put("current", stored);
+  await env.CONFIG.put("history", JSON.stringify([item, ...items].slice(0, MAX_HISTORY)));
+  await env.CONFIG.delete("draft");
+  return { ok: true, version };
 }
 
 /** Constant-time compare so the password can't be guessed by timing. */
@@ -108,64 +141,70 @@ export default {
 
     if (url.pathname === "/config.json") {
       if (req.method !== "GET") return new Response("Method not allowed", { status: 405 });
-      const envelope = await currentEnvelope(env);
+      const envelope = await env.CONFIG.get("current");
       if (!envelope) return new Response("No config published", { status: 404, headers: { "access-control-allow-origin": "*" } });
       return new Response(envelope, { headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=60", "x-content-type-options": "nosniff" } });
     }
 
-    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
-      const auth = await authorise(req, env);
-      if (auth === "off") return new Response("The editor is off until the ADMIN_PASSWORD secret is set (20+ characters).", { status: 503, headers: adminHeaders() });
-      if (auth === "locked") return new Response("Too many wrong passwords. Try again in 15 minutes.", { status: 429, headers: adminHeaders() });
-      if (auth === "denied") return new Response("Sign in required", { status: 401, headers: { ...adminHeaders(), "www-authenticate": 'Basic realm="drip admin", charset="UTF-8"' } });
+    if (url.pathname !== "/admin" && !url.pathname.startsWith("/admin/")) return new Response("drip config service", { headers: { "content-type": "text/plain" } });
 
-      if (url.pathname === "/admin" && req.method === "GET") {
-        const nonce = crypto.randomUUID().replace(/-/g, "");
-        const meta = { categories: CATEGORIES, tags: TAGS, tabIds: TAB_IDS, screenIds: SCREEN_IDS, kid: CONFIG_PUBLIC_KEY.kid, allowedLinks: ALLOWED_LINK_PREFIXES };
-        return new Response(adminPage(meta, nonce), { headers: { "content-type": "text/html; charset=utf-8", ...adminHeaders(nonce) } });
-      }
-      if (url.pathname === "/admin/api/config" && req.method === "GET") {
-        return json({ current: await currentConfig(env), defaults: DEFAULT_CONFIG, history: await history(env), nextVersion: await nextVersion(env) }, 200, adminHeaders());
-      }
-      const old = url.pathname.match(/^\/admin\/api\/version\/(\d{1,9})$/);
-      if (old && req.method === "GET") {
-        const raw = await env.CONFIG.get(`v:${old[1]}`);
-        const payload = raw ? await verifyEnvelope(JSON.parse(raw)) : null;
-        return payload ? json({ config: parseRemoteConfig(payload).config }, 200, adminHeaders()) : json({ errors: ["Not found"] }, 404, adminHeaders());
-      }
+    const auth = await authorise(req, env);
+    if (auth === "off") return new Response("The editor is off until the ADMIN_PASSWORD secret is set (20+ characters).", { status: 503, headers: adminHeaders() });
+    if (auth === "locked") return new Response("Too many wrong passwords. Try again in 15 minutes.", { status: 429, headers: adminHeaders() });
+    if (auth === "denied") return new Response("Sign in required", { status: 401, headers: { ...adminHeaders(), "www-authenticate": 'Basic realm="drip admin", charset="UTF-8"' } });
+    const H = adminHeaders();
 
-      if (req.method === "POST") {
-        if (!sameOrigin(req, url)) return json({ ok: false, errors: ["Requests must come from the editor page"] }, 403, adminHeaders());
-        if (!(req.headers.get("content-type") ?? "").startsWith("application/json")) return json({ ok: false, errors: ["JSON only"] }, 415, adminHeaders());
-        const text = await req.text();
-        if (text.length > MAX_CONFIG_BYTES * 2) return json({ ok: false, errors: ["Too large"] }, 413, adminHeaders());
-        const body = JSON.parse(text || "null") as { config?: unknown; payload?: string; sig?: string; note?: string } | null;
-
-        if (url.pathname === "/admin/api/prepare") {
-          const { config, errors } = parseRemoteConfig({ ...(body?.config as object), version: 0 });
-          if (errors.length) return json({ ok: false, errors }, 400, adminHeaders());
-          const payload = JSON.stringify({ ...config, version: await nextVersion(env), publishedAt: new Date().toISOString() });
-          return json({ ok: true, payload }, 200, adminHeaders());
-        }
-
-        if (url.pathname === "/admin/api/publish") {
-          const envelope = { payload: body?.payload, sig: body?.sig, kid: CONFIG_PUBLIC_KEY.kid };
-          const payload = await verifyEnvelope(envelope);
-          if (!payload) return json({ ok: false, errors: ["Signature doesn't match the app's key. Load the right key file."] }, 400, adminHeaders());
-          const { config, errors } = parseRemoteConfig(payload);
-          if (errors.length) return json({ ok: false, errors }, 400, adminHeaders());
-          if (config.version !== (await nextVersion(env))) return json({ ok: false, errors: ["Someone published in the meantime. Reload and try again."] }, 409, adminHeaders());
-          const stored = JSON.stringify(envelope);
-          const items = [{ version: config.version, publishedAt: config.publishedAt ?? "", note: String(body?.note ?? "").slice(0, 120) }, ...(await history(env))].slice(0, 50);
-          await env.CONFIG.put(`v:${config.version}`, stored);
-          await env.CONFIG.put("current", stored);
-          await env.CONFIG.put("history", JSON.stringify(items));
-          return json({ ok: true, version: config.version }, 200, adminHeaders());
-        }
-      }
-      return new Response("Not found", { status: 404, headers: adminHeaders() });
+    if (url.pathname === "/admin" && req.method === "GET") {
+      const nonce = crypto.randomUUID().replace(/-/g, "");
+      const meta = { categories: CATEGORIES, tags: TAGS, tabIds: TAB_IDS, screenIds: SCREEN_IDS, allowedLinks: ALLOWED_LINK_PREFIXES, defaults: DEFAULT_CONFIG, sections: SECTIONS, sectionFields: SECTION_FIELDS, sectionLabels: SECTION_LABEL };
+      return new Response(adminPage(meta, nonce), { headers: { "content-type": "text/html; charset=utf-8", ...adminHeaders(nonce) } });
+    }
+    if (url.pathname === "/admin/api/state" && req.method === "GET") {
+      return json({ published: await published(env), draft: await draft(env), history: await history(env), canPublish: !!(await signer(env)) }, 200, H);
+    }
+    const one = url.pathname.match(/^\/admin\/api\/version\/(\d{1,9})$/);
+    if (one && req.method === "GET") {
+      const raw = await env.CONFIG.get(`v:${one[1]}`);
+      const payload = raw ? await verifyEnvelope(JSON.parse(raw)) : null;
+      return payload ? json({ config: parseRemoteConfig(payload).config }, 200, H) : json({ errors: ["Not found"] }, 404, H);
     }
 
-    return new Response("drip config service", { headers: { "content-type": "text/plain" } });
+    // Everything below changes state: only from the editor page, JSON only, size-limited.
+    if (!["PUT", "POST", "DELETE"].includes(req.method)) return new Response("Not found", { status: 404, headers: H });
+    if (!sameOrigin(req, url)) return json({ ok: false, errors: ["Requests must come from the editor page"] }, 403, H);
+    if (url.pathname === "/admin/api/draft" && req.method === "DELETE") {
+      await env.CONFIG.delete("draft");
+      return json({ ok: true }, 200, H);
+    }
+    if (!(req.headers.get("content-type") ?? "").startsWith("application/json")) return json({ ok: false, errors: ["JSON only"] }, 415, H);
+    const text = await req.text();
+    if (text.length > MAX_CONFIG_BYTES * 2) return json({ ok: false, errors: ["Too large"] }, 413, H);
+    let body: { config?: unknown; note?: unknown; version?: unknown } | null = null;
+    try {
+      body = JSON.parse(text || "null");
+    } catch {
+      return json({ ok: false, errors: ["Invalid JSON"] }, 400, H);
+    }
+
+    if (url.pathname === "/admin/api/draft" && req.method === "PUT") {
+      const { config, errors } = parseRemoteConfig({ ...(body?.config as object), version: 0 });
+      if (errors.length) return json({ ok: false, errors }, 400, H); // save only what apps will accept in full
+      await env.CONFIG.put("draft", JSON.stringify(config));
+      return json({ ok: true, draft: config }, 200, H);
+    }
+    if (url.pathname === "/admin/api/publish" && req.method === "POST") {
+      const d = await draft(env);
+      if (!d) return json({ ok: false, errors: ["Nothing to publish: no saved changes."] }, 400, H);
+      const r = await release(env, d, String(body?.note ?? ""));
+      return r.ok ? json(r, 200, H) : json({ ok: false, errors: [r.error] }, 503, H);
+    }
+    if (url.pathname === "/admin/api/revert" && req.method === "POST" && typeof body?.version === "number") {
+      const raw = await env.CONFIG.get(`v:${body.version}`);
+      const payload = raw ? await verifyEnvelope(JSON.parse(raw)) : null;
+      if (!payload) return json({ ok: false, errors: [`Version ${body.version} not found`] }, 404, H);
+      const r = await release(env, parseRemoteConfig(payload).config, String(body?.note ?? `Reverted to v${body.version}`), body.version);
+      return r.ok ? json(r, 200, H) : json({ ok: false, errors: [r.error] }, 503, H);
+    }
+    return new Response("Not found", { status: 404, headers: H });
   },
 };

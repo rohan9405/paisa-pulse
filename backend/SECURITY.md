@@ -19,8 +19,9 @@ The config backend lets the owner change app settings without a release. It must
 | Threat | Result |
 |---|---|
 | Someone finds the config URL (it's in the APK) | They can read the settings. Nothing in it is secret. They can't change it. |
-| Someone guesses / leaks the admin password | They can open the editor, but can't publish: apps only accept configs **signed with the owner's private key**, which lives only on the owner's Mac and is used inside the browser tab (never uploaded). Ten wrong passwords lock the editor for 15 minutes per IP. |
-| Cloudflare account or KV storage compromised | Same: they can serve anything, but apps reject it without a valid signature and keep their last good config. |
+| Someone guesses / leaks the admin password | **Currently they can publish.** The backend signs on publish (the owner chose this for convenience; the key is the encrypted `SIGNING_KEY` Worker secret). What a config can do stays limited to the list above, so the worst case is wrong text or categories, never data theft, code or off-repo links. Ten wrong passwords lock the editor for 15 minutes per IP; the password is 20+ random characters. To restore the stronger mode (signing on the owner's Mac only), delete the `SIGNING_KEY` secret and bring back browser signing. |
+| Cloudflare account compromised | They could publish (the signing key is a Worker secret). Protect the account with two-factor sign-in. |
+| KV storage edited directly, or a fake server | Apps reject anything without a valid signature and keep their last good config. |
 | Replaying an old (validly signed) config | Apps never go back to an older version number. |
 | Man-in-the-middle / fake Wi-Fi | HTTPS only (plain HTTP is blocked on Android), and the signature check would fail anyway. |
 | A malicious website using your logged-in admin session (CSRF) | Admin writes must come from the editor page itself (Origin check) and be JSON; the editor sends a strict Content-Security-Policy, can't be framed, and isn't indexed. |

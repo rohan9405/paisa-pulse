@@ -1,158 +1,212 @@
 /**
  * The admin editor: one self-contained page. Its script runs only with the
- * per-request CSP nonce; there are no inline handlers and no external scripts.
- * Publishing signs the config in the browser with the owner's key file, which
- * is read locally and never uploaded.
+ * per-request CSP nonce; no inline handlers, no external scripts.
+ *
+ * Model: "live" is the published config; "draft" holds saved, unpublished
+ * changes (kept on the server, so they survive reloads). Each section's Save
+ * writes that section into the draft; Reset discards the draft; Publish makes
+ * the draft live as the next version. History lists every version with what
+ * changed, and can revert to any of them.
  */
 export function adminPage(meta: unknown, nonce: string): string {
   const data = JSON.stringify(meta).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>drip admin</title>
+<title>drip config</title>
 <style>
-:root{--bg:#07070a;--card:#13131a;--line:#262631;--text:#e8e8ef;--muted:#8b8b9e;--lime:#c6ff3d;--coral:#ff6b6b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif}
-main{max-width:920px;margin:auto;padding:20px 16px 130px}h1{margin:0 0 4px}h2{font-size:16px;margin:0 0 4px}
-.sub{color:var(--muted);font-size:13px;margin:0 0 12px}section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
-input,select,textarea{background:#0d0d12;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;width:100%}
-textarea{min-height:80px;font-family:ui-monospace,monospace;font-size:13px}label{font-size:13px;color:var(--muted)}
-table{width:100%;border-collapse:collapse}td,th{padding:4px;text-align:left;font-size:13px;vertical-align:middle}th{color:var(--muted);font-weight:500}
-button{background:#1a1a23;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer}
-button.primary{background:var(--lime);color:#07070a;border:0;font-weight:700}button.x{padding:4px 9px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
-.bar{position:fixed;inset:auto 0 0 0;background:#0d0d12ee;border-top:1px solid var(--line);padding:12px 16px}.bar .in{max-width:920px;margin:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.err{color:var(--coral);font-size:13px;white-space:pre-wrap}.ok{color:var(--lime);font-size:13px}.chk{width:auto}.key{font-size:13px}
-</style></head><body><main>
-<h1>drip admin</h1><p class="sub">Settings only: never put anyone's transactions or personal data here. Apps accept a change only if it's signed with your key file, and pick it up the next time they open.</p>
-
-<section><h2>Bottom tabs</h2><p class="sub">Order, names and which to show. Today is always shown.</p><table id="tabs"></table></section>
-<section><h2>Screen titles</h2><p class="sub">Leave empty to keep the app's own text. Today's title replaces the greeting.</p><table id="screens"></table></section>
-<section><h2>Categorisation rules</h2><p class="sub">If the merchant or SMS contains the text, it gets this category. Built-ins are priority 0, a user's own rules 10.</p>
-<table id="rules"><thead><tr><th>Contains</th><th>Category</th><th>Tag</th><th>Kind</th><th>Money</th><th>Priority</th><th></th></tr></thead><tbody></tbody></table>
-<button data-action="add-rule">+ Rule</button>
-<p><label><input type="checkbox" class="chk" id="replaceRules"> Use only these rules (the app's built-in list is then just the offline fallback)</label></p>
-<p class="sub" style="margin-top:12px">Switch off built-in rules (one pattern per line, e.g. <code>ola</code>):</p><textarea id="disabledRules"></textarea></section>
-<section><h2>Merchant names</h2><p class="sub">Text contains → name shown in the app (e.g. "bundl" → Swiggy).</p><p class="sub">"Whole word" for short names, so "ola" doesn't match "coca cola".</p>
-<table id="merchants"><tbody></tbody></table><button data-action="add-pair" data-list="merchants">+ Name</button>
-<p><label><input type="checkbox" class="chk" id="replaceMerchants"> Use only these names (the app's built-in list is then just the offline fallback)</label></p></section>
-<section><h2>Bank SMS senders</h2><p class="sub">Add a bank by its SMS sender ID, the part between the dashes (VM-<b>YESBNK</b>-S). Must contain letters.</p><table id="banks"><tbody></tbody></table><button data-action="add-pair" data-list="banks">+ Bank</button></section>
-<section><h2>Ignore SMS containing</h2><p class="sub">One phrase per line. Matching bank SMS are never read as transactions.</p><textarea id="smsIgnore"></textarea></section>
-<section><h2>Budget and insights</h2><div class="grid" id="budget"></div></section>
-<section><h2>Features</h2><p class="sub">Switch a feature off for everyone (e.g. while fixing a bug). Turning off app lock only hides its switch; it never unlocks anyone's app.</p><div class="grid" id="features"></div></section>
-<section><h2>Announcement</h2><p class="sub">A banner on Today. Change the id to show it again to people who dismissed it. Empty text = no banner. Links must start <span id="linkhint"></span>.</p>
-<div class="grid"><div><label>Id</label><input id="a_id"></div><div><label>Tone</label><select id="a_tone"><option>info</option><option>warn</option></select></div></div>
-<label>Text</label><input id="a_text" maxlength="200"><label>Link (optional)</label><input id="a_link"></section>
-<section><h2>New version notice</h2><p class="sub">Shown to apps older than this version. Empty = no notice.</p>
-<div class="grid"><div><label>Latest version</label><input id="u_version" placeholder="0.7.0"></div><div><label>Download link</label><input id="u_url"></div></div>
-<label>Message (optional)</label><input id="u_msg" maxlength="160"></section>
-<section><h2>Advanced: raw JSON</h2><textarea id="raw" style="min-height:220px"></textarea><button data-action="load-raw">Load JSON into form</button></section>
-<section><h2>History</h2><p class="sub">To go back, load an old version into the editor and publish it again (it becomes the newest version).</p><table id="history"></table></section>
-</main>
-<div class="bar"><div class="in">
-<label class="key">Signing key <input type="file" id="keyfile" accept=".jwk,application/json" style="width:auto"></label><span id="keystate" class="key">not loaded</span>
-<input id="note" placeholder="What changed? (for history)" style="flex:1;min-width:200px"><button class="primary" data-action="publish">Sign and publish</button><span id="msg"></span>
-</div></div>
+:root{--bg:#07070a;--panel:#0d0d12;--card:#13131a;--line:#262631;--text:#e8e8ef;--muted:#8b8b9e;--lime:#c6ff3d;--amber:#ffc24b;--coral:#ff6b6b}
+*{box-sizing:border-box}html,body{margin:0;height:100%}body{background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0}.pill{font-size:12px;padding:3px 10px;border-radius:999px;background:#1a1a23;color:var(--muted)}.pill.live{color:var(--lime)}.pill.draft{color:var(--amber)}
+.grow{flex:1}.layout{display:grid;grid-template-columns:230px 1fr;min-height:calc(100% - 60px)}
+nav{border-right:1px solid var(--line);padding:12px 8px;background:var(--panel)}nav button{display:flex;width:100%;justify-content:space-between;align-items:center;gap:6px;text-align:left;background:none;border:0;color:var(--text);padding:9px 12px;border-radius:10px;font:inherit;cursor:pointer}
+nav button:hover{background:#1a1a23}nav button.on{background:#1f2410;color:var(--lime)}nav .dot{font-size:11px;color:var(--amber)}nav hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
+main{padding:20px 28px 60px;max-width:1000px}h2{margin:0 0 4px;font-size:20px}.sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+input,select,textarea{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;width:100%}textarea{min-height:120px;font-family:ui-monospace,monospace;font-size:13px}
+label{font-size:13px;color:var(--muted)}table{width:100%;border-collapse:collapse}td,th{padding:5px 4px;text-align:left;font-size:13px;vertical-align:middle;border-bottom:1px solid #1a1a23}th{color:var(--muted);font-weight:500}
+button{background:#1a1a23;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer}button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--lime);color:#07070a;border:0;font-weight:700}button.danger{color:var(--coral);border-color:#4a2626}button.x{padding:3px 9px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.foot{display:flex;gap:10px;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}.chk{width:auto}
+.msg{font-size:13px;white-space:pre-wrap}.msg.err{color:var(--coral)}.msg.ok{color:var(--lime)}.changes{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:13px}
+.badge{font-size:11px;padding:2px 8px;border-radius:999px;background:#1f2410;color:var(--lime);margin-left:6px;font-weight:500}.muted{color:var(--muted)}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;max-height:420px;font-size:12px}
+@media(max-width:760px){.layout{grid-template-columns:1fr}nav{display:flex;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}nav button{white-space:nowrap;width:auto}nav hr{display:none}main{padding:16px}}
+</style></head><body>
+<header><h1>drip config</h1><span class="pill live" id="livePill">live: …</span><span class="pill draft" id="draftPill" hidden></span><span class="grow"></span>
+<span class="msg" id="msg"></span>
+<button class="danger" data-action="reset" id="resetBtn" disabled>Reset</button>
+<input id="note" placeholder="Note for this version" style="width:220px"><button class="primary" data-action="publish" id="publishBtn" disabled>Publish</button></header>
+<div class="layout"><nav id="nav"></nav><main id="main"></main></div>
 <script nonce="${nonce}">
 "use strict";
 const META = ${data};
-let cfg = null, signingKey = null;
+const HELP = {
+  tabs: "Bottom tab order, names and visibility. Today is always shown.",
+  screens: "Page title and subtitle per screen. Empty keeps the app's own text; Today's title replaces the greeting.",
+  rules: "If the merchant or SMS contains the text, it gets this category. Built-ins are priority 0, a person's own rules 10.",
+  merchants: "Text contains → the name shown in the app. Use whole word for short names so “ola” doesn't match “coca cola”.",
+  banks: "Add a bank by its SMS sender ID, the part between the dashes (VM-YESBNK-S). Must contain letters.",
+  smsIgnore: "One phrase per line. Bank SMS containing any of them are never read as transactions.",
+  budget: "Numbers the app uses for salaries, the night brief and weekly insights.",
+  features: "Switch a feature off for everyone. Turning app lock off only hides its switch for people who haven't enabled it.",
+  announcement: "A banner on Today. Change the id to show it again to people who dismissed it. Links must start " + META.allowedLinks[0],
+  update: "Shown to apps older than this version. The link must start " + META.allowedLinks[0],
+};
+let live = null, saved = null, history = [], section = "tabs", dirty = false;
 const $ = (id) => document.getElementById(id);
+const clone = (x) => JSON.parse(JSON.stringify(x));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const opt = (list, v) => list.map((x) => "<option" + (x === v ? " selected" : "") + ">" + esc(x) + "</option>").join("");
 const KINDS = ["", "expense", "investment", "transfer", "income", "refund"];
-const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
-$("linkhint").textContent = META.allowedLinks[0];
+const working = () => saved || live;
+const sectionDiffers = (a, b, s) => META.sectionFields[s].some((f) => JSON.stringify(a[f] ?? null) !== JSON.stringify(b[f] ?? null));
+function msg(t, ok) { $("msg").className = "msg " + (ok ? "ok" : "err"); $("msg").textContent = t || ""; }
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  return r.json().catch(() => ({ ok: false, errors: ["Unexpected response (" + r.status + ")"] }));
+}
 
 async function load() {
-  const d = await (await fetch("/admin/api/config")).json();
-  cfg = d.current; render(); renderHistory(d.history);
+  const d = await api("GET", "/admin/api/state");
+  live = d.published; saved = d.draft; history = d.history;
+  if (!d.canPublish) msg("Publishing is off: the backend's signing key isn't set.");
+  renderChrome(); renderSection();
 }
-function render() {
-  $("tabs").innerHTML = cfg.tabs.map((t, i) => "<tr><td>" + (i + 1) + '</td><td><input data-tab="' + i + '" value="' + esc(t.label) + '" maxlength="16"></td><td><label><input type="checkbox" class="chk" data-vis="' + i + '"' + (t.visible ? " checked" : "") + (t.id === "today" ? " disabled" : "") + "> show</label></td><td>" + esc(t.id) + '</td><td><button class="x" data-action="move" data-i="' + i + '" data-d="-1">↑</button> <button class="x" data-action="move" data-i="' + i + '" data-d="1">↓</button></td></tr>').join("");
-  $("screens").innerHTML = META.screenIds.map((s) => { const v = cfg.screens[s] || {}; return '<tr><td style="width:90px">' + esc(s) + '</td><td><input data-st="' + esc(s) + '" placeholder="Title" value="' + esc(v.title) + '" maxlength="40"></td><td><input data-ss="' + esc(s) + '" placeholder="Subtitle" value="' + esc(v.subtitle) + '" maxlength="120"></td></tr>'; }).join("");
-  $("rules").querySelector("tbody").innerHTML = cfg.rules.map(ruleRow).join("");
-  $("disabledRules").value = cfg.disabledRules.join("\\n");
-  $("merchants").querySelector("tbody").innerHTML = cfg.merchants.map((m, i) => pairRow("merchants", i, m.contains, m.name, "contains", "name", m.word)).join("");
-  $("replaceRules").checked = !!cfg.replaceBuiltInRules; $("replaceMerchants").checked = !!cfg.replaceBuiltInMerchants;
-  $("banks").querySelector("tbody").innerHTML = cfg.banks.map((b, i) => pairRow("banks", i, b.sender, b.bank, "sender ID", "bank name")).join("");
-  $("smsIgnore").value = cfg.smsIgnore.join("\\n");
-  const B = { lateSalaryDay: "Salary counts for next month from day", bigCreditRupees: "…if it's at least (₹)", nightBriefHour: "Night brief from (hour, IST)", insightMinRupees: "Insight: minimum change (₹)", insightRisePct: "Insight: minimum rise (%)" };
-  $("budget").innerHTML = Object.keys(B).map((k) => "<div><label>" + B[k] + '</label><input type="number" data-b="' + k + '" value="' + Number(cfg.budget[k]) + '"></div>').join("");
-  $("features").innerHTML = Object.keys(cfg.features).map((k) => '<label><input type="checkbox" class="chk" data-f="' + esc(k) + '"' + (cfg.features[k] ? " checked" : "") + "> " + esc(k) + "</label>").join("");
-  const a = cfg.announcement || {}; $("a_id").value = a.id || ""; $("a_text").value = a.text || ""; $("a_link").value = a.link || ""; $("a_tone").value = a.tone || "info";
-  const u = cfg.update || {}; $("u_version").value = u.latestVersion || ""; $("u_url").value = u.url || ""; $("u_msg").value = u.message || "";
-  $("raw").value = JSON.stringify(cfg, null, 2);
+function changedSections() { return saved ? META.sections.filter((s) => sectionDiffers(saved, live, s)) : []; }
+function renderChrome() {
+  const changed = changedSections();
+  $("livePill").textContent = "live: v" + live.version;
+  $("draftPill").hidden = !changed.length;
+  $("draftPill").textContent = changed.length + " unpublished section" + (changed.length === 1 ? "" : "s");
+  $("resetBtn").disabled = !saved; $("publishBtn").disabled = !changed.length;
+  const item = (s, label) => '<button data-nav="' + s + '" class="' + (section === s ? "on" : "") + '"><span>' + esc(label) + "</span>" + (changed.includes(s) ? '<span class="dot">● unpublished</span>' : "") + "</button>";
+  $("nav").innerHTML = META.sections.map((s) => item(s, META.sectionLabels[s])).join("") + "<hr>" + item("raw", "Raw JSON") + item("history", "Version history");
 }
-function ruleRow(r, i) {
+function go(s) {
+  if (dirty && !confirm("You have unsaved edits on this page. Discard them?")) return;
+  section = s; dirty = false; msg(""); renderChrome(); renderSection();
+}
+
+// ---------------------------------------------------------------- sections
+const VIEWS = {
+  tabs: (c) => '<table id="tabsTable"><tbody><tr><th>#</th><th>Name</th><th>Show</th><th>Tab</th><th></th></tr>' + c.tabs.map((t, i) => "<tr><td>" + (i + 1) + '</td><td><input data-tab="' + i + '" value="' + esc(t.label) + '" maxlength="16"></td><td><input type="checkbox" class="chk" data-vis="' + i + '"' + (t.visible ? " checked" : "") + (t.id === "today" ? " disabled" : "") + '></td><td class="muted">' + esc(t.id) + '</td><td><button class="x" data-action="move" data-d="-1">↑</button> <button class="x" data-action="move" data-d="1">↓</button></td></tr>').join("") + "</tbody></table>",
+  screens: (c) => "<table><tbody><tr><th>Screen</th><th>Title</th><th>Subtitle</th></tr>" + META.screenIds.map((s) => { const v = c.screens[s] || {}; return "<tr><td>" + esc(s) + '</td><td><input data-st="' + esc(s) + '" value="' + esc(v.title) + '" maxlength="40"></td><td><input data-ss="' + esc(s) + '" value="' + esc(v.subtitle) + '" maxlength="120"></td></tr>'; }).join("") + "</tbody></table>",
+  rules: (c) => '<p><label><input type="checkbox" class="chk" id="replaceRules"' + (c.replaceBuiltInRules ? " checked" : "") + "> Use only these rules (the app's built-in list is then just the offline fallback)</label></p>" + '<input id="filter" placeholder="Filter rules…" style="margin-bottom:8px"><table id="rules"><tbody><tr><th>Contains</th><th>Category</th><th>Tag</th><th>Kind</th><th>Money</th><th>Priority</th><th></th></tr>' + c.rules.map(ruleRow).join("") + '</tbody></table><button data-action="add" data-list="rules">+ Rule</button><p class="sub" style="margin-top:14px">Switch off built-in rules, one pattern per line (only matters when the list above isn\\'t replacing them):</p><textarea id="disabledRules">' + esc(c.disabledRules.join("\\n")) + "</textarea>",
+  merchants: (c) => '<p><label><input type="checkbox" class="chk" id="replaceMerchants"' + (c.replaceBuiltInMerchants ? " checked" : "") + "> Use only these names (the app's built-in list is then just the offline fallback)</label></p>" + '<input id="filter" placeholder="Filter names…" style="margin-bottom:8px"><table id="merchants"><tbody><tr><th>Contains</th><th>Name</th><th>Whole word</th><th></th></tr>' + c.merchants.map((m) => merchantRow(m)).join("") + '</tbody></table><button data-action="add" data-list="merchants">+ Name</button>',
+  banks: (c) => '<table id="banks"><tbody><tr><th>Sender ID</th><th>Bank name</th><th></th></tr>' + c.banks.map((b) => bankRow(b)).join("") + '</tbody></table><button data-action="add" data-list="banks">+ Bank</button>',
+  smsIgnore: (c) => '<textarea id="smsIgnore">' + esc(c.smsIgnore.join("\\n")) + "</textarea>",
+  budget: (c) => { const B = { lateSalaryDay: "Salary counts for next month from day", bigCreditRupees: "…if it's at least (₹)", nightBriefHour: "Night brief from (hour, IST)", insightMinRupees: "Insight: minimum change (₹)", insightRisePct: "Insight: minimum rise (%)" }; return '<div class="grid">' + Object.keys(B).map((k) => "<div><label>" + B[k] + '</label><input type="number" data-b="' + k + '" value="' + Number(c.budget[k]) + '"></div>').join("") + "</div>"; },
+  features: (c) => '<div class="grid">' + Object.keys(c.features).map((k) => '<label class="card" style="margin:0"><input type="checkbox" class="chk" data-f="' + esc(k) + '"' + (c.features[k] ? " checked" : "") + "> " + esc(k) + "</label>").join("") + "</div>",
+  announcement: (c) => { const a = c.announcement || {}; return '<p><label><input type="checkbox" class="chk" id="a_on"' + (c.announcement ? " checked" : "") + '> Show a banner</label></p><div class="grid"><div><label>Id</label><input id="a_id" value="' + esc(a.id) + '"></div><div><label>Tone</label><select id="a_tone">' + opt(["info", "warn"], a.tone || "info") + '</select></div></div><label>Text</label><input id="a_text" maxlength="200" value="' + esc(a.text) + '"><label>Link (optional)</label><input id="a_link" value="' + esc(a.link) + '">'; },
+  update: (c) => { const u = c.update || {}; return '<p><label><input type="checkbox" class="chk" id="u_on"' + (c.update ? " checked" : "") + '> Show a new version notice</label></p><div class="grid"><div><label>Latest version</label><input id="u_version" placeholder="0.8.0" value="' + esc(u.latestVersion) + '"></div><div><label>Download link</label><input id="u_url" value="' + esc(u.url) + '"></div></div><label>Message (optional)</label><input id="u_msg" maxlength="160" value="' + esc(u.message) + '">'; },
+};
+function ruleRow(r) {
   const tags = META.tags[r.category] || [];
-  return '<tr data-rule="' + i + '"><td><input data-k="contains" value="' + esc(r.contains) + '"></td><td><select data-k="category">' + opt(META.categories, r.category) + '</select></td><td><input data-k="tag" list="tags-' + i + '" value="' + esc(r.tag) + '"><datalist id="tags-' + i + '">' + tags.map((t) => "<option>" + esc(t) + "</option>").join("") + '</datalist></td><td><select data-k="kind">' + opt(KINDS, r.kind || "") + '</select></td><td><select data-k="direction">' + opt(["", "in", "out"], r.direction || "") + '</select></td><td><input type="number" data-k="priority" value="' + Number(r.priority ?? 5) + '" style="width:70px"></td><td><button class="x" data-action="remove" data-list="rules" data-i="' + i + '">✕</button></td></tr>';
+  return '<tr data-row="rules"><td><input data-k="contains" value="' + esc(r.contains) + '"></td><td><select data-k="category">' + opt(META.categories, r.category) + '</select></td><td><input data-k="tag" value="' + esc(r.tag) + '" placeholder="' + esc(tags.slice(0, 2).join(", ")) + '"></td><td><select data-k="kind">' + opt(KINDS, r.kind || "") + '</select></td><td><select data-k="direction">' + opt(["", "in", "out"], r.direction || "") + '</select></td><td><input type="number" data-k="priority" value="' + Number(r.priority ?? 5) + '" style="width:64px"></td><td><button class="x" data-action="remove">✕</button></td></tr>';
 }
-function pairRow(list, i, a, b, pa, pb, word) {
-  const w = list === "merchants" ? '<td><label><input type="checkbox" class="chk" data-w' + (word ? " checked" : "") + "> whole word</label></td>" : "";
-  return "<tr data-" + list + '="' + i + '"><td><input data-a value="' + esc(a) + '" placeholder="' + pa + '"></td><td><input data-b2 value="' + esc(b) + '" placeholder="' + pb + '"></td>' + w + '<td><button class="x" data-action="remove" data-list="' + list + '" data-i="' + i + '">✕</button></td></tr>';
-}
+function merchantRow(m) { return '<tr data-row="merchants"><td><input data-a value="' + esc(m.contains) + '"></td><td><input data-b value="' + esc(m.name) + '"></td><td><input type="checkbox" class="chk" data-w' + (m.word ? " checked" : "") + '></td><td><button class="x" data-action="remove">✕</button></td></tr>'; }
+function bankRow(b) { return '<tr data-row="banks"><td><input data-a value="' + esc(b.sender) + '"></td><td><input data-b value="' + esc(b.bank) + '"></td><td><button class="x" data-action="remove">✕</button></td></tr>'; }
 const lines = (id) => $(id).value.split("\\n").map((s) => s.trim()).filter(Boolean);
-function collect() {
-  const c = JSON.parse(JSON.stringify(cfg));
-  c.tabs.forEach((t, i) => { t.label = document.querySelector('[data-tab="' + i + '"]').value; t.visible = t.id === "today" || document.querySelector('[data-vis="' + i + '"]').checked; });
-  c.screens = {}; META.screenIds.forEach((s) => { const t = document.querySelector('[data-st="' + s + '"]').value.trim(), st = document.querySelector('[data-ss="' + s + '"]').value.trim(); if (t || st) c.screens[s] = { title: t || undefined, subtitle: st || undefined }; });
-  c.rules = [...document.querySelectorAll("[data-rule]")].map((tr) => { const g = (k) => tr.querySelector('[data-k="' + k + '"]').value.trim(); return { contains: g("contains"), category: g("category"), tag: g("tag") || undefined, kind: g("kind") || undefined, direction: g("direction") || undefined, priority: Number(g("priority")) }; });
-  c.disabledRules = lines("disabledRules");
-  c.merchants = [...document.querySelectorAll("[data-merchants]")].map((tr) => ({ contains: tr.querySelector("[data-a]").value.trim(), name: tr.querySelector("[data-b2]").value.trim(), word: tr.querySelector("[data-w]").checked || undefined }));
-  c.replaceBuiltInRules = $("replaceRules").checked; c.replaceBuiltInMerchants = $("replaceMerchants").checked;
-  c.banks = [...document.querySelectorAll("[data-banks]")].map((tr) => ({ sender: tr.querySelector("[data-a]").value.trim(), bank: tr.querySelector("[data-b2]").value.trim() }));
-  c.smsIgnore = lines("smsIgnore");
-  document.querySelectorAll("[data-b]").forEach((el) => (c.budget[el.dataset.b] = Number(el.value)));
-  document.querySelectorAll("[data-f]").forEach((el) => (c.features[el.dataset.f] = el.checked));
-  c.announcement = $("a_text").value.trim() ? { id: $("a_id").value.trim() || "a" + Date.now(), text: $("a_text").value.trim(), link: $("a_link").value.trim() || undefined, tone: $("a_tone").value } : null;
-  c.update = $("u_version").value.trim() ? { latestVersion: $("u_version").value.trim(), url: $("u_url").value.trim(), message: $("u_msg").value.trim() || undefined } : null;
-  return c;
+const rows = (list) => [...document.querySelectorAll('[data-row="' + list + '"]')];
+const COLLECT = {
+  tabs: (c) => { c.tabs = [...document.querySelectorAll("[data-tab]")].map((el) => { const i = Number(el.dataset.tab); return { ...c.tabs[i], label: el.value.trim(), visible: c.tabs[i].id === "today" || document.querySelector('[data-vis="' + i + '"]').checked }; }); },
+  screens: (c) => { c.screens = {}; META.screenIds.forEach((s) => { const t = document.querySelector('[data-st="' + s + '"]').value.trim(), st = document.querySelector('[data-ss="' + s + '"]').value.trim(); if (t || st) c.screens[s] = { title: t || undefined, subtitle: st || undefined }; }); },
+  rules: (c) => { c.rules = rows("rules").map((tr) => { const g = (k) => tr.querySelector('[data-k="' + k + '"]').value.trim(); return { contains: g("contains"), category: g("category"), tag: g("tag") || undefined, kind: g("kind") || undefined, direction: g("direction") || undefined, priority: Number(g("priority")) }; }); c.replaceBuiltInRules = $("replaceRules").checked; c.disabledRules = lines("disabledRules"); },
+  merchants: (c) => { c.merchants = rows("merchants").map((tr) => ({ contains: tr.querySelector("[data-a]").value.trim(), name: tr.querySelector("[data-b]").value.trim(), word: tr.querySelector("[data-w]").checked || undefined })); c.replaceBuiltInMerchants = $("replaceMerchants").checked; },
+  banks: (c) => { c.banks = rows("banks").map((tr) => ({ sender: tr.querySelector("[data-a]").value.trim(), bank: tr.querySelector("[data-b]").value.trim() })); },
+  smsIgnore: (c) => { c.smsIgnore = lines("smsIgnore"); },
+  budget: (c) => { document.querySelectorAll("[data-b]").forEach((el) => (c.budget[el.dataset.b] = Number(el.value))); },
+  features: (c) => { document.querySelectorAll("[data-f]").forEach((el) => (c.features[el.dataset.f] = el.checked)); },
+  announcement: (c) => { c.announcement = $("a_on").checked ? { id: $("a_id").value.trim() || "a" + Date.now(), text: $("a_text").value.trim(), link: $("a_link").value.trim() || undefined, tone: $("a_tone").value } : null; },
+  update: (c) => { c.update = $("u_on").checked ? { latestVersion: $("u_version").value.trim(), url: $("u_url").value.trim(), message: $("u_msg").value.trim() || undefined } : null; },
+};
+
+function renderSection() {
+  const w = working();
+  if (section === "history") return renderHistory();
+  if (section === "raw") {
+    $("main").innerHTML = '<h2>Raw JSON</h2><p class="sub">The whole working config, saved changes included. Edit and save to replace the draft in one go.</p><textarea id="raw" style="min-height:460px">' + esc(JSON.stringify(w, null, 2)) + '</textarea><div class="foot"><button class="primary" data-action="save">Save</button><button data-action="discard">Discard edits</button><span class="muted" id="dirty"></span></div>';
+    return;
+  }
+  const changed = changedSections().includes(section);
+  $("main").innerHTML = "<h2>" + esc(META.sectionLabels[section]) + (changed ? '<span class="badge">saved, not published</span>' : "") + '</h2><p class="sub">' + esc(HELP[section]) + "</p>" + VIEWS[section](w) + '<div class="foot"><button class="primary" data-action="save">Save</button><button data-action="discard">Discard edits</button><span class="muted" id="dirty"></span></div>';
 }
-function msg(t, ok) { $("msg").className = ok ? "ok" : "err"; $("msg").textContent = t; }
-async function post(path, body) { const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); return r.json(); }
 
-$("keyfile").addEventListener("change", async (e) => {
-  signingKey = null; $("keystate").textContent = "not loaded";
-  try {
-    const jwk = JSON.parse(await e.target.files[0].text());
-    if (jwk.kid !== META.kid) throw new Error("this key (" + jwk.kid + ") isn't the one the app trusts (" + META.kid + ")");
-    signingKey = await crypto.subtle.importKey("jwk", { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d }, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
-    $("keystate").textContent = "loaded (stays in this tab)";
-  } catch (err) { msg("Couldn't load the key: " + err.message); }
-  e.target.value = "";
-});
-
+async function save() {
+  let next;
+  if (section === "raw") { try { next = JSON.parse($("raw").value); } catch (e) { return msg("That isn't valid JSON: " + e.message); } }
+  else { next = clone(working()); COLLECT[section](next); }
+  const d = await api("PUT", "/admin/api/draft", { config: next });
+  if (!d.ok) return msg("Not saved:\\n" + (d.errors || []).join("\\n"));
+  saved = d.draft; dirty = false; msg("Saved. Publish when you're ready.", true); renderChrome(); renderSection();
+}
+async function reset() {
+  if (!confirm("Discard all saved changes that aren't published?")) return;
+  const d = await api("DELETE", "/admin/api/draft");
+  if (!d.ok) return msg((d.errors || ["Couldn't reset"]).join("\\n"));
+  saved = null; dirty = false; msg("Unpublished changes discarded.", true); renderChrome(); renderSection();
+}
 async function publish() {
-  if (!signingKey) return msg("Load your signing key file first (~/.drip-private/config-signing-key.jwk).");
-  const prep = await post("/admin/api/prepare", { config: collect() });
-  if (!prep.ok) return msg("Not published:\\n" + prep.errors.join("\\n"));
-  const sig = b64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signingKey, new TextEncoder().encode(prep.payload)));
-  const d = await post("/admin/api/publish", { payload: prep.payload, sig, note: $("note").value });
-  if (!d.ok) return msg("Not published:\\n" + d.errors.join("\\n"));
-  msg("Published v" + d.version, true); $("note").value = ""; load();
-}
-async function loadVersion(v) {
-  const d = await (await fetch("/admin/api/version/" + Number(v))).json();
-  if (!d.config) return msg("Version " + v + " not found");
-  cfg = d.config; render(); msg("Loaded v" + v + ". Review, then Sign and publish.", true);
-}
-function renderHistory(h) {
-  $("history").innerHTML = h.length ? h.map((x) => "<tr><td>v" + Number(x.version) + "</td><td>" + esc(new Date(x.publishedAt).toLocaleString()) + "</td><td>" + esc(x.note) + '</td><td><button class="x" data-action="load-version" data-v="' + Number(x.version) + '">Load into editor</button></td></tr>').join("") : '<tr><td class="sub">Nothing published yet: apps use the built-in defaults.</td></tr>';
+  if (dirty && !confirm("This page has unsaved edits, which won't be published. Continue?")) return;
+  if (!confirm("Publish " + changedSections().length + " changed section(s) to every app?")) return;
+  const d = await api("POST", "/admin/api/publish", { note: $("note").value });
+  if (!d.ok) return msg("Not published:\\n" + (d.errors || []).join("\\n"));
+  $("note").value = ""; dirty = false; msg("Published v" + d.version + ". Apps pick it up next time they open.", true); load();
 }
 
+// ---------------------------------------------------------------- history
+function renderHistory() {
+  const card = (h) => '<div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>v' + Number(h.version) + "</b>" + (h.version === live.version ? '<span class="badge">live</span>' : "") + '<span class="muted">' + esc(new Date(h.publishedAt).toLocaleString()) + '</span><span class="grow"></span><button data-action="view" data-v="' + Number(h.version) + '">View</button>' + (h.version === live.version ? "" : '<button data-action="revert" data-v="' + Number(h.version) + '">Revert to this</button>') + "</div>" + (h.note ? "<div>" + esc(h.note) + "</div>" : "") + (h.revertOf ? '<div class="muted">Revert to v' + Number(h.revertOf) + "</div>" : "") + '<ul class="changes">' + (h.changes && h.changes.length ? h.changes.map((c) => "<li>" + esc(c) + "</li>").join("") : "<li>No setting changes recorded</li>") + '</ul><div id="view-' + Number(h.version) + '"></div></div>';
+  $("main").innerHTML = '<h2>Version history</h2><p class="sub">Every published version, newest first, with what changed. Reverting publishes that version again as a new version.</p>' + (history.length ? history.map(card).join("") : '<p class="muted">Nothing published yet.</p>');
+}
+async function view(v) {
+  const box = $("view-" + v);
+  if (box.innerHTML) return (box.innerHTML = "");
+  const d = await api("GET", "/admin/api/version/" + Number(v));
+  box.innerHTML = d.config ? "<pre>" + esc(JSON.stringify(d.config, null, 2)) + "</pre>" : '<p class="msg err">Not found</p>';
+}
+async function revert(v) {
+  if (!confirm("Publish v" + v + " again as the newest version? Unpublished saved changes will be discarded.")) return;
+  const d = await api("POST", "/admin/api/revert", { version: Number(v), note: $("note").value || "Reverted to v" + v });
+  if (!d.ok) return msg("Not reverted:\\n" + (d.errors || []).join("\\n"));
+  $("note").value = ""; msg("Reverted: v" + d.version + " is live (same settings as v" + v + ").", true); load();
+}
+
+// ---------------------------------------------------------------- events
+function markDirty() { dirty = true; const d = $("dirty"); if (d) d.textContent = "Unsaved edits"; }
 document.addEventListener("click", (e) => {
+  const nav = e.target.closest("[data-nav]"); if (nav) return go(nav.dataset.nav);
   const b = e.target.closest("[data-action]"); if (!b) return;
   const a = b.dataset.action;
+  if (a === "save") return save();
+  if (a === "discard") { dirty = false; msg(""); return renderSection(); }
+  if (a === "reset") return reset();
   if (a === "publish") return publish();
-  if (a === "load-version") return loadVersion(b.dataset.v);
-  if (a === "load-raw") { try { cfg = JSON.parse($("raw").value); render(); msg("Loaded. Review, then Sign and publish.", true); } catch (err) { msg("That isn't valid JSON: " + err.message); } return; }
-  cfg = collect();
-  if (a === "add-rule") cfg.rules.push({ contains: "", category: "Other", priority: 5 });
-  if (a === "add-pair") cfg[b.dataset.list].push(b.dataset.list === "banks" ? { sender: "", bank: "" } : { contains: "", name: "" });
-  if (a === "remove") cfg[b.dataset.list].splice(Number(b.dataset.i), 1);
-  if (a === "move") { const i = Number(b.dataset.i), j = i + Number(b.dataset.d); if (j >= 0 && j < cfg.tabs.length) [cfg.tabs[i], cfg.tabs[j]] = [cfg.tabs[j], cfg.tabs[i]]; }
-  render();
+  if (a === "view") return view(b.dataset.v);
+  if (a === "revert") return revert(b.dataset.v);
+  if (a === "remove") { b.closest("tr").remove(); return markDirty(); }
+  if (a === "move") {
+    const tr = b.closest("tr"), up = b.dataset.d === "-1";
+    const sib = up ? tr.previousElementSibling : tr.nextElementSibling;
+    if (sib && sib.querySelector("[data-tab]")) { up ? tr.parentNode.insertBefore(tr, sib) : tr.parentNode.insertBefore(sib, tr); }
+    [...document.querySelectorAll("[data-tab]")].forEach((el, i) => (el.closest("tr").firstElementChild.textContent = i + 1));
+    return markDirty();
+  }
+  if (a === "add") {
+    const list = b.dataset.list, body = $(list).querySelector("tbody");
+    body.insertAdjacentHTML("beforeend", list === "rules" ? ruleRow({ contains: "", category: "Other", priority: 5 }) : list === "merchants" ? merchantRow({ contains: "", name: "" }) : bankRow({ sender: "", bank: "" }));
+    body.lastElementChild.querySelector("input").focus();
+    return markDirty();
+  }
 });
+document.addEventListener("input", (e) => {
+  if (e.target.id === "note") return;
+  if (e.target.id === "filter") { const q = e.target.value.toLowerCase(); document.querySelectorAll("[data-row]").forEach((tr) => (tr.style.display = [...tr.querySelectorAll("input,select")].some((i) => String(i.value).toLowerCase().includes(q)) ? "" : "none")); return; }
+  if (e.target.closest("main")) markDirty();
+});
+document.addEventListener("change", (e) => { if (e.target.closest("main") && e.target.id !== "filter") markDirty(); });
+window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
 load();
 </script></body></html>`;
 }
