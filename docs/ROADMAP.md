@@ -4,6 +4,8 @@ Current checkout: **0.8.12** (24 Oct 2026). Core money tracking, recipient taggi
 
 ## Implemented: prior-month comparison, budget choices and IPO correction (0.8.12)
 
+Installed over the existing phone app on 24 Oct 2026; Android package version 0.8.12 / 24 verified.
+
 - Stats cumulative chart includes a dotted grey prior-month curve at matching day numbers; shorter months clamp at their final day, and incomplete tracking history stays blank.
 - Remote `budget.setAsideModes` controls onboarding/editor availability: both, Planned only, or Actual only. A single mode shows explanation/inputs with no selector. Existing saved plans and user transactions are unchanged by config refresh; no SMS reread is triggered.
 - Settings can explicitly classify an ambiguous recurring mandate as IPO (or restore it as a payment), excluded from recurring totals/reminders. Matching confirmed IPO hold references identify older mandates without name/amount guessing. User classifications are protected, and no hold transaction/event is invented.
