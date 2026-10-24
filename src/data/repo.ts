@@ -11,7 +11,7 @@ import type { ParsedMandate } from "@/lib/sms";
 import type { AppMode, SetAsideMode, BudgetPlan, CategoryRule, Commitment, ImportBatch, Prefs, Profile, Recurring, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 import { type FinanceDB, uid } from "./db";
-import { applyRemoteHistory, applySmsReread } from "./remoteRules";
+import { applyRemoteHistory, applySmsReread, isUserEdited } from "./remoteRules";
 import { generateDemoData } from "./providers/demo";
 
 /** Keeps the built-in rules in step with this version of the app; your own rules are untouched. */
@@ -369,13 +369,14 @@ export async function recategorizeAll(db: FinanceDB) {
     const txns = await db.txns.where("date").between(taggingCutoff(today), today, true, true).toArray();
     const changed: Transaction[] = [];
     for (const t of txns) {
-      // Money out only; preserve explicit planned-line links.
-      if (t.kind !== "expense" && t.kind !== "investment") continue;
+      // Money out only; never transactions the user edited, planned-line links or holds.
+      if ((t.kind !== "expense" && t.kind !== "investment") || isUserEdited(t) || t.commitmentId || t.holdId) continue;
       const c = categorize(`${t.merchant} ${t.source.raw ?? ""}`, rules, t.payee, { merchant: t.merchant, direction: "out" });
       if (!c || (c.kind && c.kind !== "investment" && c.kind !== "transfer")) continue;
       const tag = c.tag ?? (c.category === t.category ? t.tag : undefined);
       if (c.category === t.category && tag === t.tag) continue;
-      changed.push({ ...t, ...classify(t, c.category, tag), updatedAt: Date.now() });
+      // Not a user edit: keep updatedAt so later automatic jobs may refine it.
+      changed.push({ ...t, ...classify(t, c.category, tag) });
     }
     if (changed.length) await db.txns.bulkPut(changed);
     return changed.length;

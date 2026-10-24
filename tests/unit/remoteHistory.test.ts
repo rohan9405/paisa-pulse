@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FinanceDB } from "@/data/db";
-import { ensureRules, saveRule, updateTxn } from "@/data/repo";
+import { ensureRules, recategorizeAll, saveRule, updateTxn } from "@/data/repo";
 import { categorize } from "@/lib/categorize";
 import { DEFAULT_CONFIG, parseRemoteConfig, setConfig, TAB_IDS } from "@/lib/remoteConfig";
 import { txn } from "./helpers";
@@ -79,6 +79,24 @@ describe("remote classification boundaries", () => {
     expect((await db.txns.get("named"))?.category).toBe("Subscriptions");
     expect((await db.txns.get("auto"))?.merchant).toBe("ICICI debit"); // filtered out by "contains"
     expect(parseRemoteConfig({ version: 10, smsReread: { run: 0, names: true } }).errors).toHaveLength(1);
+  });
+
+  it("a user's copy of a global rule survives config updates and wins in re-reads; re-apply skips user edits", async () => {
+    const raw = "Rs. 100.00 debited from ICICI Bank Acc XX567 on 01-Oct-26 VIN*Sample Shop. Bal Rs. 900.00.";
+    await db.txns.bulkAdd([row("auto", { source: { providerId: "sms", importedAt: 1, raw } }), row("edited", { source: { providerId: "sms", importedAt: 1, raw } })]);
+    await updateTxn(db, "edited", { category: "Health" });
+    config(); await ensureRules(db);
+    const global = (await db.rules.toArray()).find((r) => r.builtIn && r.pattern === "sample shop")!;
+    await saveRule(db, { id: undefined, pattern: global.pattern, category: "Education", priority: 10 });
+    config({ priority: 100 }, { version: 4, smsReread: { run: 1, months: 1, names: false, categories: true, only: "all" } }); await ensureRules(db);
+    expect((await db.rules.toArray()).filter((r) => !r.builtIn).map((r) => r.category)).toEqual(["Education"]);
+    expect((await db.txns.get("auto"))?.category).toBe("Education");
+    expect((await db.txns.get("edited"))?.category).toBe("Health");
+    await db.txns.update("auto", { category: "Other" });
+    expect(await recategorizeAll(db)).toBe(1);
+    expect((await db.txns.get("auto"))?.category).toBe("Education");
+    expect((await db.txns.get("auto"))?.updatedAt).toBe(1);
+    expect((await db.txns.get("edited"))?.category).toBe("Health");
   });
 
   it("the admin script compiles and includes per-rule history and primary controls", () => {

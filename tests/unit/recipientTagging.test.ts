@@ -73,7 +73,8 @@ describe("recipient tagging", () => {
 
   it("re-applying rules also respects the twelve-month cutoff", async () => {
     db = new FinanceDB(`tag-${Math.random()}`);
-    await db.txns.bulkAdd([payment("new"), payment("old", { date: "2023-10-23" })]);
+    const sms = { source: { providerId: "sms", importedAt: 1 }, createdAt: 1, updatedAt: 1 };
+    await db.txns.bulkAdd([payment("new", sms), payment("old", { date: "2023-10-23", ...sms })]);
     await db.rules.put({ id: "rent", payee: "ramesh@ybl", pattern: "ramesh@ybl", category: "Bills", tag: "Rent", priority: 10 });
     expect(await recategorizeAll(db)).toBe(1);
     expect((await db.txns.get("new"))?.tag).toBe("Rent");

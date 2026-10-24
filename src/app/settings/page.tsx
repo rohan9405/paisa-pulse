@@ -6,7 +6,7 @@ import { hasBudget, modeOf, planForDate, poolSummary, setAsideOf } from "@/lib/b
 import { CATEGORIES, DEFAULT_SET_ASIDE, SET_ASIDE_OPTIONS, TAGS, categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
-import { DEFAULT_PREFS, type Prefs, type Profile, type Recurring, type SetAsideMode, type TxnKind } from "@/lib/types";
+import { DEFAULT_PREFS, type CategoryRule, type Prefs, type Profile, type Recurring, type SetAsideMode, type TxnKind } from "@/lib/types";
 import { deleteDatabase } from "@/data/db";
 import { PROVIDERS } from "@/data/providers/registry";
 import { smsBridge, syncSms } from "@/data/providers/sms";
@@ -77,7 +77,7 @@ export default function SettingsPage() {
               onSaved={(n) => setToast(n ? `Saved · ${n} earlier transactions read from SMS` : "Tracking settings saved")}
             />
           </Section>
-          <Section icon="🏷️" title="Categorisation rules" summary={userRules ? `${userRules} of yours + built-ins` : "Built-in rules"}>
+          <Section icon="🏷️" title="Categorisation rules" summary={userRules ? `${userRules} of yours + global rules` : "Global rules"}>
             <RulesEditor onToast={setToast} />
           </Section>
           <Section icon="🕘" title="Plan history" summary={`${plans.length} version${plans.length === 1 ? "" : "s"}`}>
@@ -582,9 +582,20 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   const [category, setCategory] = useState("Bills");
   const [tag, setTag] = useState("");
   const [showBuiltIn, setShowBuiltIn] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; category: string; tag: string } | null>(null);
   if (!data || !db) return null;
   const user = data.rules.filter((r) => !r.builtIn).sort((a, b) => a.pattern.localeCompare(b.pattern));
   const builtIn = data.rules.filter((r) => r.builtIn);
+  const sameRule = (a: CategoryRule, b: CategoryRule) => !a.payee && !b.payee && a.pattern.trim().toLowerCase() === b.pattern.trim().toLowerCase() && (a.direction ?? "") === (b.direction ?? "");
+  const mine = (g: CategoryRule) => user.find((u) => sameRule(u, g));
+  const saveOverride = async (g: CategoryRule) => {
+    if (!editing) return;
+    const own = mine(g);
+    const kind: TxnKind | undefined = editing.category === "Transfers" ? "transfer" : editing.category === "Income" ? "income" : editing.category === g.category ? g.kind : undefined;
+    await saveRule(db, { id: own?.id, pattern: g.pattern, direction: g.direction, category: editing.category, tag: editing.tag || undefined, kind, priority: 10 });
+    setEditing(null);
+    onToast("Saved as your rule; it stays when global rules change");
+  };
   const isPayee = /^[\w.\-]+@[a-z]+$/i.test(pattern.trim());
 
   const add = async () => {
@@ -600,7 +611,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   return (
     <Card className="space-y-3">
       <p className="text-xs text-ink-400">
-        Enter a UPI ID (ramesh@okaxis) to match that payee exactly, or any text in the merchant name or bank SMS. Your rules beat built-ins. Pick “Transfers” for your own accounts.
+        Enter a UPI ID (ramesh@okaxis) to match that payee exactly, or any text in the merchant name or bank SMS. Your rules beat global rules. Pick “Transfers” for your own accounts.
       </p>
       <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_auto]">
         <input className="input text-sm" placeholder="ramesh@okaxis or chai point" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Rule text or UPI ID" />
@@ -640,18 +651,56 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
           Re-apply rules to the last 12 months
         </button>
         <button className="btn-ghost text-xs" onClick={() => setShowBuiltIn((s) => !s)}>
-          {showBuiltIn ? "Hide" : "Show"} {builtIn.length} built-in rules
+          {showBuiltIn ? "Hide" : "Show"} {builtIn.length} global rules
         </button>
       </div>
       {showBuiltIn && (
-        <div className="flex flex-wrap gap-1">
-          {builtIn.map((r) => (
-            <span key={r.id} className="rounded-lg bg-white/[0.04] px-2 py-1 text-[11px] text-ink-300">
-              {r.pattern} → {r.category}
-              {r.tag ? ` · ${r.tag}` : ""}
-            </span>
-          ))}
-        </div>
+        <>
+          <p className="text-xs text-ink-400">Global rules come from drip and update on their own. Tap one to set your own category; yours wins and is never changed by updates. Remove yours to go back.</p>
+          <div className="flex flex-wrap gap-1" data-testid="global-rules">
+            {builtIn.map((r) => {
+              const own = mine(r);
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => setEditing(editing?.id === r.id ? null : { id: r.id, category: own?.category ?? r.category, tag: own?.tag ?? r.tag ?? "" })}
+                  className={cx("rounded-lg px-2 py-1 text-left text-[11px]", own ? "border border-lime/40 bg-lime/[0.06] text-ink-200" : "bg-white/[0.04] text-ink-300", editing?.id === r.id && "ring-1 ring-lime/60")}
+                >
+                  {r.pattern}
+                  {r.direction ? ` (money ${r.direction})` : ""} → {own ? <s className="opacity-60">{r.category}</s> : r.category}
+                  {!own && r.tag ? ` · ${r.tag}` : ""}
+                  {own ? ` → yours: ${own.category}${own.tag ? ` · ${own.tag}` : ""}` : ""}
+                </button>
+              );
+            })}
+          </div>
+          {editing && (() => {
+            const g = builtIn.find((r) => r.id === editing.id);
+            if (!g) return null;
+            return (
+              <div className="grid gap-2 rounded-xl bg-white/[0.04] p-3 sm:grid-cols-[1fr_1fr_auto_auto]" data-testid="global-rule-editor">
+                <p className="text-xs text-ink-300 sm:col-span-4">“{g.pattern}” → your category</p>
+                <select className="input text-sm" value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value, tag: "" })} aria-label="Your category for this rule">
+                  {CATEGORIES.filter((c) => c !== "Refunds").map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+                <select className="input text-sm" value={editing.tag} onChange={(e) => setEditing({ ...editing, tag: e.target.value })} aria-label="Your tag for this rule" disabled={!TAGS[editing.category]}>
+                  <option value="">No tag</option>
+                  {(TAGS[editing.category] ?? []).map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+                <button className="btn-primary" onClick={() => saveOverride(g)}>
+                  Save as mine
+                </button>
+                <button className="btn-ghost" onClick={() => setEditing(null)}>
+                  Cancel
+                </button>
+              </div>
+            );
+          })()}
+        </>
       )}
     </Card>
   );
