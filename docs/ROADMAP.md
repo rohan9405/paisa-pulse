@@ -1,6 +1,12 @@
 # drip roadmap
 
-Current checkout: **0.8.9** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+Current checkout: **0.8.10** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+
+## Implemented: category drill-down and trend controls (0.8.10, build 22)
+
+- Every Stats expense-category row links to Activity filtered by that category and the displayed month (including historical months). Week views use the month containing the period end. Filters remain editable; malformed month/category parameters are ignored.
+- Today trend arrows frame a centered date range. Latest sits centered on its own reserved row, preserving chart position when it appears or disappears.
+- Based on latest local main; remote fetch confirmed no missing commits. Signed update preserves phone data.
 
 ## Implemented: Net In-Hand, settlements and daily spending average (0.8.9)
 

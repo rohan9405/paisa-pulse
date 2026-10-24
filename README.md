@@ -156,7 +156,7 @@ Today compares the selected day with the previous 28 completed days (including z
 | Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), always-visible category values, one category pattern, scrubbable rolling seven-day bars with weekday/date labels, previous/next ranges and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
 | Briefing (legacy link) | Opens the unified Today view; no separate tab or morning/night report. Historical links retain their selected day. |
 | Activity | Search, kind/category/period filters, edit, delete, category correction (optionally saved as a rule), match to bill/savings reservation, link refunds, smart suggestions for bill matches and own-account transfers |
-| Stats | Week/month: Net In-Hand (income − expenses − investments), three summary cards, cumulative spend vs budget, daily spending chart with the month’s daily-average dotted line, category breakdown and planned payments; neon-green twelve-month spending heatmap below Expenses by category (darker means more spending) |
+| Stats | Tap a category to open that month’s filtered Activity. Week/month: Net In-Hand (income − expenses − investments), three summary cards, cumulative spend vs budget, daily spending chart with the month’s daily-average dotted line, category breakdown and planned payments; neon-green twelve-month spending heatmap below Expenses by category (darker means more spending) |
 | Import CSV | Column mapping, date-format choice, three amount layouts, preview with per-row errors, duplicate detection, per-row include/exclude, undo import |
 | Settings | Budget · Data · App tabs. Budget: mode, changes effective from a date (history preserved), recurring payments. Data: tracking start (moving it earlier backfills SMS) / opening adjustment, category + tag rules, balances switch, backup folder, JSON/CSV export, restore, typed-confirmation delete, mode switch. App: fingerprint lock, haptics |
 
@@ -207,3 +207,7 @@ Mandate reminders require a confirmed repeating frequency. Old guessed schedules
 Income includes every income bucket, excluding refunds and settlements. Link a Settlement to the expense you paid for a group; multiple people’s shares reduce that expense just like linked refunds, capped at the original amount. Unlinked settlements stay marked for review and never inflate income. Investments are separate from expenses. Savings is removed from new category choices; existing Savings data and rules remain intact and appear under Investments.
 
 The daily spending chart’s dotted line is the selected month’s daily average through the selected period’s end (through today for the current period), counting tracked zero days.
+
+### Navigation update · 0.8.10
+
+Stats category rows open Activity with that category and the selected month prefilled, including older months. Activity’s period and category controls remain editable. The Today trend keeps its date range centered between arrows, with Latest centered in a separate reserved row so changing ranges does not shift the chart.

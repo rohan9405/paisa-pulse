@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, spendVsBudgetSeries } from "@/lib/budget";
@@ -192,7 +193,7 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-3" data-testid="category-breakdown">
                 {cats.map((c) => (
-                  <div key={c.category} title={`${c.category}: ${formatINR(c.amountPaise)} across ${c.count} transactions`}>
+                  <Link href={`/transactions?month=${monthKey(toClamped)}&category=${encodeURIComponent(c.category)}`} className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime hover:bg-white/[0.03]" key={c.category} title={`${c.category}: ${formatINR(c.amountPaise)} across ${c.count} transactions`}>
                     <div className="flex items-baseline justify-between text-sm">
                       <span>
                         {categoryEmoji(c.category)} {c.category}
@@ -206,7 +207,7 @@ export default function DashboardPage() {
                     <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
                       <div className="h-full rounded-full" style={{ width: `${(c.amountPaise / catMax) * 100}%`, backgroundColor: categoryColor(c.category) }} />
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

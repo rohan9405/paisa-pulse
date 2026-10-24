@@ -7,7 +7,7 @@ import { HoldList } from "@/components/HoldList";
 import { RecipientTagger } from "@/components/RecipientTagger";
 import { recipientKey, taggingFlow, recipientNeedsTagging, withinTaggingWindow } from "@/lib/recipients";
 import { ACTIVE_CATEGORIES as CATEGORIES, displayCategory } from "@/lib/categorize";
-import { type DateKey, addDays, addMonths, endOfMonth, monthKey, relativeDayLabel, startOfMonth } from "@/lib/dates";
+import { type DateKey, addDays, addMonths, endOfMonth, formatMonth, isDateKey, monthKey, relativeDayLabel, startOfMonth } from "@/lib/dates";
 import { hasBudget, matchCommitment, modeOf, planForDate } from "@/lib/budget";
 import { commitmentCandidates, transferPairs } from "@/lib/match";
 import { formatINR } from "@/lib/money";
@@ -22,14 +22,21 @@ import { Card, EmptyState, PageHeader, SectionTitle, cx } from "@/components/ui"
 import { IconSearch } from "@/components/icons";
 
 type KindFilter = "all" | TxnKind | "review";
-type Period = "7d" | "month" | "lastmonth" | "all";
+type Period = "7d" | "month" | "lastmonth" | "selectedmonth" | "all";
 
 export default function TransactionsPage() {
   return (
     <Suspense>
-      <Transactions />
+      <TransactionsWithFilters />
     </Suspense>
   );
+}
+
+// Reset local controls when a different category/month deep link is opened,
+// including client-side navigation while Activity is already mounted.
+function TransactionsWithFilters() {
+  const params = useSearchParams();
+  return <Transactions key={params.toString()} />;
 }
 
 function Transactions() {
@@ -42,11 +49,15 @@ function Transactions() {
   const [recipient, setRecipient] = useState<Transaction[] | null>(null);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<KindFilter>(params.get("review") ? "review" : "all");
-  const [cat, setCat] = useState("");
-  const [period, setPeriod] = useState<Period>(params.get("review") ? "all" : "month");
+  const linkedMonth = params.get("month") ?? "";
+  const selectedMonth = /^\d{4}-\d{2}$/.test(linkedMonth) && isDateKey(`${linkedMonth}-01`) ? linkedMonth : "";
+  const linkedCategory = params.get("category") ?? "";
+  const [cat, setCat] = useState(CATEGORIES.some(c => c === linkedCategory) ? linkedCategory : "");
+  const [period, setPeriod] = useState<Period>(selectedMonth ? "selectedmonth" : params.get("review") ? "all" : "month");
   const [editing, setEditing] = useState<Transaction | null>(null);
 
   const range = useMemo((): [DateKey, DateKey] => {
+    if (period === "selectedmonth" && selectedMonth) return [`${selectedMonth}-01`, endOfMonth(`${selectedMonth}-01`) > today ? today : endOfMonth(`${selectedMonth}-01`)];
     if (period === "7d") return [addDays(today, -6), today];
     if (period === "month") return [startOfMonth(today), today];
     if (period === "lastmonth") {
@@ -54,7 +65,7 @@ function Transactions() {
       return [lm, endOfMonth(lm)];
     }
     return ["0000-01-01", "9999-12-31"];
-  }, [period, today]);
+  }, [period, today, selectedMonth]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -170,6 +181,7 @@ function Transactions() {
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <select className="input text-sm" value={period} onChange={(e) => setPeriod(e.target.value as Period)} aria-label="Period">
+          {selectedMonth && <option value="selectedmonth">{formatMonth(selectedMonth)}</option>}
           <option value="7d">Last 7 days</option>
           <option value="month">This month</option>
           <option value="lastmonth">Last month</option>

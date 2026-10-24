@@ -16,7 +16,7 @@ Each budget plan (effective from a date) picks one:
   - **planned** (default): you enter monthly income and expected amounts as planned lines (`Commitment`: Bills / Investments / Savings, with a tag).
   - **actual**: no income or planned-payment amount inputs. Recorded income transactions fund the pool; tagged set-aside payments reduce it as they arrive. Transfers and refunds are not income. Before income arrives, allocation is zero. Older plans without `budgetMode` retain their inferred tracking/budget selection; new plans store the explicit selection.
 
-Categories: **Bills** (tags Rent, Utility, Phone & internet, EMI, Insurance, Maintenance), **Investments** (SIP, Stocks, Mutual fund, NPS / PPF), **Savings** (RD / FD, Emergency fund). Investments and Savings are never expenses: Stats leaves them out of the expense breakdown.
+Categories: **Bills** (tags Rent, Utility, Phone & internet, EMI, Insurance, Maintenance), **Investments** (SIP, Stocks, Mutual fund, NPS / PPF, RD / FD, Emergency fund). Savings is no longer offered for new selections. Existing Savings records and rules remain intact, count under Investments in Stats, and preserve their original plan semantics. Investments and legacy Savings are never expenses.
 
 ## Monthly pool (planned)
 
@@ -101,3 +101,10 @@ available(today) = Σ allocation(tracking start … today)
 ## CSV deduplication
 
 `fingerprint = ref:<bank reference>` when a reference column is mapped, otherwise `date | direction | amount | normalised description`. Rows matching existing data are skipped by default (the user can override). Identical rows *within one file* with no reference stay included but flagged, because two identical ₹20 chais on one day are real.
+
+## Stats position and category navigation
+
+- Net In-Hand = income − net expenses − investments. Every income bucket counts, excluding refunds and settlements. Own-account transfers are excluded.
+- Refunds and settlements share the indexed `refundOf` link. They reduce the original payment as of the report cutoff; they do not become income. Multiple shares are capped at the original payment’s remaining amount, including concurrent writes. Unlinked settlements require review.
+- The daily spending dotted line averages the selected month’s tracked calendar days through the selected period end (through today for current periods), including zero days. Tracking mode uses net expense spending; budget periods retain their budget-spend definition.
+- Stats category rows deep-link to `/transactions?month=YYYY-MM&category=...`. Activity validates the parameters and exposes the month/category as editable controls. Historical months remain selected; a week spanning months uses its ending month for the drill-down.
