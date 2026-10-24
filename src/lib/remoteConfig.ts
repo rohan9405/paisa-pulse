@@ -76,6 +76,8 @@ export interface RemoteConfig {
   } | null;
   /** More bank SMS senders: sender ID core (e.g. "YESBNK") → bank name. */
   banks: { sender: string; bank: string }[];
+  /** True: `banks` is the complete list and the app's built-in senders are not used. */
+  replaceBuiltInBanks: boolean;
   /** Extra phrases that mean "not a transaction" (offers, OTPs…). */
   smsIgnore: string[];
   budget: {
@@ -96,6 +98,8 @@ export interface RemoteConfig {
     insights: boolean;
     badges: boolean;
     haptics: boolean;
+    /** Anonymous usage counts (data/usage.ts). People can also switch it off in Settings. */
+    analytics: boolean;
   };
   /** A banner on Today. Changing the id shows it again to people who dismissed the old one. */
   announcement: { id: string; text: string; link?: string; tone: "info" | "warn" } | null;
@@ -124,9 +128,10 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   merchantStops: [],
   smsReread: null,
   banks: [],
+  replaceBuiltInBanks: false,
   smsIgnore: [],
   budget: { lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
-  features: { balances: true, appLock: true, csvImport: true, insights: true, badges: true, haptics: true },
+  features: { balances: true, appLock: true, csvImport: true, insights: true, badges: true, haptics: true, analytics: true },
   announcement: null,
   update: null,
 };
@@ -255,11 +260,13 @@ export function parseRemoteConfig(input: unknown): ParseResult {
       if (!isObj(b)) continue;
       const sender = str(b.sender, 12, 3)?.toUpperCase();
       const bank = str(b.bank, 20);
-      // Must contain letters: a phone number can never become a "bank".
-      if (sender && /^[A-Z0-9]+$/.test(sender) && /[A-Z]{3}/.test(sender) && bank) c.banks.push({ sender, bank });
-      else errors.push(`banks: "${String(b.sender)}" isn't a sender ID like YESBNK`);
+      // Must contain letters: a phone number can never become a "bank". Ends in * (any letters) or ? (one optional letter).
+      if (sender && /^[A-Z0-9]+[*?]?$/.test(sender) && /[A-Z]{3}/.test(sender) && bank) c.banks.push({ sender, bank });
+      else errors.push(`banks: "${String(b.sender)}" isn't a sender ID like YESBNK or SBI*`);
     }
   }
+
+  c.replaceBuiltInBanks = input.replaceBuiltInBanks === true && c.banks.length > 0;
 
   if (Array.isArray(input.smsIgnore)) c.smsIgnore = input.smsIgnore.map((p) => str(p, 60, 3)).filter((p): p is string => !!p).map((p) => p.toLowerCase()).slice(0, 200);
 

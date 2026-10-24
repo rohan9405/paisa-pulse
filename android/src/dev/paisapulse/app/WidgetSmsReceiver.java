@@ -7,7 +7,10 @@ import android.provider.Telephony;
 import android.telephony.SmsMessage;
 import java.util.Locale;
 
-/** Wake only for supported bank senders and only while a widget is installed. */
+/**
+ * Wake only while a widget is installed, and only for business senders (not phone
+ * numbers). Which senders are banks is decided by the app's config-driven parser.
+ */
 public final class WidgetSmsReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context c,Intent intent) {
         if(!Telephony.Sms.Intents.SMS_RECEIVED_ACTION.equals(intent.getAction()) || !DripWidgetProvider.hasWidgets(c))return;
@@ -15,7 +18,7 @@ public final class WidgetSmsReceiver extends BroadcastReceiver {
             String sender=sms.getOriginatingAddress();
             if(sender==null)continue;
             sender=sender.toUpperCase(Locale.ROOT);
-            if(sender.matches(".*(?:HDFC[A-Z]*|ICICI[A-Z]*|ICICBK|ICIOTP|SBI[A-Z]*|ATMSBI|CBSSBI|SBMSBI|CRDSBI|AXIS[A-Z]*|KOTAK[A-Z]*)(?:-[A-Z])?")) {
+            if(sender.matches(".*[A-Z]{3}.*") && !sender.matches("^\\+?[\\d\\s-]+$")) {
                 WidgetSyncService.schedule(c);return;
             }
         }

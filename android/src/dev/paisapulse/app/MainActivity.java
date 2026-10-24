@@ -97,8 +97,10 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 Uri url = req.getUrl();
-                // The only outside request allowed: a GET of the remote config file (see backend/).
+                // The only outside requests allowed: a GET of the remote config file (see backend/)
+                // and a POST of anonymous usage counts to the same service (src/data/usage.ts).
                 if (configUrl != null && "GET".equals(req.getMethod()) && configUrl.equals(url.toString())) return null;
+                if (configUrl != null && "POST".equals(req.getMethod()) && configUrl.replaceAll("/config\\.json$", "/e").equals(url.toString())) return null;
                 if (!HOST.equals(url.getHost())) return blocked();
                 return serve(url.getPath());
             }

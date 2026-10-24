@@ -26,23 +26,37 @@ export interface RawSms {
 /** Built-in banks; the remote config can add more (any name). */
 export type Bank = "HDFC" | "ICICI" | "SBI" | "Axis" | "Kotak" | (string & {});
 
-/** Sender-ID cores after stripping the operator prefix ("VM-") and the DLT suffix ("-S"). */
-const SENDERS: [RegExp, Bank][] = [
-  [/^HDFC(BK|BN|CC|SC)?$/, "HDFC"],
-  [/^ICICI[A-Z]?$|^ICICBK$|^ICIOTP$/, "ICICI"],
-  [/^(SBI[A-Z]*|ATMSBI|CBSSBI|SBMSBI|SBICRD|CRDSBI)$/, "SBI"],
-  [/^AXIS[A-Z]*$/, "Axis"],
-  [/^KOTAK[A-Z]*$/, "Kotak"],
+/**
+ * Bank sender-ID cores, after stripping the operator prefix ("VM-") and DLT suffix ("-S").
+ * `*` = any letters after, `?` = one optional letter. The remote config owns this list;
+ * these are only the offline fallback before the first config arrives.
+ */
+export const BUILT_IN_BANKS: { sender: string; bank: Bank }[] = [
+  ...["HDFC", "HDFCBK", "HDFCBN", "HDFCCC", "HDFCSC"].map((sender) => ({ sender, bank: "HDFC" })),
+  ...["ICICI?", "ICICBK", "ICIOTP"].map((sender) => ({ sender, bank: "ICICI" })),
+  ...["SBI*", "ATMSBI", "CBSSBI", "SBMSBI", "CRDSBI"].map((sender) => ({ sender, bank: "SBI" })),
+  { sender: "AXIS*", bank: "Axis" },
+  { sender: "KOTAK*", bank: "Kotak" },
 ];
+
+/** The bank sender list in use: the config's, plus the built-ins unless the config replaces them. */
+export function bankSenders(): { sender: string; bank: Bank }[] {
+  const { banks, replaceBuiltInBanks } = getConfig();
+  return replaceBuiltInBanks ? banks : [...BUILT_IN_BANKS, ...banks];
+}
+
+const senderRe = (sender: string) => new RegExp(`^${sender.replace(/\*$/, "[A-Z]*").replace(/\?$/, "[A-Z]?")}$`);
 
 export function bankForSender(address: string): Bank | null {
   const parts = address.toUpperCase().split("-").filter(Boolean);
   // "VM-HDFCBK-S" → "HDFCBK"; "HDFCBK" → "HDFCBK".
   const core = parts.length >= 2 && parts[0].length === 2 ? parts[1] : parts[0];
   if (!core) return null;
-  for (const [re, bank] of SENDERS) if (re.test(core)) return bank;
-  return getConfig().banks.find((b) => b.sender === core)?.bank ?? null;
+  return bankSenders().find((b) => senderRe(b.sender).test(core))?.bank ?? null;
 }
+
+/** Bank names in use, for "Reads HDFC, ICICI … alerts". */
+export const supportedBanks = () => [...new Set(bankSenders().map((b) => b.bank))];
 
 export interface ParsedSms {
   bank: Bank;

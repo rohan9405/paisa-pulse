@@ -2,7 +2,7 @@
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
     <!-- Read-only access to the SMS inbox to pick up bank alerts. Nothing is sent off the phone. -->
     <uses-permission android:name="android.permission.READ_SMS" />
-    <!-- Download-only: fetches the remote config file (backend/). The WebView blocks every other outside URL; nothing about you is sent. -->
+    <!-- Downloads the remote config file and sends anonymous usage counts (opt-out) to the same service (backend/). The WebView blocks every other outside URL; SMS and financial data are never sent. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- Fingerprint app lock (optional, off by default). -->

@@ -37,4 +37,4 @@ The config backend lets the owner change app settings without a release. It must
 
 ## What's stored about callers
 
-Nothing for the public `config.json`. For the editor, the IP of a **failed** admin login is kept for 15 minutes (lockout) and then expires. Worker request logs ("observability") are off in `wrangler.toml`.
+Nothing for the public `config.json` beyond one hourly counter per download. Usage events (`/e`) only increment hourly counters of fixed values; no request, IP, device or user ID is stored (see README → Anonymous usage). `/e` is unauthenticated, so anyone can inflate the counts: treat them as indicative, not exact. For the editor, the IP of a **failed** admin login is kept for 15 minutes (lockout) and then expires. Worker request logs ("observability") are off in `wrangler.toml`.

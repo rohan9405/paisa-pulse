@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_RULES } from "@/lib/categorize";
 import { DEFAULT_CONFIG, parseRemoteConfig, setConfig } from "@/lib/remoteConfig";
+import { builtInsAsConfig } from "@/lib/builtInsAsConfig";
 import { bankForSender, parseBalance, parseBankSms, smsToCandidate } from "@/lib/sms";
 import type { CategoryRule } from "@/lib/types";
 
@@ -71,6 +72,24 @@ describe("ICICI", () => {
   it("refund credit", () => {
     const c = smsToCandidate(sms("VM-ICICIT", "Dear Customer, Acct XX567 is credited with Rs 499.00 on 20-Oct-26 from FLIPKART towards refund. UPI:629355556666"), rules)!;
     expect(c).toMatchObject({ direction: "in", kind: "refund", category: "Refunds", merchant: "Flipkart" });
+  });
+});
+
+describe("bank senders from the config", () => {
+  afterEach(() => setConfig(DEFAULT_CONFIG));
+  const senders = ["VM-HDFCBK", "JD-ICICIT-S", "VK-SBIUPI", "BP-ATMSBI", "AX-AXISBK", "VM-KOTAKB", "VM-YESBNK", "AD-ICICIPRU", "VM-SWIGGY"];
+
+  it("matches the same banks when the config owns the list", () => {
+    const before = senders.map(bankForSender);
+    expect(before).toEqual(["HDFC", "ICICI", "SBI", "SBI", "Axis", "Kotak", null, null, null]);
+    setConfig(parseRemoteConfig({ version: 7, ...builtInsAsConfig() }).config);
+    expect(senders.map(bankForSender)).toEqual(before);
+  });
+
+  it("supports * and ?, and a replaced list drops banks not in it", () => {
+    setConfig(parseRemoteConfig({ version: 7, banks: [{ sender: "YESBNK", bank: "Yes" }, { sender: "IDFC*", bank: "IDFC First" }, { sender: "HDFC?", bank: "HDFC" }], replaceBuiltInBanks: true }).config);
+    expect(["VM-YESBNK", "VM-IDFCFB", "VM-HDFCB", "VM-HDFCBK", "JD-ICICIT-S"].map(bankForSender)).toEqual(["Yes", "IDFC First", "HDFC", null, null]);
+    expect(parseRemoteConfig({ version: 7, banks: [{ sender: "98765*", bank: "X" }, { sender: "AB*C", bank: "X" }] }).config.banks).toEqual([]);
   });
 });
 

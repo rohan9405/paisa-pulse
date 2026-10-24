@@ -13,6 +13,9 @@ import { DEFAULT_PREFS } from "@/lib/types";
 import type { TabId } from "@/lib/remoteConfig";
 import { loadCachedConfig, refreshConfig, useRemoteConfig } from "@/data/remoteConfigLoader";
 import { ensureRules } from "@/data/repo";
+import { markActive, screen, startSessions } from "@/data/usage";
+import { hasBudget, modeOf, planForDate } from "@/lib/budget";
+import type { FEATURES } from "@/lib/usageEvents";
 import { QuickAddSheet } from "./QuickAdd";
 import { Onboarding } from "./Onboarding";
 import { Welcome } from "./Welcome";
@@ -47,6 +50,20 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   const data = useAppData();
   useSmsSync(mode === "personal" && data?.profile ? db : null);
   useAutoBackup(data?.profile ? db : null, mode);
+  // Anonymous usage counts (data/usage.ts): sessions, screens, and once a day which features are on.
+  const pathNow = usePathname();
+  useEffect(() => startSessions(), []);
+  useEffect(() => screen(pathNow), [pathNow]);
+  const plan = data?.profile ? planForDate(data.plans, today) : null;
+  const usageFeatures: (typeof FEATURES)[number][] = !data?.profile ? [] : [
+    !hasBudget(plan) ? "mode:tracking" : modeOf(plan) === "actual" ? "mode:actual" : "mode:planned",
+    smsBridge()?.hasPermission() ? "sms:on" : "sms:off",
+    ...(data.profile.prefs?.appLock ? ["lock:on" as const] : []),
+    ...(mode === "demo" ? ["demo" as const] : []),
+  ];
+  // Counted from the first open, before onboarding; features once a profile exists.
+  const usageKey = !ready || data === undefined ? "" : usageFeatures.join(",") || "none";
+  useEffect(() => { if (usageKey) markActive(usageKey === "none" ? [] : (usageKey.split(",") as (typeof FEATURES)[number][])); }, [usageKey]);
   useHomeWidget(data, mode, today);
   const config = useRemoteConfig();
   const NAV = config.tabs.filter((t) => t.visible && t.id !== "briefing").map((t) => ({ ...TAB_ROUTES[t.id], id: t.id, label: t.label }));

@@ -10,6 +10,8 @@ import { DEFAULT_PREFS, type CategoryRule, type Prefs, type Profile, type Recurr
 import { deleteDatabase } from "@/data/db";
 import { PROVIDERS } from "@/data/providers/registry";
 import { smsBridge, syncSms } from "@/data/providers/sms";
+import { supportedBanks } from "@/lib/sms";
+import { USAGE_URL, setUsageAllowed, usageAllowed } from "@/data/usage";
 import { backupNow, filesBridge, lastBackupAt, saveFile } from "@/data/backup";
 import { addPlanVersion, exportAll, importBackup, recategorizeAll, saveRule, seedDemo, setPrefs, txnsToCsv } from "@/data/repo";
 import { deviceBridge } from "@/data/device";
@@ -154,6 +156,7 @@ export default function SettingsPage() {
               checked={prefs.haptics}
               onChange={async (on) => db && (await setPrefs(db, { haptics: on }))}
             />
+            {USAGE_URL && config.features.analytics && <UsageToggle />}
           </Group>
           <Group>
             <Section icon="🔔" title="Notifications" summary="In-app briefings">
@@ -180,7 +183,7 @@ export default function SettingsPage() {
 
       <p className="mt-8 text-center text-xs text-ink-400">
         drip · tracking since {formatDay(profile.trackingStart, { year: true })}
-        {sms?.lastSyncAt ? ` · SMS read ${new Date(sms.lastSyncAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}` : ""} · no analytics, no external AI
+        {sms?.lastSyncAt ? ` · SMS read ${new Date(sms.lastSyncAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}` : ""} · no ads, no external AI
       </p>
       <p className="mt-2 text-center text-xs text-ink-400">
         v{process.env.NEXT_PUBLIC_APP_VERSION} · Soft Orbit Apps · <a className="underline" href="/privacy.html">Privacy policy</a>
@@ -218,6 +221,20 @@ function Section({ icon, title, summary, defaultOpen, children }: { icon: string
       </summary>
       <div className="settings-body px-4 pb-4">{children}</div>
     </details>
+  );
+}
+
+/** Anonymous usage counts (data/usage.ts): a device setting, on unless switched off. */
+function UsageToggle() {
+  const [on, setOn] = useState(usageAllowed);
+  return (
+    <Toggle
+      icon="📈"
+      title="Share anonymous usage stats"
+      hint="Counts like app opens, time spent and screens visited, with no ID. Never your SMS, transactions, amounts or merchants."
+      checked={on}
+      onChange={(v) => (setUsageAllowed(v), setOn(v))}
+    />
   );
 }
 
@@ -282,7 +299,7 @@ function BankSms({ onToast }: { onToast: (s: string) => void }) {
           <Pill tone={status === "On" ? "lime" : status === "Error" ? "coral" : "default"}>{status}</Pill>
         </div>
         <div className="text-xs text-ink-400">
-          HDFC, ICICI, SBI, Axis and Kotak alerts, read on this phone only. OTPs, offers and failed payments are ignored.
+          {listBanks()} alerts, read on this phone only. OTPs, offers and failed payments are ignored.
           {c?.lastSyncAt && ` Last read ${new Date(c.lastSyncAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}.`}
         </div>
         {c?.lastError && <div className="text-xs text-coral">{c.lastError}</div>}
@@ -576,6 +593,12 @@ function TrackingEditor({ profile: p, onSaved }: { profile: Profile; onSaved: (s
   );
 }
 
+/** "HDFC, ICICI and SBI" from the bank senders in use. */
+function listBanks() {
+  const b = supportedBanks();
+  return b.length > 1 ? `${b.slice(0, -1).join(", ")} and ${b[b.length - 1]}` : b[0] ?? "Bank";
+}
+
 function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   const { data, db } = useBudget();
   const [pattern, setPattern] = useState("");
@@ -726,7 +749,7 @@ function DataPanel({ part, onToast }: { part: "backup" | "danger"; onToast: (s: 
             <AutoBackup onToast={onToast} />
           ) : (
             <div className="rounded-2xl bg-amber/[0.07] p-3 text-amber">
-              🔒 Everything lives in this browser's storage (IndexedDB) — no server, no analytics, no AI upload. <b>That also means it's not a backup:</b> clearing site data, private windows or a new
+              🔒 Everything lives in this browser's storage (IndexedDB) — your data is never uploaded and there's no AI upload. <b>That also means it's not a backup:</b> clearing site data, private windows or a new
               device will lose it. Export regularly.
             </div>
           )}

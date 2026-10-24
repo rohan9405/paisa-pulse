@@ -52,7 +52,7 @@ export function Welcome() {
         <ul className="mt-6 space-y-2 text-sm text-ink-300">
           <li>📊 Daily spending, income and patterns</li>
           <li>📥 Import any bank CSV, with duplicate checks</li>
-          <li>🔒 Your transactions stay on your device. No analytics.</li>
+          <li>🔒 Your transactions stay on your device. Only anonymous usage counts are shared; switch them off in Settings.</li>
         </ul>
       </div>
       <div className="relative mt-10 space-y-3">

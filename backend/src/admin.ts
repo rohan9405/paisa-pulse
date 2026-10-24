@@ -47,7 +47,7 @@ const HELP = {
   rules: "If the merchant or SMS contains the text, it gets this category. Personal rules always win. History is opt-in per rule, limited to 12 months and never touches user edits.",
   merchants: "Text contains → the name shown in the app. Use whole word for short names so “ola” doesn't match “coca cola”.",
   smsParsing: "Where the app finds the merchant name in a bank SMS. Changes apply to new SMS; use Re-read to apply them to past payments.",
-  banks: "Add a bank by its SMS sender ID, the part between the dashes (VM-YESBNK-S). Must contain letters.",
+  banks: "Which SMS senders are banks: the sender ID between the dashes (VM-YESBNK-S). End with * for any letters after (SBI*) or ? for one optional letter (ICICI?). Only these senders' SMS are read.",
   smsIgnore: "One phrase per line. Bank SMS containing any of them are never read as transactions.",
   budget: "Numbers the app uses for salaries, the night brief and weekly insights.",
   features: "Switch a feature off for everyone. Turning app lock off only hides its switch for people who haven't enabled it.",
@@ -82,7 +82,7 @@ function renderChrome() {
   $("draftPill").textContent = changed.length + " unpublished section" + (changed.length === 1 ? "" : "s");
   $("resetBtn").disabled = !saved; $("publishBtn").disabled = !changed.length;
   const item = (s, label) => '<button data-nav="' + s + '" class="' + (section === s ? "on" : "") + '"><span>' + esc(label) + "</span>" + (changed.includes(s) ? '<span class="dot">● unpublished</span>' : "") + "</button>";
-  $("nav").innerHTML = META.sections.map((s) => item(s, META.sectionLabels[s])).join("") + "<hr>" + item("raw", "Raw JSON") + item("history", "Version history");
+  $("nav").innerHTML = META.sections.map((s) => item(s, META.sectionLabels[s])).join("") + "<hr>" + item("usage", "Analytics") + item("raw", "Raw JSON") + item("history", "Version history");
 }
 function go(s) {
   if (dirty && !confirm("You have unsaved edits on this page. Discard them?")) return;
@@ -96,7 +96,7 @@ const VIEWS = {
   rules: (c) => '<p><label><input type="checkbox" class="chk" id="replaceRules"' + (c.replaceBuiltInRules ? " checked" : "") + "> Use only these rules (the app's built-in list is then just the offline fallback)</label></p>" + '<input id="filter" placeholder="Filter rules…" style="margin-bottom:8px"><table id="rules"><tbody><tr><th>Contains</th><th>Category</th><th>Tag</th><th>Kind</th><th>Money</th><th>Priority</th><th>Apply to past 12 months</th><th>History revision</th><th></th></tr>' + c.rules.map(ruleRow).join("") + '</tbody></table><button data-action="add" data-list="rules">+ Rule</button><p class="sub" style="margin-top:14px">Switch off built-in rules, one pattern per line (only matters when the list above isn\\'t replacing them):</p><textarea id="disabledRules">' + esc(c.disabledRules.join("\\n")) + "</textarea>",
   merchants: (c) => '<p><label><input type="checkbox" class="chk" id="replaceMerchants"' + (c.replaceBuiltInMerchants ? " checked" : "") + "> Use only these names (the app's built-in list is then just the offline fallback)</label></p>" + '<input id="filter" placeholder="Filter names…" style="margin-bottom:8px"><table id="merchants"><tbody><tr><th>Contains</th><th>Name</th><th>Whole word</th><th></th></tr>' + c.merchants.map((m) => merchantRow(m)).join("") + '</tbody></table><button data-action="add" data-list="merchants">+ Name</button>',
   smsParsing: (c) => '<label>Merchant name starts after</label><table id="merchantAfter"><tbody><tr><th>Text</th><th>Money</th><th></th></tr>' + c.merchantAfter.map(afterRow).join("") + '</tbody></table><button data-action="add" data-list="merchantAfter">+ Text</button><p></p><label>Merchant name ends at (one per line)</label><textarea id="merchantStops" style="min-height:80px">' + esc(c.merchantStops.join("\\n")) + "</textarea>" + rereadCard(c.smsReread),
-  banks: (c) => '<table id="banks"><tbody><tr><th>Sender ID</th><th>Bank name</th><th></th></tr>' + c.banks.map((b) => bankRow(b)).join("") + '</tbody></table><button data-action="add" data-list="banks">+ Bank</button>',
+  banks: (c) => '<p><label><input type="checkbox" class="chk" id="replaceBanks"' + (c.replaceBuiltInBanks ? " checked" : "") + "> Use only these banks (the app's built-in list is then just the offline fallback)</label></p>" + '<table id="banks"><tbody><tr><th>Sender ID</th><th>Bank name</th><th></th></tr>' + c.banks.map((b) => bankRow(b)).join("") + '</tbody></table><button data-action="add" data-list="banks">+ Bank</button>',
   smsIgnore: (c) => '<textarea id="smsIgnore">' + esc(c.smsIgnore.join("\\n")) + "</textarea>",
   budget: (c) => { const B = { lateSalaryDay: "Salary counts for next month from day", bigCreditRupees: "…if it's at least (₹)", insightMinRupees: "Insight: minimum change (₹)", insightRisePct: "Insight: minimum rise (%)" }; return '<div class="grid">' + Object.keys(B).map((k) => "<div><label>" + B[k] + '</label><input type="number" data-b="' + k + '" value="' + Number(c.budget[k]) + '"></div>').join("") + "</div>"; },
   features: (c) => '<div class="grid">' + Object.keys(c.features).map((k) => '<label class="card" style="margin:0"><input type="checkbox" class="chk" data-f="' + esc(k) + '"' + (c.features[k] ? " checked" : "") + "> " + esc(k) + "</label>").join("") + "</div>",
@@ -128,7 +128,7 @@ const COLLECT = {
   rules: (c) => { c.rules = rows("rules").map((tr) => { const g = (k) => tr.querySelector('[data-k="' + k + '"]').value.trim(); return { contains: g("contains"), category: g("category"), tag: g("tag") || undefined, kind: g("kind") || undefined, direction: g("direction") || undefined, priority: Number(g("priority")), applyToHistory: tr.querySelector('[data-k="applyToHistory"]').checked || undefined, historyRevision: Number(g("historyRevision")) }; }); c.replaceBuiltInRules = $("replaceRules").checked; c.disabledRules = lines("disabledRules"); },
   merchants: (c) => { c.merchants = rows("merchants").map((tr) => ({ contains: tr.querySelector("[data-a]").value.trim(), name: tr.querySelector("[data-b]").value.trim(), word: tr.querySelector("[data-w]").checked || undefined })); c.replaceBuiltInMerchants = $("replaceMerchants").checked; },
   smsParsing: (c) => { c.merchantAfter = rows("merchantAfter").map((tr) => ({ text: tr.querySelector("[data-a]").value, direction: tr.querySelector("[data-d]").value || undefined })).filter((a) => a.text.trim()); c.merchantStops = lines("merchantStops"); c.smsReread = $("rr_on").checked ? { run: Number($("rr_run").value), months: Number($("rr_months").value), names: $("rr_names").checked, categories: $("rr_categories").checked, only: $("rr_only").value, contains: $("rr_contains").value.trim() || undefined } : null; },
-  banks: (c) => { c.banks = rows("banks").map((tr) => ({ sender: tr.querySelector("[data-a]").value.trim(), bank: tr.querySelector("[data-b]").value.trim() })); },
+  banks: (c) => { c.banks = rows("banks").map((tr) => ({ sender: tr.querySelector("[data-a]").value.trim(), bank: tr.querySelector("[data-b]").value.trim() })); c.replaceBuiltInBanks = $("replaceBanks").checked; },
   smsIgnore: (c) => { c.smsIgnore = lines("smsIgnore"); },
   budget: (c) => { document.querySelectorAll("[data-b]").forEach((el) => (c.budget[el.dataset.b] = Number(el.value))); },
   features: (c) => { document.querySelectorAll("[data-f]").forEach((el) => (c.features[el.dataset.f] = el.checked)); },
@@ -139,6 +139,7 @@ const COLLECT = {
 function renderSection() {
   const w = working();
   if (section === "history") return renderHistory();
+  if (section === "usage") return renderUsage();
   if (section === "raw") {
     $("main").innerHTML = '<h2>Raw JSON</h2><p class="sub">The whole working config, saved changes included. Edit and save to replace the draft in one go.</p><textarea id="raw" style="min-height:460px">' + esc(JSON.stringify(w, null, 2)) + '</textarea><div class="foot"><button class="primary" data-action="save">Save</button><button data-action="discard">Discard edits</button><span class="muted" id="dirty"></span></div>';
     return;
@@ -167,6 +168,49 @@ async function publish() {
   const d = await api("POST", "/admin/api/publish", { note: $("note").value });
   if (!d.ok) return msg("Not published:\\n" + (d.errors || []).join("\\n"));
   $("note").value = ""; dirty = false; msg("Published v" + d.version + ". Apps pick it up next time they open.", true); load();
+}
+
+// ---------------------------------------------------------------- analytics
+let usageDays = 7, usageTimer = null;
+const sum = (rows, ev, f) => rows.filter((r) => r.event === ev && (!f || f(r))).reduce((a, r) => a + r.n, 0);
+const fmtDur = (sec) => sec >= 3600 ? (sec / 3600).toFixed(1) + " h" : sec >= 60 ? Math.round(sec / 60) + " min" : Math.round(sec) + " s";
+function bars(points, fmt) {
+  const W = 640, H = 120, max = Math.max(1, ...points.map((p) => p.v)), w = W / Math.max(1, points.length);
+  return '<svg viewBox="0 0 ' + W + " " + (H + 18) + '" style="width:100%;height:auto">' + points.map((p, i) => { const h = Math.round((p.v / max) * H); return '<rect x="' + (i * w + 1) + '" y="' + (H - h) + '" width="' + Math.max(1, w - 2) + '" height="' + Math.max(h, p.v ? 1 : 0) + '" rx="2" fill="#c6ff3d"><title>' + esc(p.label + ": " + fmt(p.v)) + "</title></rect>"; }).join("")
+    + '<text x="0" y="' + (H + 14) + '" fill="#8b8b9e" font-size="11">' + esc(points[0] ? points[0].label : "") + '</text><text x="' + W + '" y="' + (H + 14) + '" fill="#8b8b9e" font-size="11" text-anchor="end">' + esc(points.length ? points[points.length - 1].label : "") + "</text></svg>";
+}
+function tile(label, value, hint) { return '<div class="card" style="margin:0"><div class="muted" style="font-size:12px">' + esc(label) + '</div><div style="font-size:24px;font-weight:700">' + esc(value) + "</div>" + (hint ? '<div class="muted" style="font-size:12px">' + esc(hint) + "</div>" : "") + "</div>"; }
+function breakdown(title, rows, ev, base) {
+  const by = {};
+  rows.filter((r) => r.event === ev).forEach((r) => (by[r.dim] = (by[r.dim] || 0) + r.n));
+  const list = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  return '<div class="card"><b>' + esc(title) + "</b><table>" + (list.length ? list.map(([k, n]) => "<tr><td>" + esc(k || "–") + '</td><td style="text-align:right">' + n + (base ? ' <span class="muted">(' + Math.round((n / base) * 100) + "%)</span>" : "") + "</td></tr>").join("") : '<tr><td class="muted">No data yet</td></tr>') + "</table></div>";
+}
+async function renderUsage() {
+  clearInterval(usageTimer);
+  $("main").innerHTML = '<h2>Analytics</h2><p class="sub">Anonymous, aggregate counts only: no IDs, IPs or personal data are stored. People can switch it off in Settings; Features → analytics switches it off for everyone.</p><div id="usage" class="muted">Loading…</div>';
+  const d = await api("GET", "/admin/api/usage?days=" + usageDays);
+  if (section !== "usage") return;
+  if (d.errors) return ($("usage").innerHTML = '<p class="msg err">' + esc(d.errors.join(" ")) + "</p>");
+  const rows = d.rows, buckets = [...new Set(rows.map((r) => r.day))].sort();
+  const series = (ev, f) => buckets.map((b) => ({ label: usageDays <= 1 ? b.slice(11) + ":00" : b.slice(5), v: f ? f(rows.filter((r) => r.day === b)) : sum(rows.filter((r) => r.day === b), ev) }));
+  const sessions = sum(rows, "session"), seconds = rows.filter((r) => r.event === "session").reduce((a, r) => a + r.total, 0);
+  const lastDay = buckets.length ? buckets[buckets.length - 1] : null;
+  const dau = usageDays <= 1 ? sum(rows, "active_day") : lastDay ? sum(rows.filter((r) => r.day === lastDay), "active_day") : 0;
+  const activeDays = sum(rows, "active_day");
+  const live = {}; d.live.forEach((m) => (live[m.minute] = m.n));
+  const liveSeries = Array.from({ length: 60 }, (_, i) => { const m = d.now - 59 + i; return { label: new Date(m * 60000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), v: live[m] || 0 }; });
+  const dl = d.downloads.reduce((a, r) => a + r.count, 0);
+  const range = [[1, "24 hours"], [7, "7 days"], [30, "30 days"], [90, "90 days"], [365, "1 year"]].map(([n, l]) => '<button data-action="usage-range" data-days="' + n + '"' + (n === usageDays ? ' class="primary"' : "") + ">" + l + "</button>").join(" ");
+  $("usage").innerHTML = '<p>' + range + '</p>'
+    + '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><b>Real time</b><span class="muted" style="font-size:12px">refreshes every 15 s</span></div><div style="font-size:28px;font-weight:700">' + (live[d.now - 1] || live[d.now] || 0) + ' <span class="muted" style="font-size:14px;font-weight:400">active in the last minute</span></div>' + bars(liveSeries, (v) => v + " active") + "</div>"
+    + '<div class="grid">' + tile("Installs", sum(rows, "install"), "all time " + (d.allTime.install || 0)) + tile(usageDays <= 1 ? "Users today" : "Users on " + (lastDay || "–"), dau) + tile("Users this week", d.weekUsers) + tile("Users this month", d.monthUsers)
+    + tile("Sessions", sessions) + tile("Avg. session", sessions ? fmtDur(seconds / sessions) : "–") + tile("Time spent", fmtDur(seconds)) + tile("Config downloads", sum(rows, "config"), "all time " + (d.allTime.config || 0)) + tile("GitHub downloads", dl, d.downloads.length + " releases") + "</div>"
+    + '<div class="card"><b>Daily users</b>' + bars(series("active_day"), (v) => v + " users") + '</div><div class="card"><b>Installs</b>' + bars(series("install"), (v) => v + " installs") + '</div><div class="card"><b>Sessions</b>' + bars(series("session"), (v) => v + " sessions")
+    + '</div><div class="card"><b>Average session</b>' + bars(series(null, (rs) => { const s = rs.filter((r) => r.event === "session"); const n = s.reduce((a, r) => a + r.n, 0); return n ? s.reduce((a, r) => a + r.total, 0) / n : 0; }), fmtDur) + '</div><div class="card"><b>Traffic: config downloads</b>' + bars(series("config"), (v) => v + " requests") + "</div>"
+    + '<div class="grid">' + breakdown("Screens", rows, "screen") + breakdown("App versions (daily users)", rows, "active_day") + breakdown("Features (share of daily users)", rows, "feature", activeDays) + breakdown("Platforms (installs)", rows, "install") + "</div>"
+    + '<div class="card"><b>GitHub release downloads</b><table>' + d.downloads.map((r) => "<tr><td>" + esc(r.tag) + '</td><td class="muted">' + esc(new Date(r.at).toLocaleDateString()) + '</td><td style="text-align:right">' + r.count + "</td></tr>").join("") + '</table><p class="sub">Google Play installs appear under Installs once the Play build is live; Play Console has store-side numbers.</p></div>';
+  usageTimer = setInterval(() => { if (section === "usage" && !document.hidden) renderUsage(); else clearInterval(usageTimer); }, 15000);
 }
 
 // ---------------------------------------------------------------- history
@@ -198,6 +242,7 @@ document.addEventListener("click", (e) => {
   if (a === "reset") return reset();
   if (a === "publish") return publish();
   if (a === "view") return view(b.dataset.v);
+  if (a === "usage-range") { usageDays = Number(b.dataset.days); return renderUsage(); }
   if (a === "revert") return revert(b.dataset.v);
   if (a === "remove") { b.closest("tr").remove(); return markDirty(); }
   if (a === "move") {

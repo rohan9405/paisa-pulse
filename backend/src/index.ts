@@ -9,6 +9,8 @@
  *   POST   /admin/api/publish       { note } → draft becomes the next version, signed here
  *   POST   /admin/api/revert        { version, note } → that version republished as the next version
  *   GET    /admin/api/version/:n    one version's config
+ *   POST   /e                       anonymous usage events from apps → hourly counts only (usage.ts)
+ *   GET    /admin/api/usage?days=n  usage dashboard data, live counts, GitHub downloads
  *
  * Apps only accept configs signed with the key whose public half is built into
  * them. The Worker signs on publish with that key (SIGNING_KEY secret), so the
@@ -21,11 +23,23 @@ import { CONFIG_PUBLIC_KEY } from "../../src/lib/configKey";
 import { MAX_CONFIG_BYTES, bytesToBase64url, verifyEnvelope } from "../../src/lib/configSignature";
 import { ALLOWED_LINK_PREFIXES, DEFAULT_CONFIG, type RemoteConfig, SCREEN_IDS, TAB_IDS, parseRemoteConfig } from "../../src/lib/remoteConfig";
 import { adminPage } from "./admin";
+import { count, downloads, prune, receive, report } from "./usage";
 
 export interface Env {
   CONFIG: KVNamespace;
   ADMIN_PASSWORD?: string;
   SIGNING_KEY?: string;
+  /** Anonymous usage counters (D1). Optional: without it, usage is simply not counted. */
+  USAGE?: D1Database;
+}
+
+const REPO = "rohan9405/paisa-pulse";
+
+/** The published config's analytics switch, re-read at most once a minute. */
+let analyticsOn: { value: boolean; at: number } | null = null;
+async function analyticsEnabled(env: Env): Promise<boolean> {
+  if (!analyticsOn || Date.now() - analyticsOn.at > 60_000) analyticsOn = { value: (await published(env)).features.analytics, at: Date.now() };
+  return analyticsOn.value;
 }
 
 interface HistoryItem {
@@ -136,11 +150,15 @@ function sameOrigin(req: Request, url: URL): boolean {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
+
+    if (url.pathname === "/e") return receive(req, env.USAGE, await analyticsEnabled(env));
 
     if (url.pathname === "/config.json") {
       if (req.method !== "GET") return new Response("Method not allowed", { status: 405 });
+      // Traffic: one counter per config download. Nothing about the caller is kept.
+      if (env.USAGE) ctx.waitUntil(count(env.USAGE, [{ e: "config" }]).catch(() => {}));
       const envelope = await env.CONFIG.get("current");
       if (!envelope) return new Response("No config published", { status: 404, headers: { "access-control-allow-origin": "*" } });
       return new Response(envelope, { headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=60", "x-content-type-options": "nosniff" } });
@@ -161,6 +179,12 @@ export default {
     }
     if (url.pathname === "/admin/api/state" && req.method === "GET") {
       return json({ published: await published(env), draft: await draft(env), history: await history(env), canPublish: !!(await signer(env)) }, 200, H);
+    }
+    if (url.pathname === "/admin/api/usage" && req.method === "GET") {
+      if (!env.USAGE) return json({ errors: ["Usage counting is off: the USAGE (D1) binding isn't set."] }, 503, H);
+      const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 7));
+      ctx.waitUntil(prune(env.USAGE).catch(() => {}));
+      return json({ ...(await report(env.USAGE, days)), downloads: await downloads(REPO).catch(() => []) }, 200, H);
     }
     const one = url.pathname.match(/^\/admin\/api\/version\/(\d{1,9})$/);
     if (one && req.method === "GET") {

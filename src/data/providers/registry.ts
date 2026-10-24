@@ -29,7 +29,7 @@ export const PROVIDERS: ProviderDescriptor[] = [
     id: "sms",
     name: "Bank SMS",
     kind: "sms",
-    description: "Reads HDFC, ICICI, SBI, Axis and Kotak transaction alerts from your SMS inbox, on this phone. Android app only.",
+    description: "Reads bank transaction alerts from your SMS inbox, on this phone. Android app only.",
     automatic: true,
     available: true,
   },

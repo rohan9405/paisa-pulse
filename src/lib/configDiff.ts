@@ -28,7 +28,7 @@ export const SECTION_FIELDS: Record<Section, (keyof RemoteConfig)[]> = {
   rules: ["rules", "disabledRules", "replaceBuiltInRules"],
   merchants: ["merchants", "replaceBuiltInMerchants"],
   smsParsing: ["merchantAfter", "merchantStops", "smsReread"],
-  banks: ["banks"],
+  banks: ["banks", "replaceBuiltInBanks"],
   smsIgnore: ["smsIgnore"],
   budget: ["budget"],
   features: ["features"],
@@ -102,7 +102,7 @@ export function describeChanges(a: RemoteConfig, b: RemoteConfig): string[] {
         break;
       }
       case "banks":
-        out.push(`${label}: ${listDiff(a.banks, b.banks, (x) => x.sender, "senders")}`);
+        out.push(`${label}: ${[!same(a.banks, b.banks) && listDiff(a.banks, b.banks, (x) => x.sender, "senders"), a.replaceBuiltInBanks !== b.replaceBuiltInBanks && (b.replaceBuiltInBanks ? "now replaces built-ins" : "built-ins back on")].filter(Boolean).join("; ")}`);
         break;
       case "smsIgnore":
         out.push(`${label}: ${listDiff(a.smsIgnore, b.smsIgnore, (x) => x, "phrases")}`);

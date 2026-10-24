@@ -17,7 +17,8 @@ A Cloudflare Worker that serves drip's **remote config**: global settings you ca
 - **Bank SMS senders:** add a bank by its sender ID (e.g. `YESBNK`).
 - **Ignore phrases:** SMS containing them are never read as transactions.
 - **Budget and insights:** late-salary day and amount, insight thresholds.
-- **Features:** switch balances, app lock, CSV import, insights, badges or haptics off for everyone.
+- **Features:** switch balances, app lock, CSV import, insights, badges, haptics or anonymous usage stats (`analytics`) off for everyone.
+- **Analytics** (editor page, read-only): anonymous, aggregate usage: real-time active users, installs, daily / weekly / monthly users, sessions and time spent, screens, app versions, features in use, config downloads (traffic) and GitHub release downloads, over 24 hours to a year. See "Anonymous usage" below.
 - **Announcement banner** on Today, and a **new version notice** with a download link.
 
 How it reaches phones: the app downloads the config when it opens and when it comes back to the foreground, checks every field (anything invalid falls back to the built-in default), and keeps the last good copy for offline use. Config updates never reread the SMS inbox. Rules affect future imports by default. Each rule can explicitly opt into historical updates within twelve months; a history revision can request another pass. Jobs operate on stored transactions, never user edits or matching personal rules, and are not repeated for unrelated config updates. Personal rules always outrank global rules and are never removed by publishing. These controls require the updated client; older clients must be upgraded. Publishing runs the **same validation as the app**, so you can't publish something the app would ignore.
@@ -48,6 +49,18 @@ npx wrangler secret put ADMIN_PASSWORD
 npx wrangler deploy
 ```
 
+Usage counters (optional; without them the app's events are simply dropped):
+
+```bash
+npx wrangler d1 create drip-usage
+```
+
+Put the printed `database_id` into `wrangler.toml` (`[[d1_databases]]`), then create the tables:
+
+```bash
+npx wrangler d1 execute drip-usage --remote --file usage.sql
+```
+
 Then add the config URL to `android/local.json` as `"config_url": "https://drip-config.<your-subdomain>.workers.dev/config.json"` and rebuild the app (`python3 android/build.py`). The URL is baked into the APK; the WebView blocks every other outside address.
 
 ## Publishing
@@ -62,3 +75,7 @@ The signing key (`~/.drip-private/config-signing-key.jwk`, made once with `node 
 ## Local development
 
 Create `backend/.dev.vars` (git-ignored) with a throwaway local `ADMIN_PASSWORD=…` (20+ characters), then `npm run dev`. Delete it when done.
+
+## Anonymous usage
+
+Apps POST fixed events to `/e` (list and validation: `src/lib/usageEvents.ts`): install, active day / week / month with the app version, session length, screen name, a once-a-minute ping while open, and feature flags. No IDs or free text exist in the format. The Worker adds them to hourly counters in D1 (`backend/usage.sql`) and keeps no request, IP or device data; per-minute live counters are pruned after two days and hourly counters after 400 days. People opt out in Settings → App; the `analytics` feature switches it off for everyone (the Worker then drops events too). Unique users are counted without IDs: each phone sends "active today / this week / this month" at most once per period.
