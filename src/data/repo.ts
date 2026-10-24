@@ -11,7 +11,7 @@ import type { ParsedMandate } from "@/lib/sms";
 import type { AppMode, SetAsideMode, BudgetPlan, CategoryRule, Commitment, ImportBatch, Prefs, Profile, Recurring, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 import { type FinanceDB, uid } from "./db";
-import { applyRemoteHistory } from "./remoteRules";
+import { applyRemoteHistory, applySmsReread } from "./remoteRules";
 import { generateDemoData } from "./providers/demo";
 
 /** Keeps the built-in rules in step with this version of the app; your own rules are untouched. */
@@ -28,6 +28,7 @@ export async function ensureRules(db: FinanceDB) {
     await db.rules.bulkPut(fresh);
   });
   await applyRemoteHistory(db);
+  await applySmsReread(db);
 }
 
 export async function ensureConnections(db: FinanceDB, mode: AppMode) {
@@ -141,8 +142,7 @@ export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<T
 }
 
 export async function updateTxn(db: FinanceDB, id: string, patch: Partial<Transaction>) {
-  const cleaned: Partial<Transaction> = { ...patch, userEdited: true, updatedAt: Date.now() };
-  if (patch.kind && patch.kind !== "commitment") cleaned.commitmentId = undefined;
+  const cleaned: Partial<Transaction> = { ...patch, userEdited: true, updatedAt: Date.now() };  if (patch.kind && patch.kind !== "commitment") cleaned.commitmentId = undefined;
   if (patch.kind && patch.kind !== "refund") cleaned.refundOf = undefined;
   if (patch.refundOf) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });
   if (patch.kind === "commitment" && patch.commitmentId) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });

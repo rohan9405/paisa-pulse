@@ -37,10 +37,12 @@ describe("version history summaries", () => {
     expect(describeChanges(a, b)).toEqual(["Merchant names: 1 added, 1 removed, 1 edited"]);
   });
 
-  it("reports merchant markers under merchant names", () => {
+  it("reports SMS parsing changes in their own section", () => {
     const b = base();
-    b.merchantMarkers = ["VPS*"];
-    expect(changedSections(base(), b)).toEqual(["merchants"]);
-    expect(describeChanges(base(), b)).toEqual(["Merchant names: markers 1 added"]);
+    b.merchantAfter = [{ text: "VIN*", direction: "out" }];
+    b.merchantStops = ["id"];
+    b.smsReread = { run: 1, months: 3, names: true, categories: false, only: "unnamed" };
+    expect(changedSections(base(), b)).toEqual(["smsParsing"]);
+    expect(describeChanges(base(), b)).toEqual(["SMS parsing: name starts after: 1 added; name ends at: 1 added; re-read run 1: names, last 3 months, unnamed payments"]);
   });
 });

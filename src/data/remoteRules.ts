@@ -2,6 +2,7 @@ import { categorize, outflowKind } from "@/lib/categorize";
 import { taggingCutoff } from "@/lib/recipients";
 import { toISTKey } from "@/lib/dates";
 import { getConfig } from "@/lib/remoteConfig";
+import { merchantFromSms } from "@/lib/sms";
 import type { Transaction } from "@/lib/types";
 import type { FinanceDB } from "./db";
 
@@ -48,6 +49,46 @@ export async function applyRemoteHistory(db: FinanceDB): Promise<number> {
       if (changes.length) await db.txns.bulkPut(changes);
     }
     await db.connections.put({ ...conn, providerId: "remote-rules", status: "connected", ruleHistory: next });
+    return changes.length;
+  });
+}
+
+/** Name the parser gives when an SMS has no readable merchant ("ICICI debit", "ATM cash"). */
+const FALLBACK_NAME = /^(\S+ (debit|credit)|ATM cash)$/i;
+
+/**
+ * The config's explicit SMS re-read: re-parses stored SMS text (never the inbox)
+ * for the chosen period and payments, once per run number. Transactions the user
+ * edited, linked payments, holds and UPI Lite top-ups are never changed.
+ */
+export async function applySmsReread(db: FinanceDB): Promise<number> {
+  const job = getConfig().smsReread;
+  const conn = await db.connections.get("remote-rules");
+  if (!job || job.run <= (conn?.smsRereadRun ?? 0)) return 0;
+  return db.transaction("rw", [db.txns, db.rules, db.connections], async () => {
+    const today = toISTKey();
+    const from = toISTKey(Date.now() - job.months * 30.44 * 86_400_000);
+    const contains = job.contains?.toLowerCase();
+    const rules = job.categories ? await db.rules.toArray() : [];
+    const changes: Transaction[] = [];
+    for (const t of await db.txns.where("date").between(from, today, true, true).toArray()) {
+      const raw = t.source.raw;
+      if (t.source.providerId !== "sms" || !raw || isUserEdited(t) || t.commitmentId || t.holdId || t.tag === "UPI Lite") continue;
+      if (job.only === "unnamed" && !FALLBACK_NAME.test(t.merchant)) continue;
+      if (contains && !raw.toLowerCase().includes(contains)) continue;
+      const direction = t.kind === "income" || t.kind === "refund" ? "in" : "out";
+      const next = { ...t };
+      if (job.names) next.merchant = merchantFromSms(raw, direction) ?? t.merchant;
+      if (job.categories && t.kind !== "refund" && t.kind !== "transfer") {
+        const c = categorize(`${next.merchant} ${raw}`, rules, t.payee, { merchant: next.merchant, direction });
+        const kind = c && (direction === "in" ? "income" : c.kind === "transfer" ? "transfer" : outflowKind(c.category));
+        if (c && kind && !(direction === "out" && ["Income", "Refunds"].includes(c.category)) && !(direction === "in" && c.category !== "Income")) Object.assign(next, { category: c.category, tag: c.tag, kind });
+      }
+      if (next.merchant !== t.merchant || next.category !== t.category || next.tag !== t.tag || next.kind !== t.kind) changes.push(next);
+    }
+    if (changes.length) await db.txns.bulkPut(changes);
+    const latest = await db.connections.get("remote-rules");
+    await db.connections.put({ ...latest, providerId: "remote-rules", status: "connected", smsRereadRun: job.run });
     return changes.length;
   });
 }

@@ -54,8 +54,26 @@ export interface RemoteConfig {
   merchants: { contains: string; name: string; word?: boolean }[];
   /** True: `merchants` is the complete list and the app's built-in names are not used. */
   replaceBuiltInMerchants: boolean;
-  /** Text that comes right before the merchant name in a debit SMS (e.g. "VIN*"). Plain text, not a pattern. Config only: the app has none built in. */
-  merchantMarkers: string[];
+  /** SMS parsing: plain text the merchant name comes right after, for money out, in, or both. Tried before the app's generic "at / to / from". */
+  merchantAfter: { text: string; direction?: "in" | "out" }[];
+  /** SMS parsing: extra words or characters that end a merchant name (the app already stops at "on", "bal", "." …). */
+  merchantStops: string[];
+  /**
+   * Re-read stored SMS text (never the inbox) with the current parsing, names and
+   * rules. Off when null. Runs once per `run` number; transactions the user edited
+   * are never changed.
+   */
+  smsReread: {
+    run: number;
+    /** How far back from today, 1–12 months. */
+    months: number;
+    names: boolean;
+    categories: boolean;
+    /** "unnamed": only payments where no merchant was found ("ICICI debit"). */
+    only: "all" | "unnamed";
+    /** Only SMS whose text contains this. */
+    contains?: string;
+  } | null;
   /** More bank SMS senders: sender ID core (e.g. "YESBNK") → bank name. */
   banks: { sender: string; bank: string }[];
   /** Extra phrases that mean "not a transaction" (offers, OTPs…). */
@@ -102,7 +120,9 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   replaceBuiltInRules: false,
   merchants: [],
   replaceBuiltInMerchants: false,
-  merchantMarkers: [],
+  merchantAfter: [],
+  merchantStops: [],
+  smsReread: null,
   banks: [],
   smsIgnore: [],
   budget: { lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
@@ -211,12 +231,24 @@ export function parseRemoteConfig(input: unknown): ParseResult {
 
   c.replaceBuiltInMerchants = input.replaceBuiltInMerchants === true && c.merchants.length > 0;
 
-  if (Array.isArray(input.merchantMarkers)) {
-    for (const m of input.merchantMarkers.slice(0, 50)) {
-      const marker = str(m, 20, 2);
-      if (marker && !c.merchantMarkers.some((x) => x.toLowerCase() === marker.toLowerCase())) c.merchantMarkers.push(marker);
-    }
+  // Config v5 called these "merchantMarkers" (money out only).
+  const after = Array.isArray(input.merchantAfter) ? input.merchantAfter : Array.isArray(input.merchantMarkers) ? input.merchantMarkers.map((text) => ({ text, direction: "out" })) : [];
+  for (const a of after.slice(0, 100)) {
+    if (!isObj(a)) continue;
+    const text = typeof a.text === "string" && a.text.trim().length >= 2 && a.text.length <= 30 ? a.text.replace(/^\s+/, "") : undefined;
+    const direction = a.direction === "in" || a.direction === "out" ? a.direction : undefined;
+    if (!text) errors.push(`merchantAfter: "${String(a.text)}" needs 2–30 characters`);
+    else if (!c.merchantAfter.some((x) => x.text.toLowerCase() === text.toLowerCase() && x.direction === direction)) c.merchantAfter.push(direction ? { text, direction } : { text });
   }
+  if (isObj(input.smsReread)) {
+    const r = input.smsReread;
+    const run = int(r.run, 1, 1e9);
+    const names = r.names === true;
+    const categories = r.categories === true;
+    if (run && (names || categories)) c.smsReread = { run, months: int(r.months, 1, 12) ?? 1, names, categories, only: r.only === "unnamed" ? "unnamed" : "all", ...(str(r.contains, 60) ? { contains: str(r.contains, 60) } : {}) };
+    else errors.push("smsReread: needs a run number of 1 or more and names and/or categories");
+  }
+  if (Array.isArray(input.merchantStops)) c.merchantStops = [...new Set(input.merchantStops.map((p) => str(p, 20)).filter((p): p is string => !!p).map((p) => p.toLowerCase()))].slice(0, 100);
 
   if (Array.isArray(input.banks)) {
     for (const b of input.banks.slice(0, 100)) {

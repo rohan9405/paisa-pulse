@@ -4,7 +4,7 @@
  */
 import type { RemoteConfig } from "./remoteConfig";
 
-export const SECTIONS = ["tabs", "screens", "rules", "merchants", "banks", "smsIgnore", "budget", "features", "announcement", "update"] as const;
+export const SECTIONS = ["tabs", "screens", "rules", "merchants", "smsParsing", "banks", "smsIgnore", "budget", "features", "announcement", "update"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 export const SECTION_LABEL: Record<Section, string> = {
@@ -12,6 +12,7 @@ export const SECTION_LABEL: Record<Section, string> = {
   screens: "Screen text",
   rules: "Rules",
   merchants: "Merchant names",
+  smsParsing: "SMS parsing",
   banks: "Bank senders",
   smsIgnore: "Ignore phrases",
   budget: "Budget and insights",
@@ -25,7 +26,8 @@ export const SECTION_FIELDS: Record<Section, (keyof RemoteConfig)[]> = {
   tabs: ["tabs", "primaryAction"],
   screens: ["screens"],
   rules: ["rules", "disabledRules", "replaceBuiltInRules"],
-  merchants: ["merchants", "replaceBuiltInMerchants", "merchantMarkers"],
+  merchants: ["merchants", "replaceBuiltInMerchants"],
+  smsParsing: ["merchantAfter", "merchantStops", "smsReread"],
   banks: ["banks"],
   smsIgnore: ["smsIgnore"],
   budget: ["budget"],
@@ -87,7 +89,15 @@ export function describeChanges(a: RemoteConfig, b: RemoteConfig): string[] {
         const bits: string[] = [];
         if (!same(a.merchants, b.merchants)) bits.push(listDiff(a.merchants, b.merchants, (m) => m.contains, "names"));
         if (a.replaceBuiltInMerchants !== b.replaceBuiltInMerchants) bits.push(b.replaceBuiltInMerchants ? "now replaces built-ins" : "built-ins back on");
-        if (!same(a.merchantMarkers, b.merchantMarkers)) bits.push(`markers ${listDiff(a.merchantMarkers, b.merchantMarkers, (x) => x, "reordered")}`);
+        out.push(`${label}: ${bits.join("; ")}`);
+        break;
+      }
+      case "smsParsing": {
+        const bits: string[] = [];
+        if (!same(a.merchantAfter, b.merchantAfter)) bits.push(`name starts after: ${listDiff(a.merchantAfter, b.merchantAfter, (x) => `${x.text}|${x.direction ?? ""}`, "reordered")}`);
+        if (!same(a.merchantStops, b.merchantStops)) bits.push(`name ends at: ${listDiff(a.merchantStops, b.merchantStops, (x) => x, "reordered")}`);
+        const r = b.smsReread;
+        if (!same(a.smsReread, r)) bits.push(!r ? "re-read off" : `re-read run ${r.run}: ${[r.names && "names", r.categories && "categories"].filter(Boolean).join(" + ")}, last ${r.months} month${r.months === 1 ? "" : "s"}, ${r.only === "unnamed" ? "unnamed payments" : "all automatic payments"}${r.contains ? ` containing “${r.contains}”` : ""}`);
         out.push(`${label}: ${bits.join("; ")}`);
         break;
       }

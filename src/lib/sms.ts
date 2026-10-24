@@ -173,25 +173,36 @@ function findMethod(body: string, isCard: boolean): PaymentMethod {
   return detectMethod(body);
 }
 
-/** Text right before the merchant name in some debit SMS ("on 20-Oct-26 VIN*NETFLIX"). Owned by the remote config; none built in. */
-const merchantMarkers = () => getConfig().merchantMarkers;
-
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const STOP = String.raw`(?=\s+(?:on|via|using|thru|through|towards|ref|refno|upi|txn|avl|avbl|bal|from|for|info|not|if|call|dated|at)\b|[.;,(]|\s*-\s*[A-Z]|$)`;
+/** Where a merchant name ends; the remote config can add words. */
+function stopPattern(): string {
+  const words = ["on", "via", "using", "thru", "through", "towards", "ref", "refno", "upi", "txn", "avl", "avbl", "bal", "from", "for", "info", "not", "if", "call", "dated", "at"];
+  const extra = getConfig().merchantStops.map(escapeRegExp);
+  return String.raw`(?=\s+(?:${[...words, ...extra.filter((w) => /^\w/.test(w))].join("|")})\b|[.;,(]|\s*-\s*[A-Z]|$${extra.filter((w) => !/^\w/.test(w)).map((w) => `|\\s*${w}`).join("")})`;
+}
+
+/** Remote-config phrases the merchant name comes right after ("VIN*", "paid to"). */
+function configuredAfter(direction: "out" | "in", STOP: string): RegExp[] {
+  return getConfig().merchantAfter
+    .filter((a) => !a.direction || a.direction === direction)
+    .map((a) => new RegExp(String.raw`${escapeRegExp(a.text)}\s*([A-Za-z0-9@][\w&.@' *\-]{0,50}?)${STOP}`, "i"));
+}
 
 function findCounterparty(body: string, direction: "out" | "in"): string | undefined {
+  const STOP = stopPattern();
   const tries: RegExp[] =
     direction === "out"
       ? [
           /;\s*([^;.]+?)\s+credited\b/i, // ICICI
           new RegExp(String.raw`\bon\s+\d{1,2}[-\/ ]?[a-z0-9]{2,3}[-\/ ]?\d{2,4}\s+(?:on|at)\s+([A-Za-z0-9][\w&.' *\-]{1,50}?)${STOP}`, "i"), // ICICI card: "on 20-Oct-26 on UBER"
-          ...merchantMarkers().map((m) => new RegExp(String.raw`${escapeRegExp(m)}\s*([A-Za-z0-9][\w&.' *\-]{1,50}?)${STOP}`, "i")),
+          ...configuredAfter("out", STOP),
           new RegExp(String.raw`\bto\s+vpa\s+([\w.\-]+@[\w]+)`, "i"),
           new RegExp(String.raw`\b(?:at|to|towards|trf to|transfer to)\s+([A-Za-z0-9@][\w&.@' *\-]{1,50}?)${STOP}`, "i"),
           /\binfo[:\s-]+([^.]+)/i,
         ]
       : [
+          ...configuredAfter("in", STOP),
           new RegExp(String.raw`\bvpa\s+([\w.\-]+@[\w]+)`, "i"),
           new RegExp(String.raw`\b(?:from|by)\s+([A-Za-z@][\w&.@' *\-]{1,50}?)${STOP}`, "i"),
           /\binfo[:\s-]+([^.]+)/i,
@@ -205,6 +216,11 @@ function findCounterparty(body: string, direction: "out" | "in"): string | undef
     if (name) return name;
   }
   return undefined;
+}
+
+/** The merchant name in a stored SMS body under the current config, or undefined if none is found. */
+export function merchantFromSms(body: string, direction: "out" | "in"): string | undefined {
+  return findCounterparty(body.replace(/\s+/g, " ").trim(), direction);
 }
 
 /** First UPI ID in the message ("ramesh.k@okaxis"); email addresses don't count. */
@@ -321,6 +337,7 @@ export function parseMandate(sms: Pick<RawSms, "address" | "body" | "date">): Pa
   const frequency: ParsedMandate["frequency"] = !freq || freq === "as presented" ? "unknown" : /one|once/.test(freq) ? "once" : freq.startsWith("daily") ? "daily" : freq.startsWith("week") ? "weekly" : freq.startsWith("quarter") ? "quarterly" : freq.startsWith("half") ? "half-yearly" : /year|annual/.test(freq) ? "yearly" : "monthly";
   // Most specific wording first; "for Rs 649" or "to your a/c" aren't names.
   let name: string | undefined;
+  const STOP = stopPattern();
   for (const kw of ["towards", "in favou?r of", "for merchant", "payee", "for", "to"]) {
     for (const m of body.matchAll(new RegExp(String.raw`\b(?:${kw})\s*:?\s+([A-Za-z][\w&.' \-]{1,40}?)${STOP}`, "gi"))) {
       if (/^(rs|inr|your|a\/c|account|upi|the|mandate|auto ?pay|frequency|amount|max)\b/i.test(m[1])) continue;

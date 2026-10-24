@@ -140,8 +140,7 @@ export interface Transaction {
   createdAt: number;
   updatedAt: number;
   /** Explicit user edits are never overwritten by automatic processing. */
-  userEdited?: boolean;
-  holdId?: string;
+  userEdited?: boolean;  holdId?: string;
 }
 
 export interface CategoryRule {
@@ -182,6 +181,8 @@ export interface ProviderConnection {
   configVersion?: number;
   /** Completed opt-in per-rule history jobs, keyed by rule identity. */
   ruleHistory?: Record<string, string>;
+  /** Last remote `smsReread.run` done on this device. */
+  smsRereadRun?: number;
   /** Explicit device setting requests a balance-only inbox rescan. */
   balancesRescan?: boolean;
   /** SMS: fingerprints of imported transactions you deleted, so a re-read never brings them back. */

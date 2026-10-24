@@ -74,25 +74,34 @@ describe("ICICI", () => {
   });
 });
 
-describe("ICICI debit card, merchant markers from the config", () => {
+describe("merchant names from the config's SMS parsing", () => {
   afterEach(() => setConfig(DEFAULT_CONFIG));
   const google = "Rs. 1,250.00 debited from ICICI Bank Acc XX567 on 21-Oct-26 VIN*Google Pl. Bal Rs. 10,000.00. If not you call 18002662 or SMS BLOCK 567 to 9215676766";
 
-  it("has no built-in markers: without config the bank name is used", () => {
+  it("has nothing built in: without config the bank name is used", () => {
     expect(smsToCandidate(sms("JD-ICICIT-S", google), rules)!.merchant).toBe("ICICI debit");
   });
 
-  it("reads the merchant after a configured marker, and the config names it", () => {
-    setConfig(parseRemoteConfig({ version: 5, merchantMarkers: ["VIN*"], merchants: [{ contains: "googlepl", name: "Google Play" }] }).config);
+  it("reads the name after configured text, per direction, and the config names it", () => {
+    setConfig(parseRemoteConfig({ version: 6, merchantAfter: [{ text: "VIN*", direction: "out" }, { text: "Remitter:", direction: "in" }], merchants: [{ contains: "googlepl", name: "Google Play" }] }).config);
     const c = smsToCandidate(sms("JD-ICICIT-S", google), rules)!;
     expect(c.merchant).toBe("Google Play");
     expect(c.amountPaise).toBe(1_250_00);
-    const d = smsToCandidate(sms("JD-ICICIT-S", "Rs. 199.00 debited from ICICI Bank Acc XX567 on 21-Oct-26 vin*NETFLIX COM. Bal Rs. 9,801.00."), rules)!;
-    expect(d.merchant).toBe("Netflix");
+    expect(smsToCandidate(sms("JD-ICICIT-S", "Rs. 199.00 debited from ICICI Bank Acc XX567 on 21-Oct-26 vin*NETFLIX COM. Bal Rs. 9,801.00."), rules)!.merchant).toBe("Netflix");
+    expect(smsToCandidate(sms("VM-HDFCBK", "Rs. 900.00 credited to HDFC Bank A/c XX1234. Remitter: Asha Rao. Ref 123456789"), rules)!.merchant).toBe("Asha Rao");
   });
 
-  it("drops invalid and duplicate markers", () => {
-    expect(parseRemoteConfig({ version: 5, merchantMarkers: ["VIN*", "vin*", "x", 3, "  "] }).config.merchantMarkers).toEqual(["VIN*"]);
+  it("ends a name at configured words", () => {
+    const body = "Rs. 300.00 debited from ICICI Bank Acc XX567 on 21-Oct-26 VIN*TEA STALL BLR ID 99. Bal Rs. 700.00.";
+    setConfig(parseRemoteConfig({ version: 6, merchantAfter: [{ text: "VIN*" }] }).config);
+    expect(smsToCandidate(sms("JD-ICICIT-S", body), rules)!.merchant).toBe("Tea Stall Blr Id 99");
+    setConfig(parseRemoteConfig({ version: 6, merchantAfter: [{ text: "VIN*" }], merchantStops: ["BLR"] }).config);
+    expect(smsToCandidate(sms("JD-ICICIT-S", body), rules)!.merchant).toBe("Tea Stall");
+  });
+
+  it("validates entries and still reads v5's merchantMarkers", () => {
+    const { config } = parseRemoteConfig({ version: 5, merchantMarkers: ["VIN*", "vin*", "x"] });
+    expect(config.merchantAfter).toEqual([{ text: "VIN*", direction: "out" }]);
   });
 });
 

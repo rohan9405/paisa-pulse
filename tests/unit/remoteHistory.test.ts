@@ -52,10 +52,39 @@ describe("remote classification boundaries", () => {
     expect(await db.rules.get("mine")).toBeDefined();
   });
 
+  it("re-reads stored SMS only when the config asks, for its period and payments, never user edits", async () => {
+    const body = (m: string) => `Rs. 100.00 debited from ICICI Bank Acc XX567 on 01-Oct-26 VIN*${m}. Bal Rs. 900.00.`;
+    const sms = (id: string, m: string, extra = {}) => row(id, { merchant: "ICICI debit", source: { providerId: "sms", importedAt: 1, raw: body(m) }, ...extra });
+    await db.txns.bulkAdd([sms("auto", "Google Pl"), sms("named", "Netflix", { merchant: "Old Name" }), sms("edited", "Google Pl"), sms("legacyEdit", "Google Pl", { updatedAt: 2 }), sms("old", "Google Pl", { date: "2026-08-01" })]);
+    await updateTxn(db, "edited", { note: "mine" });
+    const parsing = { merchantAfter: [{ text: "VIN*" }], merchants: [{ contains: "googlepl", name: "Google Play" }, { contains: "netflix", name: "Netflix" }] };
+
+    setConfig(parseRemoteConfig({ version: 6, ...parsing }).config); await ensureRules(db);
+    expect((await db.txns.get("auto"))?.merchant).toBe("ICICI debit"); // parsing changes alone touch nothing stored
+
+    setConfig(parseRemoteConfig({ version: 7, ...parsing, smsReread: { run: 1, months: 1, names: true, only: "unnamed" } }).config); await ensureRules(db);
+    expect((await db.txns.get("auto"))?.merchant).toBe("Google Play");
+    expect((await db.txns.get("auto"))?.updatedAt).toBe(1); // still automatic
+    expect((await db.txns.get("named"))?.merchant).toBe("Old Name"); // had a name: not in "unnamed"
+    expect((await db.txns.get("edited"))?.merchant).toBe("ICICI debit");
+    expect((await db.txns.get("legacyEdit"))?.merchant).toBe("ICICI debit");
+    expect((await db.txns.get("old"))?.merchant).toBe("ICICI debit"); // outside the period
+
+    await db.txns.update("auto", { merchant: "ICICI debit" });
+    setConfig(parseRemoteConfig({ version: 8, ...parsing, smsReread: { run: 1, months: 1, names: true, only: "unnamed" }, screens: { today: { title: "Hi" } } }).config); await ensureRules(db);
+    expect((await db.txns.get("auto"))?.merchant).toBe("ICICI debit"); // same run number: not repeated
+
+    setConfig(parseRemoteConfig({ version: 9, ...parsing, smsReread: { run: 2, months: 3, names: true, categories: true, only: "all", contains: "netflix" } }).config); await ensureRules(db);
+    expect((await db.txns.get("named"))?.merchant).toBe("Netflix");
+    expect((await db.txns.get("named"))?.category).toBe("Subscriptions");
+    expect((await db.txns.get("auto"))?.merchant).toBe("ICICI debit"); // filtered out by "contains"
+    expect(parseRemoteConfig({ version: 10, smsReread: { run: 0, names: true } }).errors).toHaveLength(1);
+  });
+
   it("the admin script compiles and includes per-rule history and primary controls", () => {
     const html = adminPage({}, "test");
     const js = html.match(/<script nonce="test">([\s\S]*?)<\/script>/)![1];
     expect(() => new Function(js)).not.toThrow();
-    expect(html).toContain("primaryAction"); expect(html).toContain("applyToHistory");
+    expect(html).toContain("primaryAction"); expect(html).toContain("applyToHistory"); expect(html).toContain("merchantAfter"); expect(html).toContain("rr_run");
   });
 });
