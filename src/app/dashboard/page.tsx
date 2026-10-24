@@ -1,16 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, previousMonthCumulative, spendVsBudgetSeries } from "@/lib/budget";
-import { categoryColor } from "@/lib/categoryColors";
-import { categoryEmoji, tagEmoji } from "@/lib/categorize";
+import { tagEmoji } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfMonth, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { markCommitmentPaid } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
 import { useChartHaptics } from "@/components/hooks/useChartHaptics";
+import { MerchantAnalytics } from "@/components/MerchantAnalytics";
 import { SpendHeatmap } from "@/components/SpendHeatmap";
 import { Card, EmptyState, InfoTip, Money, PageHeader, Pill, SectionTitle, Segmented, cx } from "@/components/ui";
 
@@ -56,14 +55,12 @@ export default function DashboardPage() {
     const periodHasBudget = derived.ledger.hasBudget && derived.ledger.days.filter((d) => d.date >= from && d.date <= toClamped).every((d) => d.hasBudget);
     const budgetTotal = series.at(-1)?.Budget ?? 0;
     const budgetSpent = Math.round((series.at(-1)?.Spent ?? 0) * 100);
-    const catTotal = cats.reduce((s, c) => s + c.amountPaise, 0);
-    return { spendingAverage, position, cats, series, periodHasBudget, budgetTotal, budgetSpent, catTotal };
+    return { spendingAverage, position, cats, series, periodHasBudget, budgetTotal, budgetSpent };
   }, [data, derived, from, toClamped]);
 
   if (!data || !derived || !view) return null;
-  const { spendingAverage, position, cats, series, budgetTotal, budgetSpent, catTotal } = view;
+  const { spendingAverage, position, cats, series, budgetTotal, budgetSpent } = view;
   const hasBudget = view.periodHasBudget;
-  const catMax = Math.max(1, ...cats.map((c) => c.amountPaise));
   const future = from > today;
   const mk = monthKey(today);
   const todayPlan = planForDate(data.plans, today);
@@ -190,36 +187,7 @@ export default function DashboardPage() {
             )}
           </Card>}
 
-          <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">Expenses by category</h2>
-              <InfoTip label="About expenses by category">Investments and savings aren't expenses, so they're not here.</InfoTip>
-            </div>
-            {cats.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-400">No expenses in this period.</p>
-            ) : (
-              <div className="space-y-3" data-testid="category-breakdown">
-                {cats.map((c) => (
-                  <Link href={`/transactions?month=${monthKey(toClamped)}&category=${encodeURIComponent(c.category)}`} className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime hover:bg-white/[0.03]" key={c.category} title={`${c.category}: ${formatINR(c.amountPaise)} across ${c.count} transactions`}>
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span>
-                        {categoryEmoji(c.category)} {c.category}
-                        <span className="ml-1.5 text-xs text-ink-400">×{c.count}</span>
-                      </span>
-                      <span className="num">
-                        {formatINR(c.amountPaise)}
-                        <span className="ml-2 inline-block w-9 text-right text-xs text-ink-400">{Math.round((c.amountPaise / Math.max(1, catTotal)) * 100)}%</span>
-                      </span>
-                    </div>
-                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
-                      <div className="h-full rounded-full" style={{ width: `${(c.amountPaise / catMax) * 100}%`, backgroundColor: categoryColor(c.category) }} />
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Card>
-
+          <MerchantAnalytics txns={data.txns} from={from} to={toClamped} trackingStart={data.profile!.trackingStart} categories={cats} />
 
           <SpendHeatmap txns={data.txns} trackingStart={data.profile!.trackingStart} today={today} endMonth={monthKey(toClamped)} />
 

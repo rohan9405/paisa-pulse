@@ -1,6 +1,85 @@
 # drip roadmap
 
-Current checkout: **0.8.12** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+Current checkout: **0.8.13** (25 Oct 2026; signed APK build 25 verified, phone installation pending). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+
+## Tracking direction agreed 25 Oct 2026
+
+This section is the current source of truth for tracking-mode feature planning. It supersedes earlier budget-score, share-card and community proposals below. “Planned” means discussed, not implemented or released. The unified expense breakdown and merchant history are built into the signed 0.8.13 APK (build 25); phone installation is pending, and no store publication is implied.
+
+### Implemented in 0.8.13: expense breakdown and merchant history
+
+- Stats has one **Expenses by** card, with **Category / Merchant** tabs. Category is the initial tab. Both respect the selected Stats week/month and show actual expenses, payment counts and share of period expenses; investments, savings and own transfers remain excluded. Linked refunds/settlements follow the existing historical cutoff rules.
+- Category rows retain their Activity drill-down. Merchant rows rank by net expenses descending, show the top eight with an expansion to all, and select the merchant used by the monthly chart.
+- **Merchant monthly spends** is a separate history card, shown only after recorded expense data spans at least **three distinct calendar months** by the selected end date. This is an app-history requirement, not a requirement that each individual merchant have three purchase months. Merely moving tracking start earlier does not fabricate history or unlock the card.
+- Show twelve calendar months ending at the selected Stats period end, oldest to newest, as **vertical bars**. The current/end month may be partial. Months before tracking began are untracked, not zero. Zero in a tracked month is actual recorded zero; do not invent missing transactions.
+- The merchant dropdown is sorted by **total net spend across the displayed twelve-month window**, highest first, with alphabetical ties; display each merchant's window total. Merchants with earlier spending remain selectable even if they have no spending in the current week/month. Tapping/hovering a bar reveals the exact month, amount and partial-month status.
+- The existing demo has fewer than three months of expense history, so the monthly history card is intentionally hidden there until sufficient data exists.
+
+### Planned: optional category and merchant spend caps
+
+**User need:** set a few meaningful limits while retaining automatic expense tracking, without configuring a daily allowance or an entire budget.
+
+- Scope a cap to a category or merchant; examples: Food & Dining at ₹8,000/month, Swiggy at 10% of income. Choose a fixed rupee value or percentage. Monthly period initially; additional cadences are future scope.
+- Store cap definitions locally. A cap does not reserve cash, change a transaction, create a rollover/deficit, alter the budget engine or switch the user's mode.
+- Use net recorded expenses with the same exclusions/refund semantics as Stats. A transaction may contribute to both a merchant cap and its category cap, but these are independent limits, not additive spending. Do not sum their usage as if it were separate money.
+- **Today UI:** one compact Spending caps card showing limits nearing/crossing their thresholds; amount or income percentage used, cap, remaining/overage, and a clear status. Tapping opens contributing transactions. Add small progress indicators in relevant category/merchant details, with text so colour is not the only signal.
+- **Alerts proposed:** optional near-limit warning at 80% and one crossing alert at 100%, rather than a notification per payment. Thresholds and opt-out need product confirmation. Recompute after corrections/refunds; define re-alert policy before implementing. Alerts require a deliberate exception to the older blanket no-notifications direction, not silent expansion of that behavior.
+- **Income denominator is not decided:** income received so far is factual but can be zero before payday and change abruptly. The current recommendation for caps is a user-selected monthly income reference held stable through the month, explicitly labelled as a reference rather than actual receipts. Actual monthly income or a completed-month average are alternatives requiring a clear selection and data-coverage policy. Never infer a salary from transfers/refunds.
+- When no valid positive income exists, show Income needed and do not divide by zero; rupee caps continue working. Reference changes should be explicit and prospective; retain past cap/income definitions so old results do not silently change.
+- Validation: threshold boundaries, overlapping category/merchant caps, multiple income payments, no/negative net income, refunds, historical edits, duplicate imports, month rollover and permission-disabled notifications.
+
+### Planned: Drip Insights — explain spending changes, locally
+
+**User need:** understand what contributed to higher/lower spending, beyond a category total. Use deterministic rules and templates; **no LLM**, chat layer or cloud analysis.
+
+- Examples (illustrative only): “Travel is 45% higher; two flight payments on 12 and 19 October account for most of the increase”; “Food delivery is 13% lower; fewer payments offset a higher average payment”; “Three Saturday dining payments account for most of the extra spending.”
+- Compare equivalent windows: completed month vs completed month; month-to-date vs the same elapsed days of the prior month. Account for available history, month length, weekday mix and recurring-payment timing. Mark incomplete comparisons rather than inventing a baseline. A zero baseline produces a new-spending observation, not an infinite percentage.
+- Analyse category, merchant, transaction dates, weekday/weekend, payment count, average payment amount, concentration and large one-off payments. Do not infer individual orders/items, actual visits, motive, location, health, or transaction time from ingestion time; SMS data may not contain that evidence.
+- Explain amount changes through payment count and average-payment size; for a decomposition that adds up, use `(new count − old count) × old average` plus `new count × (new average − old average)`, with a documented rounding policy. New/disappearing merchants need a separate branch, not division by zero.
+- Decompose category increases into merchant contributions, then optionally explain a contributing merchant using dates or large payments. Calculate increases and decreases, including offsets; do not count the same transaction again as independent category, merchant and weekend contributions.
+- Rank candidate insights by meaningful absolute change, relative change, coverage and explanatory strength. Avoid daily quotas and filler; show a small number only when supported. Thresholds should be configurable and calibrated against real data.
+- **Today UI:** concise Drip Insights card with a headline, one supporting explanation and a drill-down to evidence; an expanded view can show the ranked contribution breakdown and comparison dates. Recompute after tagging/refund corrections and preserve the selected historical cutoff.
+- Distinguish **above usual** (historical comparison) from **over cap** (an explicit user limit). Do not label a higher-spending month as overspending when there is no cap. Describe observed contributions, not proven causes of behavior.
+- Validation: matching date windows, partial histories, refunds, missing data, tiny/zero baselines, one-off bills, offsetting decreases, cross-category merchants, count/average decomposition and no overlapping attribution.
+
+### Planned: private friends/family leaderboards, normalised by income
+
+**User direction:** passive comparisons among invited friends/family; no strangers feed, posting, advice community, manual challenges or repeated data entry. Investment, retained-income and spending percentages are the primary candidates; themed category/merchant boards add variety. No universal financial-health score.
+
+| Board | Proposed formula for the same period |
+|---|---|
+| Investment % | Recorded investment outflows ÷ recorded income × 100 |
+| Retained income % | (Income − expenses − investments) ÷ income × 100 |
+| Spending % / Top spender | Net expenses ÷ income × 100 |
+| Food delivery % | Net spend at explicitly defined delivery merchants ÷ income × 100 |
+| Shopping / Travel / Dining % | Net category expenses ÷ income × 100 |
+
+- These are flow ratios. Retained income is **not bank balance, net worth, or unallocated cash**. It may be negative; spending may exceed 100%. Investment outflows are not portfolio returns and do not establish overall financial wellbeing.
+- Food delivery needs an explicit, editable merchant grouping. Do not assume all Food & Dining is delivery or that every payment at a multi-service merchant was a food order. Unknown classifications must remain visible as unknown.
+- Proposed cadence: completed months are official standings; the current month is provisional. Rank movement, monthly resets, a personal trend and a previous-month comparison supply ongoing change without a compatibility gimmick or tasks to perform. Weekly seasons are an experiment only if income timing can be treated consistently.
+- The board identity must state the metric and ordering: highest investment ratio or highest spending ratio, for example. “Top spender” and themed boards are descriptive and optional; do not imply that highest spending is best or create a moral ranking.
+- Use the **same denominator policy and period** for all board participants. Proposed monthly standings use actual recorded income for the completed month, excluding refunds, settlements and own transfers. Zero-income users cannot be ranked on these ratios; incomplete source coverage should be labelled/unranked, not rewarded. Irregular income requires an explicit future policy; do not mix personal estimates with actual receipts on one board.
+- Invitations require both sides' approval. Opt in separately to each board and to showing an exact percentage vs rank only. Preview exactly what recipients will see. No rupee amounts, salary, balances, transaction lists, payees, bank details or raw SMS shared by default.
+- **Percentages are still sensitive:** a known salary plus a ratio can reveal an amount; rank-only still conveys ordering. Do not claim that normalising or anonymising makes data nonconfidential. Small private groups do not provide anonymity.
+- Compute approved summaries locally. A backend, if chosen, stores only those selected summaries and membership, with access checks, a defined retention period, deletion/revocation and minimal identity. Refresh only when new local data is available; stale data must not look live. No account aggregation or raw financial-data upload is a prerequisite.
+- Definition of investment withdrawals/redemptions, mixed-period reimbursements, ties, late corrections and finalisation dates must be resolved before implementing. SMS/manual imports cannot provide fraud-proof verified standings; do not claim they do.
+
+### Deferred or rejected directions from this discussion
+
+- **Dedicated Recurring view:** a local prototype explored Upcoming / Paid / All / Archived, actual matched totals, estimated mandate amounts and transaction drill-down. Removed at the user's request on 25 Oct, including the Stats subtab and top-right shortcut. Existing Settings controls and Today reminders remain. Not part of the current release scope.
+- **Friend spending compatibility / anonymous spending twins:** discussed but not prioritised; needs many participating friends and a repeat-use reason beyond the first match. No current implementation planned.
+- **Shared moments, expense splitting, group reconciliation:** explicitly excluded; do not expand this project into a split-payment product.
+- **Strangers' “is this normal?” comparisons, collective merchant radar, advice/experience community:** declined; do not reintroduce as a renamed insight feature. Drip Insights analyses the user's own history.
+- **Gamification chores:** no opening streaks, prediction quizzes, manual investigations, community posts, fake currency or activity required to maintain a score. Self-improvement leagues and spending identities were explored but have not been selected; retain as research history only.
+- **Automatic retrospectives, richer merchant pages and flexible saved reports:** explored, not committed beyond the current merchant breakdown/history. Future merchant details could include count, typical payment and month-on-month changes; implement only after prioritisation.
+- **Account Aggregator:** explicitly out of scope. Keep SMS/manual/CSV and separately planned opt-in email work; no AA approach.
+
+### Proposed tracking implementation order
+
+1. Review the local unified breakdown and gated twelve-month merchant chart; keep shipping scope clear.
+2. Agree cap denominator, thresholds and alert behavior, then implement local cap storage and Today/details surfaces.
+3. Build and test the shared period/merchant analytics for rule-based Drip Insights, then evidence drill-downs.
+4. Finalise income/ratio definitions and privacy choices for friends/family boards before any backend or sharing work.
 
 ## Implemented: prior-month comparison, budget choices and IPO correction (0.8.12)
 
@@ -275,39 +354,13 @@ Built (see the top). Still to do:
 ### Encrypt backups · S
 - Automatic daily backup shipped in 0.3.0 (plain JSON). Add an optional passphrase so the backup files are encrypted; restore asks for it.
 
-## Phase 5: Friends & leaderboard (8) · L, needs a server
+## Phase 5: Friends & leaderboard — superseded tracking proposal
 
-A fitness tracker for spending: healthy competition with friends. Share **scores and ratios, never amounts**.
+The earlier daily-drip Score, rings, under-budget duels, no-spend challenges, squad nudges and mandatory share-card proposals are not the tracking direction. See **Tracking direction agreed 25 Oct 2026** above for the current private, income-normalised friends/family boards and their unresolved definitions. None of the historical budget gamification proposals should be treated as approved implementation work.
 
-**Fair by design.** Everything is measured against your *own* daily drip, like a personal move goal. Someone on ₹500/day and someone on ₹5,000/day compete equally, and nobody's income shows.
+## Phase 6: Historical budget-mode ideas · not approved for tracking
 
-### What friends see
-- **drip Score (0–100), daily:** how much of today's drip you kept, with a bonus for rollover. The leaderboard number.
-- **Streaks:** "🔥 12 days under drip". One **streak freeze** earned per week, so a single wedding or emergency doesn't wipe out a month.
-- **Three rings:** *Stay under* today's drip · *Skip one impulse category* (e.g. food delivery, shopping; already detected from SMS) · *Save on time* (the money set aside stayed aside). Friends see closed / not closed only.
-- **Squads (3–8 friends), weekly leagues:** Duolingo-style; the top of the squad moves up a league, the bottom moves down, reset every Monday.
-- **Challenges:** "No-Swiggy Week", "₹0 Weekend", "Cook 5 of 7 days". Pass/fail only, checked from SMS, so nobody can just claim it.
-- **Duels:** one friend, one week, best average score wins.
-- **Squad goals:** cooperative, e.g. "everyone under drip 5 of 7 days" unlocks the 💧 Hydrated badge, so the friend who's struggling gets support, not shame.
-- **Reactions and nudges:** 💧 for a good day, a poke when a streak is at risk. No comments on purchases.
-- **Monthly "drip Wrapped" card:** percentages and a personality ("Weekend Leaker", "Midnight Zomato Era") for Instagram stories / WhatsApp. Doubles as marketing.
-
-### Privacy rules
-- **Never leaves the phone:** rupee amounts, income, merchants, payees, bank names, individual transactions.
-- **Shared, opt-in per item:** scores, streak lengths, ring flags, challenge pass/fail, percentages.
-- **Inference guard:** savings % of income plus a known salary can reveal amounts, so the score is *% of daily drip kept*, not savings % of income. Category mix % stays private to you, never shown to the squad.
-- **Preview before sharing:** "here's exactly what your squad sees this week". Everything is computed on the phone; only the final figures are sent.
-- **Leaving deletes:** leaving a squad or disconnecting a friend deletes the shared data on the server, not just hides it.
-- **No shame lists:** ranking is positive only; never "who spent the most".
-- **Connecting:** an invite code or QR; both sides approve.
-
-### Rollout
-1. **No server · M:** drip Score + streaks + a daily/weekly **share card** (image or signed link) on WhatsApp; a friend imports it into a local leaderboard. The app stays fully offline. Proves people actually compete before building more.
-2. **Small backend · L:** squads, leagues, duels, live streaks. A small serverless API (e.g. Cloudflare Workers + D1) storing one row per user per day: score, streak, ring flags, challenge results. This adds internet permission, so it's off by default, and the README's privacy promise gets a clear exception for this feature.
-
-## Phase 6: Everyday delight · offline, no AI
-
-Make drip fun to open without making anything up. Other apps either report the past (Walnut, Money Manager, Fold: month-end dashboards) or hand out fake rewards (CRED: coins, spin wheels, scratch cards). drip's rewards are **your real money or a real insight**, and they vary because your life does.
+The ideas in this historical section refer to budget mode or earlier brainstorming. They are not the current tracking-mode plan; the current decisions, exclusions and rule-based Insights scope are documented above.
 
 **Rules for every idea here:**
 - **Zero effort:** comes from SMS the app already reads. Nothing to type.
@@ -347,7 +400,7 @@ The widget shows a drop that's full, half or nearly empty with today's remaining
 Pick a tone (Cleo's most-loved feature is its roast mode). Large template pools triggered by real events, so lines rarely repeat: *"Third under-drip day. Who even are you 💅"* / *"Swiggy knows your address better than your mom does 💀"*. Roast the spending, never the person.
 
 ### Sunday mini-Wrapped · M
-A short story-style weekly recap: best day, what you skipped, any record, next week's forecast. No finance app does Wrapped well, so it's open territory, and it's shareable without amounts (ties into the Phase 5 share card).
+A short story-style weekly recap: best day, what you skipped, any record, next week's forecast. This was an earlier exploration; other personal-finance apps offer retrospectives. It is not prioritised in the current tracking scope, and removing amounts alone does not guarantee privacy.
 
 ### Real-life moments · S
 Detected from SMS, so they happen only when life does:
@@ -396,8 +449,8 @@ Count only real under-drip days, with one freeze earned weekly (as in NoBuy: one
 6. **Phase 4:** backup encryption.
 7. **New import foundations:** currency-aware money model and shared source reconciliation; then multi-account Gmail and credit-card points tracking. Ship in increments, with SMS-only offline use preserved.
 8. **Install route:** decide on Play internal testing vs USB/sideload.
-9. **Phase 6:** "You skipped it" first, then morning reveal, personal records and the Sunday mini-Wrapped. All offline.
-10. **Phase 5:** friends, starting with drip Score, streaks and the no-server share card.
+9. **Tracking analytics:** use the implementation order in **Tracking direction agreed 25 Oct 2026**; the historical Phase 6 ideas are not approved tracking work.
+10. **Friends/family:** define and validate income-normalised boards and sharing controls as specified above; no daily-drip Score or required share cards in tracking.
 
 **Decided:** UPI Lite top-ups → everyday expense (Other · UPI Lite) · no background refresh or per-transaction notifications · Bills and Investments separate, with tags · budget modes: set-aside (Planned or Actual, categories configurable) or tracking only · recurring only from mandate SMS or explicit marking · credit card bill payments are own transfers · no review inbox tab; quick-action cards instead.
 
