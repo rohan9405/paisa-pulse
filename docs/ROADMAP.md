@@ -1,10 +1,14 @@
 # drip roadmap
 
-Current checkout: **0.8.13** (25 Oct 2026; signed APK build 25 verified, phone installation pending). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+Current checkout: **0.8.13** (25 Oct 2026; signed APK build 25 and phone installation verified). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
 
 ## Tracking direction agreed 25 Oct 2026
 
-This section is the current source of truth for tracking-mode feature planning. It supersedes earlier budget-score, share-card and community proposals below. “Planned” means discussed, not implemented or released. The unified expense breakdown and merchant history are built into the signed 0.8.13 APK (build 25); phone installation is pending, and no store publication is implied.
+This section is the current source of truth for tracking-mode feature planning. It supersedes earlier budget-score, share-card and community proposals below. “Planned” means discussed, not implemented or released. The unified expense breakdown and merchant history are built into the signed 0.8.13 APK (build 25); phone installation is verified, and no store publication is implied.
+
+### Installation safety note — 25 Oct 2026
+
+The mobile-harness / mobilerun-core-local 0.6.3 `replace=True` installation path forwards `reinstall=True` to an underlying `uninstall` flag; it clears app data. The 0.8.13 phone installation exposed this behavior and external-backup restoration was required. Future phone updates must use explicit `adb install -r PaisaPulse.apk`, with the existing package and pinned signing key. Do not use the harness replacement API for updates. Version 0.8.13 / 25 is verified installed; personal mode and automatic backup are present after restoration.
 
 ### Implemented in 0.8.13: expense breakdown and merchant history
 

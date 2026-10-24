@@ -18,7 +18,7 @@ Bills and savings are set aside first; the rest becomes a daily allowance that r
 
 ## Install on Android
 
-Latest installed phone build: **0.8.12 (24)**, installed over the existing app on 24 Oct 2026 with data retained; Android package version verified.
+Latest installed phone build: **0.8.13 (25)**, installed on 25 Oct 2026; Android package version verified.
 
 <img src="docs/install-qr.png" width="180" align="right" alt="QR code: download the latest PaisaPulse.apk">
 
@@ -52,6 +52,8 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 3. Need older history later? Settings → Tracking → move **Tracking start** earlier and save; the app reads your SMS back to that date.
 
 ### Your data across updates
+
+**Install updates with `adb install -r PaisaPulse.apk` directly.** In mobile-harness / mobilerun-core-local 0.6.3, the `replace=True` path maps to an uninstall before installation and clears app data. Do not use that API path for updates.
 
 - **Updates keep everything**: transactions, tags/rules, settings and the SMS read position. App data stays on the phone across updates. The build refuses any APK that couldn't install over the existing app (wrong signing key or a lower version), so you never have to uninstall to update.
 - **Turn on automatic backup** (Settings → Your data → *Choose backup folder*, e.g. a new "drip" folder in Documents, or Google Drive). A full backup is written there every day (last 14 kept). It lives outside the app, so it survives uninstalling or *Clear data*.
