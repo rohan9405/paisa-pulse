@@ -1,9 +1,10 @@
 /** Genuine repeating mandates, anchored to their own schedule and reference. */
 import type { CommitmentStatus } from "./budget";
+import { isIpoMandate } from "./ipo";
 import { normalize } from "./categorize";
 import { type DateKey, addDays, addMonths, diffDays, dueDateInMonth, monthKey, toISTKey } from "./dates";
 import type { Paise } from "./money";
-import type { Recurring, Transaction } from "./types";
+import type { FundHold, Recurring, Transaction } from "./types";
 
 export interface DueItem {
   key: string; name: string; amountPaise: Paise; dueDate: DateKey;
@@ -47,7 +48,7 @@ export function nextDue(r: Recurring, txns: Transaction[], today: DateKey, requi
 }
 const state = (due: DateKey, today: DateKey): DueItem["state"] => diffDays(due, today) > GRACE_DAYS ? "missed" : due < today ? "overdue" : due === today ? "due_today" : "upcoming";
 
-export function upcomingPayments(input: { statuses: CommitmentStatus[]; recurring: Recurring[]; txns: Transaction[]; today: DateKey; days?: number }): DueItem[] {
+export function upcomingPayments(input: { statuses: CommitmentStatus[]; recurring: Recurring[]; txns: Transaction[]; today: DateKey; days?: number; holds?: FundHold[] }): DueItem[] {
   const { statuses, recurring, txns, today, days = 7 } = input;
   const items: DueItem[] = [];
   const seen = new Set<string>();
@@ -58,7 +59,7 @@ export function upcomingPayments(input: { statuses: CommitmentStatus[]; recurrin
     seen.add(normalize(c.name));
     if (c.matchHint) seen.add(normalize(c.matchHint));
   }
-  const live = recurring.filter((r) => r.status === "active" && r.source === "mandate" && r.frequency !== "once" && r.frequency !== "unknown");
+  const live = recurring.filter((r) => !isIpoMandate(r, input.holds) && r.status === "active" && r.source === "mandate" && r.frequency !== "once" && r.frequency !== "unknown");
   for (const r of live) {
     if (seen.has(normalize(r.name)) || (r.payee && seen.has(normalize(r.payee)))) continue;
     const siblings = live.filter((other) => other.id !== r.id && (r.payee ? normalize(other.payee ?? "") === normalize(r.payee) : normalize(other.name) === normalize(r.name)));

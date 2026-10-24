@@ -215,3 +215,9 @@ Stats category rows open Activity with that category and the selected month pref
 Calendar months show only the weeks containing dates, removing the unused bottom row. Sliding across Today dates/bars and Stats chart dates gives a light haptic tick per new selection on Android, respecting the app’s Haptic feedback setting and phone settings.
 
 On Today, vertical swipes over the calendar and trend scroll the page; horizontal drags inspect dates/bars. Touch selection waits for a tap or horizontal intent so starting a page scroll does not change the selected date.
+
+### Budget choices and IPO authorizations · 0.8.12
+
+Remote config `budget.setAsideModes` offers Planned and Actual, Planned only, or Actual only. With one available mode, onboarding and the budget editor show its explanation and inputs without a mode selector. Publishing this setting does not change saved budgets or reread SMS.
+
+Stats overlays last month’s cumulative spending as a dotted grey line, aligned to matching day numbers; incomplete previous-month history is left blank. IPO blocks/releases remain separate from spending. In Settings, mark an ambiguous autopay as IPO to exclude it from recurring totals/reminders; this preserves the mandate and does not fabricate a block, debit or release. Confirmed hold references can also identify older mandates; an explicit user classification wins.

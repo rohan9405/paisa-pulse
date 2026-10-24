@@ -1,6 +1,6 @@
 import { bankForSender, findPayee, parseBankSms, type RawSms } from "./sms";
 import { parseAmountToPaise } from "./money";
-import type { FundHold, HoldEvent } from "./types";
+import type { FundHold, HoldEvent, Recurring } from "./types";
 
 export interface IpoEvent extends HoldEvent {
   bank: string;
@@ -45,4 +45,11 @@ export function summarizeHold(hold: Pick<FundHold, "events" | "reference">) {
   const needsReview = !hold.reference || !blockedPaise || debitedPaise + releasedPaise > blockedPaise || (events.some((e) => e.type === "cancelled") && remainingPaise > 0);
   const status: FundHold["status"] = needsReview ? "needs_review" : remainingPaise > 0 ? debitedPaise || releasedPaise ? "partial" : "blocked" : debitedPaise > 0 ? "settled" : "released";
   return { blockedPaise, debitedPaise, releasedPaise, remainingPaise, needsReview, status };
+}
+
+/** Explicit user classification wins; otherwise only a matching confirmed hold
+ * reference can identify an older mandate as an IPO. No amount/name guessing. */
+export function isIpoMandate(r: Recurring, holds: FundHold[] = []): boolean {
+  if (r.purpose) return r.purpose === "ipo";
+  return !!r.mandateRef && holds.some(h => h.reference?.toLowerCase() === r.mandateRef!.toLowerCase() && (!r.bank || h.bank === r.bank));
 }

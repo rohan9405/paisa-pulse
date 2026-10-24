@@ -108,3 +108,11 @@ available(today) = Σ allocation(tracking start … today)
 - Refunds and settlements share the indexed `refundOf` link. They reduce the original payment as of the report cutoff; they do not become income. Multiple shares are capped at the original payment’s remaining amount, including concurrent writes. Unlinked settlements require review.
 - The daily spending dotted line averages the selected month’s tracked calendar days through the selected period end (through today for current periods), including zero days. Tracking mode uses net expense spending; budget periods retain their budget-spend definition.
 - Stats category rows deep-link to `/transactions?month=YYYY-MM&category=...`. Activity validates the parameters and exposes the month/category as editable controls. Historical months remain selected; a week spanning months uses its ending month for the drill-down.
+
+## Budget-mode availability and historical comparison
+
+`budget.setAsideModes` is a validated nonempty subset of Planned/Actual (default both). It controls new budget/editor choices only, without migrating existing plans. A single enabled mode has explanatory copy and its relevant inputs, without selection chips. Saving an edited budget explicitly creates a new plan version.
+
+The Stats grey dotted curve uses last month’s cumulative spending on the matching day number. A shorter preceding month holds its final value; tracking that began partway through that prior month produces no comparison rather than a misleading zero.
+
+Recurring IPO authorizations (`purpose: ipo`, or a matching confirmed hold reference without an explicit override) are excluded from upcoming reminders and recurring totals. Explicit `purpose: payment` wins over reference inference. Classification never creates a financial transaction or fund-hold event.

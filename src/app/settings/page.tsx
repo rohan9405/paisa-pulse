@@ -1,12 +1,13 @@
 "use client";
 
+import { isIpoMandate } from "@/lib/ipo";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { hasBudget, modeOf, planForDate, poolSummary, setAsideOf } from "@/lib/budget";
 import { ACTIVE_CATEGORIES as CATEGORIES, DEFAULT_SET_ASIDE, SET_ASIDE_OPTIONS, TAGS, categoryEmoji, displayCategory, tagEmoji } from "@/lib/categorize";
 import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
-import { DEFAULT_PREFS, type CategoryRule, type Prefs, type Profile, type Recurring, type SetAsideMode, type TxnKind } from "@/lib/types";
+import { DEFAULT_PREFS, type CategoryRule, type Prefs, type Profile, type FundHold, type Recurring, type SetAsideMode, type TxnKind } from "@/lib/types";
 import { deleteDatabase } from "@/data/db";
 import { PROVIDERS } from "@/data/providers/registry";
 import { smsBridge, syncSms } from "@/data/providers/sms";
@@ -69,7 +70,7 @@ export default function SettingsPage() {
           >
             <BudgetEditor key={derived.plan?.id ?? "none"} />
           </Section>
-          <Section icon="🔁" title="Recurring payments" summary={recurringSummary(data.recurring)}>
+          <Section icon="🔁" title="Recurring payments" summary={recurringSummary(data.recurring, data.holds)}>
             <RecurringList />
           </Section>
           <Section icon="📅" title="Tracking start" summary={`Since ${formatDay(profile.trackingStart, { year: true })}`}>
@@ -359,7 +360,10 @@ function BudgetEditor() {
   const [income, setIncome] = useState("");
   const [trackOnly, setTrackOnly] = useState(false);
   const [setAside, setSetAside] = useState<string[]>(DEFAULT_SET_ASIDE);
-  const [saMode, setSaMode] = useState<SetAsideMode>("planned");
+  const config = useRemoteConfig();
+  const enabledModes = config.budget.setAsideModes;
+  const [requestedSaMode, setSaMode] = useState<SetAsideMode>("planned");
+  const saMode = enabledModes.includes(requestedSaMode) ? requestedSaMode : enabledModes[0];
   const [drafts, setDrafts] = useState<CommitmentDraft[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [from, setFrom] = useState(today);
@@ -444,18 +448,18 @@ function BudgetEditor() {
         <p className="text-xs text-ink-400">No daily budget, just expense tracking. Bills count as expenses; investments are shown separately in Stats.</p>
       ) : (
         <div className="space-y-3" data-testid="set-aside-mode">
-          <span className="label">How should bills and investments come off?</span>
+          {enabledModes.length > 1 && <span className="label">How should bills and investments come off?</span>}
           {(
             [
               ["planned", "Planned", "Enter your income and expected bills and investments. If a real payment differs, the difference lands in that day's budget."],
               ["actual", "Actual", "Nothing to enter. Income that arrives funds your allowance; bills and investments come off as they're paid. A salary in the last week of a month counts for the next month."],
             ] as const
-          ).map(([v, label, help]) => (
-            <div key={v} className={cx("rounded-2xl border", saMode === v ? "border-lime/50 bg-lime/[0.05]" : "border-white/10")}>
-              <button onClick={() => setSaMode(v)} className="w-full p-3 text-left text-sm" aria-pressed={saMode === v}>
+          ).filter(([v]) => enabledModes.includes(v)).map(([v, label, help]) => (
+            <div key={v} className={cx("rounded-2xl border", enabledModes.length > 1 && saMode === v ? "border-lime/50 bg-lime/[0.05]" : "border-white/10")}>
+              {enabledModes.length > 1 ? <button onClick={() => setSaMode(v)} className="w-full p-3 text-left text-sm" aria-pressed={saMode === v}>
                 <span className="font-semibold">{label}</span>
                 <span className="mt-1 block text-xs text-ink-400">{help}</span>
-              </button>
+              </button> : <p className="p-3 text-xs text-ink-400">{help}</p>}
               {v === "planned" && saMode === "planned" && (
                 <div className="space-y-4 border-t border-white/5 p-3">
                   <Field label="Monthly take-home income">
@@ -503,8 +507,8 @@ function BudgetEditor() {
   );
 }
 
-function recurringSummary(rs: Recurring[]) {
-  const active = rs.filter((r) => r.status === "active");
+function recurringSummary(rs: Recurring[], holds: FundHold[]) {
+  const active = rs.filter((r) => r.status === "active" && !isIpoMandate(r, holds));
   if (!active.length) return "None yet";
   const factor: Partial<Record<Recurring["frequency"], number>> = { daily: 365 / 12, weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, "half-yearly": 1 / 6, yearly: 1 / 12 };
   const confirmed = active.filter((r) => factor[r.frequency]);
@@ -533,10 +537,11 @@ function RecurringList() {
                 {r.status === "revoked" ? " · cancelled" : ""}
                 {r.frequency === "unknown" && " · no reminder until frequency is confirmed"}
                 {r.frequency === "once" && " · not a repeating payment"}
-                <select className="input mt-2 text-xs" aria-label={`Frequency for ${r.name}`} value={r.frequency} onChange={(e) => db.recurring.update(r.id, { frequency: e.target.value as Recurring["frequency"], userEdited: true, updatedAt: Date.now() })}>
+                {isIpoMandate(r, data.holds) ? <span className="mt-1 block text-amber">IPO authorization · excluded from recurring totals and reminders. Only confirmed bank events establish blocked, invested or released funds.</span> : <><select className="input mt-2 text-xs" aria-label={`Frequency for ${r.name}`} value={r.frequency} onChange={(e) => db.recurring.update(r.id, { frequency: e.target.value as Recurring["frequency"], userEdited: true, updatedAt: Date.now() })}>
                   {["unknown", "once", "daily", "weekly", "monthly", "quarterly", "half-yearly", "yearly"].map((f) => <option key={f} value={f}>{f === "unknown" ? "Frequency not confirmed" : f}</option>)}
                 </select>
-                <label className="mt-1 block">Due day <input className="input w-20 text-xs" type="number" min={1} max={31} aria-label={`Due day for ${r.name}`} value={r.dueDay} onChange={(e) => { const day = Number(e.target.value); if (Number.isInteger(day) && day >= 1 && day <= 31) db.recurring.update(r.id, { dueDay: day, userEdited: true, updatedAt: Date.now() }); }} /></label>
+                <label className="mt-1 block">Due day <input className="input w-20 text-xs" type="number" min={1} max={31} aria-label={`Due day for ${r.name}`} value={r.dueDay} onChange={(e) => { const day = Number(e.target.value); if (Number.isInteger(day) && day >= 1 && day <= 31) db.recurring.update(r.id, { dueDay: day, userEdited: true, updatedAt: Date.now() }); }} /></label></>}
+                <button className="mt-2 block text-xs text-ink-300 underline" onClick={() => db.recurring.update(r.id, { purpose: isIpoMandate(r, data.holds) ? "payment" : "ipo", userEdited: true, updatedAt: Date.now() })}>{isIpoMandate(r, data.holds) ? "Mark as recurring payment" : "Mark as IPO"}</button>
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-2">

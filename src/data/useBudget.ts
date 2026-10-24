@@ -17,7 +17,7 @@ export function useBudget() {
     const ledger = computeLedger({ plans, profile, txns, today });
     // Planned lines are budget inputs only in planned mode; otherwise reminders come from autopay SMS alone.
     const statuses = hasBudget(plan) && modeOf(plan) === "planned" ? commitmentStatuses(plan, profile, txns, monthKey(today), today) : [];
-    const upcoming = upcomingPayments({ statuses, recurring: data.recurring, txns, today });
+    const upcoming = upcomingPayments({ statuses, recurring: data.recurring, holds: data.holds, txns, today });
     return { plan, pool: poolSummary(plan), ledger, statuses, upcoming };
   }, [data, today]);
   return { data, derived, today, mode, db, loading: data === undefined };

@@ -7,6 +7,7 @@ import { addDays, formatDay, startOfMonth } from "@/lib/dates";
 import { formatINR, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
 import { completeOnboarding } from "@/data/repo";
 import type { SetAsideMode } from "@/lib/types";
+import { useRemoteConfig } from "@/data/remoteConfigLoader";
 import { useStore } from "@/data/store";
 import { smsBridge } from "@/data/providers/sms";
 import { CommitmentList, type CommitmentDraft, validateDrafts } from "@/components/CommitmentEditor";
@@ -22,7 +23,10 @@ export function Onboarding() {
   const [trackOnly, setTrackOnly] = useState(false);
   const [income, setIncome] = useState("");
   const [drafts, setDrafts] = useState<CommitmentDraft[]>([]);
-  const [saMode, setSaMode] = useState<SetAsideMode>("planned");
+  const config = useRemoteConfig();
+  const enabledModes = config.budget.setAsideModes;
+  const [requestedSaMode, setSaMode] = useState<SetAsideMode>("planned");
+  const saMode = enabledModes.includes(requestedSaMode) ? requestedSaMode : enabledModes[0];
   const [draftErrors, setDraftErrors] = useState<Record<string, string>>({});
   const [start, setStart] = useState(today);
   const [opening, setOpening] = useState("");
@@ -111,18 +115,18 @@ export function Onboarding() {
           </div>
           {!trackOnly && (
             <div className="space-y-3 rounded-3xl border border-white/10 p-3" data-testid="ob-mode">
-              <span className="label px-1">How should bills and investments come off?</span>
+              {enabledModes.length > 1 && <span className="label px-1">How should bills and investments come off?</span>}
               {(
                 [
                   ["planned", "Plan the amounts", "Enter your income and what you expect to pay. If a bill comes in higher or lower, that day's budget adjusts."],
                   ["actual", "Use actual payments", "Nothing to enter. Income that arrives funds your allowance; bills, investments and savings reduce it as they're paid."],
                 ] as const
-              ).map(([v, label, help]) => (
-                <div key={v} className={cx("rounded-2xl border", saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")}>
-                  <button onClick={() => setSaMode(v)} className="w-full p-3 text-left text-sm" aria-pressed={saMode === v}>
+              ).filter(([v]) => enabledModes.includes(v)).map(([v, label, help]) => (
+                <div key={v} className={cx("rounded-2xl border", enabledModes.length > 1 && saMode === v ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")}>
+                  {enabledModes.length > 1 ? <button onClick={() => setSaMode(v)} className="w-full p-3 text-left text-sm" aria-pressed={saMode === v}>
                     <span className="font-semibold">{label}</span>
                     <span className="mt-1 block text-xs text-ink-400">{help}</span>
-                  </button>
+                  </button> : <p className="p-3 text-xs text-ink-400">{help}</p>}
                   {v === "planned" && saMode === "planned" && (
                     <div className="px-3 pb-3">
                       <Field label="Monthly take-home income">

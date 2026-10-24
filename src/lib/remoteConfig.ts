@@ -9,7 +9,7 @@
  * the defaults unless they call setConfig().
  */
 import { CATEGORIES } from "./categorize";
-import type { TxnKind } from "./types";
+import type { SetAsideMode, TxnKind } from "./types";
 
 export const TAB_IDS = ["today", "briefing", "manual", "activity", "stats", "settings"] as const;
 export type TabId = (typeof TAB_IDS)[number];
@@ -81,6 +81,8 @@ export interface RemoteConfig {
   /** Extra phrases that mean "not a transaction" (offers, OTPs…). */
   smsIgnore: string[];
   budget: {
+    /** Choices offered for new/edited budgets; existing plans remain unchanged. */
+    setAsideModes: SetAsideMode[];
     /** From this day of the month, a salary counts for the next month (actual mode). */
     lateSalaryDay: number;
     /** Credits at least this big count as salary for that rule. */
@@ -130,7 +132,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   banks: [],
   replaceBuiltInBanks: false,
   smsIgnore: [],
-  budget: { lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
+  budget: { setAsideModes: ["planned", "actual"], lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
   features: { balances: true, appLock: true, csvImport: true, insights: true, badges: true, haptics: true, analytics: true },
   announcement: null,
   update: null,
@@ -272,7 +274,9 @@ export function parseRemoteConfig(input: unknown): ParseResult {
 
   if (isObj(input.budget)) {
     const b = input.budget;
+    const modes = Array.isArray(b.setAsideModes) ? (["planned", "actual"] as const).filter(m => (b.setAsideModes as unknown[]).includes(m)) : [];
     c.budget = {
+      setAsideModes: modes.length ? modes : [...DEFAULT_CONFIG.budget.setAsideModes],
       lateSalaryDay: int(b.lateSalaryDay, 15, 31) ?? DEFAULT_CONFIG.budget.lateSalaryDay,
       bigCreditRupees: int(b.bigCreditRupees, 1_000, 10_00_000) ?? DEFAULT_CONFIG.budget.bigCreditRupees,
       nightBriefHour: int(b.nightBriefHour, 12, 23) ?? DEFAULT_CONFIG.budget.nightBriefHour,

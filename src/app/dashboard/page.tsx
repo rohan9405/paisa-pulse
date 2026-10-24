@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, spendVsBudgetSeries } from "@/lib/budget";
+import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, previousMonthCumulative, spendVsBudgetSeries } from "@/lib/budget";
 import { categoryColor } from "@/lib/categoryColors";
 import { categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfMonth, startOfWeek } from "@/lib/dates";
@@ -43,7 +43,10 @@ export default function DashboardPage() {
     const avgTo = toClamped;
     const monthDays = spendVsBudgetSeries(derived.ledger, avgFrom, avgTo);
     const spendingAverage = monthDays.reduce((sum, d) => sum + d.spentPaise, 0) / Math.max(1, monthDays.length) / 100;
-    const series = spendVsBudgetSeries(derived.ledger, from, toClamped).map((d) => ({
+    const dailySeries = spendVsBudgetSeries(derived.ledger, from, toClamped);
+    const previousMonth = previousMonthCumulative(derived.ledger, dailySeries.map(d => d.date), data.profile!.trackingStart);
+    const series = dailySeries.map((d, i) => ({
+      "Last month": previousMonth[i] === null ? null : previousMonth[i]! / 100,
       label: formatDay(d.date),
       Spent: d.cumSpentPaise / 100,
       Budget: d.cumBudgetPaise / 100,
@@ -103,7 +106,7 @@ export default function DashboardPage() {
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative expenses"}</h2>
-              <InfoTip label="About spend vs budget">{hasBudget ? "Below the dashed line = on track." : "Set an income in Settings to compare against a budget."}</InfoTip>
+              <InfoTip label="About spend vs budget">{hasBudget ? "Below the dashed line = on track." : "Dotted grey: last month’s cumulative spending at the same day of the month."}</InfoTip>
             </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>
@@ -117,6 +120,7 @@ export default function DashboardPage() {
                     <Tooltip content={<ChartTip />} cursor={{ stroke: "#ffffff30" }} />
                     <Legend wrapperStyle={{ fontSize: 12, color: "#b4b4c4" }} iconType="plainline" />
                     {hasBudget && <Line type="monotone" dataKey="Budget" stroke="#8b8b9e" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />}
+                    {period === "month" && <Line type="monotone" dataKey="Last month" stroke="#8b8b9e" strokeWidth={2} strokeDasharray="2 4" dot={false} connectNulls={false} isAnimationActive={false} />}
                     <Line type="monotone" dataKey="Spent" stroke="#c6ff3d" strokeWidth={2} dot={false} activeDot={{ r: 5, stroke: "#13131a", strokeWidth: 2 }} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>

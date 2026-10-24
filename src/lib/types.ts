@@ -191,6 +191,8 @@ export interface ProviderConnection {
 
 /** A regular payment: from an autopay/mandate SMS, or a transaction you marked as recurring. */
 export interface Recurring {
+  /** Explicit user classification; IPO authorizations are not repeating bills. */
+  purpose?: "payment" | "ipo";
   id: string;
   name: string;
   payee?: string;

@@ -20,6 +20,7 @@ import {
   type DateKey,
   type MonthKey,
   addDays,
+  addMonths,
   daysInMonth,
   diffDays,
   dueDateInMonth,
@@ -630,4 +631,17 @@ export function netInHandInRange(txns: Transaction[], from: DateKey, to: DateKey
   const moneyOutPaise = sum(out.map(x => x.net));
   const incomePaise = sum(txns.filter(t => t.kind === "income" && !["Refunds", "Settlement"].includes(t.category) && t.date >= from && t.date <= to).map(t => t.amountPaise));
   return { incomePaise, expensesPaise: moneyOutPaise - investmentsPaise, investmentsPaise, moneyOutPaise, netPaise: incomePaise - moneyOutPaise };
+}
+
+/** Compare the same day numbers with last month's cumulative spending.
+ * Shorter months stop at their last day; incomplete history stays unknown. */
+export function previousMonthCumulative(ledger: Ledger, dates: DateKey[], trackingStart: DateKey): (number | null)[] {
+  const cache = new Map<string, ReturnType<typeof spendVsBudgetSeries>>();
+  return dates.map(date => {
+    const previous = addMonths(monthKey(date), -1) + "-01";
+    if (previous < trackingStart) return null;
+    let days = cache.get(previous);
+    if (!days) { days = spendVsBudgetSeries(ledger, previous, endOfMonth(previous)); cache.set(previous, days); }
+    return days[Math.min(Number(date.slice(8)), days.length) - 1]?.cumSpentPaise ?? null;
+  });
 }

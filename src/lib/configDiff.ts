@@ -108,7 +108,7 @@ export function describeChanges(a: RemoteConfig, b: RemoteConfig): string[] {
         out.push(`${label}: ${listDiff(a.smsIgnore, b.smsIgnore, (x) => x, "phrases")}`);
         break;
       case "budget":
-        out.push(`${label}: ${(Object.keys(b.budget) as (keyof RemoteConfig["budget"])[]).filter((k) => a.budget[k] !== b.budget[k]).map((k) => `${k} ${a.budget[k]} → ${b.budget[k]}`).join(", ")}`);
+        out.push(`${label}: ${(Object.keys(b.budget) as (keyof RemoteConfig["budget"])[]).filter((k) => JSON.stringify(a.budget[k]) !== JSON.stringify(b.budget[k])).map((k) => `${k} ${a.budget[k]} → ${b.budget[k]}`).join(", ")}`);
         break;
       case "features":
         out.push(`${label}: ${(Object.keys(b.features) as (keyof RemoteConfig["features"])[]).filter((k) => a.features[k] !== b.features[k]).map((k) => `${k} ${b.features[k] ? "on" : "off"}`).join(", ")}`);
