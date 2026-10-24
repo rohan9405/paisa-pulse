@@ -18,7 +18,7 @@ Bills and savings are set aside first; the rest becomes a daily allowance that r
 
 ## Install on Android
 
-Latest verified phone build: **0.8.8 (20)**, installed 24 Oct 2026 with existing data retained.
+Latest installed phone build: **0.8.10 (22)**, installed over the existing app on 24 Oct 2026 with data retained; Android package version verified.
 
 <img src="docs/install-qr.png" width="180" align="right" alt="QR code: download the latest PaisaPulse.apk">
 
