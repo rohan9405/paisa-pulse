@@ -17,9 +17,9 @@ export function SpendHeatmap({ txns, trackingStart, today, endMonth }: { txns: T
     const el = scroller.current;
     if (el) el.scrollLeft = el.scrollWidth;
   }, [endMonth]);
-  return <Card className="lg:col-span-2" data-testid="spend-heatmap">
+  return <Card className="min-w-0 lg:col-span-2" data-testid="spend-heatmap">
     <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-semibold">Spending activity</h2><span className="text-[11px] text-ink-400">{formatMonth(view.from.slice(0, 7))} – {formatMonth(endMonth)}</span></div>
-    <div ref={scroller} className="mt-4 overflow-x-auto pb-2 [scrollbar-width:thin]" data-testid="heatmap-scroll">
+    <div ref={scroller} className="mt-4 w-full min-w-0 overflow-x-auto pb-2 [scrollbar-width:thin]" data-testid="heatmap-scroll">
       <div className="min-w-[820px]">
         <div className="mb-2 grid h-4 text-[10px] text-ink-400" style={{ gridTemplateColumns: `repeat(${view.weeks}, minmax(0, 1fr))`, gap: 3 }}>{view.months.map(m => <span className="whitespace-nowrap" key={m.month} style={{ gridColumn: m.column }}>{formatMonth(m.month).split(" ")[0]}</span>)}</div>
         <div className="grid grid-flow-col gap-[3px]" style={{ gridTemplateColumns: `repeat(${view.weeks}, minmax(0, 1fr))`, gridTemplateRows: "repeat(7, 14px)" }}>

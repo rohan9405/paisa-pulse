@@ -10,6 +10,7 @@ import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, m
 import { formatINR } from "@/lib/money";
 import { markCommitmentPaid } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
+import { useChartHaptics } from "@/components/hooks/useChartHaptics";
 import { SpendHeatmap } from "@/components/SpendHeatmap";
 import { Card, EmptyState, InfoTip, Money, PageHeader, Pill, SectionTitle, Segmented, cx } from "@/components/ui";
 
@@ -21,6 +22,8 @@ export default function DashboardPage() {
   const { data, derived, today, db } = useBudget();
   const [period, setPeriod] = useState<Period>("month");
   const [offset, setOffset] = useState(0);
+  const cumulativeHaptics = useChartHaptics();
+  const dailyHaptics = useChartHaptics();
 
   const [from, to] = useMemo((): [DateKey, DateKey] => {
     if (period === "week") {
@@ -86,7 +89,7 @@ export default function DashboardPage() {
       {future ? (
         <EmptyState emoji="🔮" title="That's in the future" />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
           <Card className="lg:col-span-2">
             <div className="mb-2 flex items-center justify-between gap-2"><h2 className="text-xs font-semibold uppercase tracking-widest text-ink-400">Net In-Hand</h2><InfoTip label="About Net In-Hand">Income minus expenses and investments. Income includes all income buckets; refunds and settlements reduce their linked payment and are never counted as income. Legacy savings are included under investments.</InfoTip></div>
             <div className="num text-4xl font-bold" data-testid="net-in-hand"><Money paise={position.netPaise} /></div>
@@ -107,7 +110,7 @@ export default function DashboardPage() {
             ) : (
               <div className="h-56" data-testid="chart-spend-vs-budget">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={series} margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
+                  <LineChart {...cumulativeHaptics} data={series} margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
                     <CartesianGrid stroke="#ffffff10" vertical={false} />
                     <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" minTickGap={24} />
                     <YAxis {...AXIS} tickFormatter={(v) => formatINR(v * 100, { compact: true })} width={52} />
@@ -131,7 +134,7 @@ export default function DashboardPage() {
             ) : (
               <div className="h-56" data-testid="chart-daily">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={series} margin={{ top: 6, right: 8, left: -8, bottom: 0 }} barCategoryGap={2}>
+                  <BarChart {...dailyHaptics} data={series} margin={{ top: 6, right: 8, left: -8, bottom: 0 }} barCategoryGap={2}>
                     <CartesianGrid stroke="#ffffff10" vertical={false} />
                     <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" minTickGap={24} />
                     <YAxis {...AXIS} tickFormatter={(v) => formatINR(v * 100, { compact: true })} width={52} />

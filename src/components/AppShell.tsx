@@ -86,6 +86,8 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   // One light tap for every button, link, tab and toggle, instead of wiring each one.
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
+      // Pointer scrubbing already ticks once per new cell; keyboard clicks still tick here.
+      if (e.detail > 0 && (e.target as Element | null)?.closest?.("[data-scrub-surface]")) return;
       if ((e.target as Element | null)?.closest?.("button, a, summary, label, [role=tab], input[type=checkbox]")) haptic("tap");
     };
     document.addEventListener("click", onClick, { capture: true });

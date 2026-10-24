@@ -1,11 +1,18 @@
 # drip roadmap
 
-Current checkout: **0.8.10** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+Current checkout: **0.8.11** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+
+## Implemented: compact calendar, gesture direction and chart haptics (0.8.11, build 23)
+
+- Vertical swipes over Today calendar/trend scroll the page. Touch selection waits for horizontal drag intent or a completed tap; native scroll cancellation does not select a date. Mouse scrubbing retains free movement.
+- Stats grid explicitly allows cards to shrink to the viewport; the year heatmap scrolls inside its card instead of forcing all charts wider.
+- Calendar uses only occupied weeks (four, five or six), with no unused trailing row. Date selection keeps its existing viewport anchor.
+- Calendar/trend scrubbing ticks once per newly inspected cell; Stats line/bar chart touch movement ticks per new date. Pointer click feedback is deduplicated; keyboard activation retains its usual tick. Existing user and remote haptic preferences apply.
 
 ## Implemented: category drill-down and trend controls (0.8.10, build 22)
 
 - Every Stats expense-category row links to Activity filtered by that category and the displayed month (including historical months). Week views use the month containing the period end. Filters remain editable; malformed month/category parameters are ignored.
-- Today trend arrows frame a centered date range. Latest sits centered on its own reserved row, preserving chart position when it appears or disappears.
+- Today trend arrows frame a centered date range. Latest was subsequently removed; the right arrow now advances from an older calendar selection up to today.
 - Based on latest local main; remote fetch confirmed no missing commits. Signed **0.8.10 (22)** installed on the paired phone on 24 Oct 2026 using an in-place update; package version verified. Changes pushed to main.
 
 ## Implemented: Net In-Hand, settlements and daily spending average (0.8.9)
@@ -20,7 +27,7 @@ Current checkout: **0.8.10** (24 Oct 2026). Core money tracking, recipient taggi
 - Built on latest local `main`, 0.8.8 at `6afdc58`; earlier work was already committed. Fetch confirmed no missing remote commits.
 - Category amounts (including paise where present) are always visible beside percentages, with the same permanent colours and aligned legend rows.
 - Hold and drag across bars or their date labels to inspect values. Hold and drag across the Today calendar to update the selected day's analytics continuously. Taps and keyboard activation still work. Pointer capture survives rerenders; future/untracked dates cannot be selected, and the calendar stays anchored.
-- Seven-day date strip follows the supplied [reference](references/seven-day-date-strip.png): two-letter weekdays, day numbers, selected-day circle, **no dots**. Previous/next controls move by seven days; Latest restores the selected snapshot's most recent window. Earlier windows do not change the hero or calendar selection. Calendar/flow changes reset the trend window. Date ranges include years when crossing New Year.
+- Seven-day date strip follows the supplied [reference](references/seven-day-date-strip.png): two-letter weekdays, day numbers, selected-day circle, **no dots**. Previous/next controls move by seven days, with the next range capped at today. Latest is removed. Earlier windows do not change the hero or calendar selection. Calendar/flow changes reset the trend window. Date ranges include years when crossing New Year.
 - The month-labelled twelve-month spending heatmap is the **last Stats section, immediately below Expenses by category**. The existing planned-payment section is placed above categories. Stats period navigation determines the heatmap's ending month; horizontal panning explores the year, and tapping a day reveals the amount.
 - Following the supplied [heatmap reference](references/monthly-spend-heatmap.png), one neon-green hue uses pale-to-dark steps: **higher spend = darker shade**. A common scale covers the displayed year. Recorded zero, untracked/future days and padding remain distinct. Includes bills, excludes investments/savings/transfers/income, and handles linked refunds as of the displayed month. The Today calendar retains its existing status colours.
 

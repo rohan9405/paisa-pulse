@@ -73,7 +73,7 @@ export function WeeklyTrend({ stats, flow, selected, onSelect }: { stats: Snapsh
     return flow === "spent" ? low ? "bg-lime" : high ? "bg-coral" : "bg-amber" : low ? "bg-coral" : high ? "bg-lime" : "bg-amber";
   };
   return <>
-    <div className="mt-3 touch-none select-none" data-testid="trend-scrubber" {...scrub}>
+    <div className="mt-3 touch-pan-y select-none" data-testid="trend-scrubber" {...scrub}>
     <div className="relative h-24">
       <div className="flex h-full items-end gap-2">{stats.trend7.map(d => <button key={d.date} disabled={d.future || d.untracked} aria-label={`${formatDay(d.date, { weekday: true })}, ${flow} ${formatINR(d.amountPaise)}`} aria-pressed={selected === d.date} className="relative flex h-full min-w-0 flex-1 items-end rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white" onClick={() => onSelect(d.date)} data-scrub-value={d.date} data-testid={`trend-${d.date}`}>
         <span className={cx("block w-full rounded-md", d.future || d.untracked ? "bg-white/[0.03]" : tone(d.amountPaise), selected === d.date && "ring-2 ring-white ring-offset-2 ring-offset-ink-850")} style={{ height: `${d.future || d.untracked ? 4 : Math.max(3, 100 * d.amountPaise / max)}%` }} />

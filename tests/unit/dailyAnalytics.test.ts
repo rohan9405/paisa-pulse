@@ -64,8 +64,12 @@ describe("unified daily snapshots", () => {
     const short = dailyAnalytics(payments, "2026-10-01", "2026-10-03", "spent");
     expect(short.rolling28DailyAvgPaise).toBeNull(); expect(short.rolling7DailyAvgPaise).toBeNull();
   });
-  it("keeps six calendar rows for every month, including leap years", () => {
-    for (const month of ["2026-02", "2024-02", "2026-10", "2026-11"]) expect(calendarSlots(month)).toHaveLength(42);
+  it("uses only occupied calendar weeks, including leap years and six-row months", () => {
+    for (const [month, count] of [["2027-02", 28], ["2024-02", 35], ["2026-10", 35], ["2026-11", 42]] as const) {
+      const slots = calendarSlots(month);
+      expect(slots).toHaveLength(count);
+      expect(slots.slice(-7).some(Boolean)).toBe(true);
+    }
     expect(calendarSlots("2024-02").filter(Boolean)).toHaveLength(29);
   });
 });

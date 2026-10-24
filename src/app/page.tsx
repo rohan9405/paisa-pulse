@@ -113,12 +113,12 @@ export default function TodayPage() {
 
       {flow === "spent" && insight && <div className="my-3" data-testid="pattern-insights"><InsightCard insight={insight} /></div>}
 
-      <TrendExplorer key={`${day}:${flow}`} txns={data.txns} trackingStart={trackingStart} asOf={day} flow={flow} />
+      <TrendExplorer key={`${day}:${flow}`} txns={data.txns} trackingStart={trackingStart} asOf={day} today={today} flow={flow} />
 
       <div ref={calendarRef} className="mt-3 [overflow-anchor:none]" data-testid="calendar-anchor">
         <Card className="p-4" data-testid="calendar">
           <div className="mb-3 flex h-9 items-center justify-between gap-2"><button className="btn-ghost h-9 w-9 min-h-0 px-0" aria-label="Previous calendar month" disabled={calendarMonth <= monthKey(trackingStart)} onClick={() => { keepAnchor(); setCalendarMonth(addMonths(calendarMonth, -1)); }}>‹</button><h2 className="text-sm font-semibold">{formatMonth(calendarMonth)}</h2><button className="btn-ghost h-9 w-9 min-h-0 px-0" aria-label="Next calendar month" disabled={calendarMonth >= monthKey(today)} onClick={() => { keepAnchor(); setCalendarMonth(addMonths(calendarMonth, 1)); }}>›</button></div>
-          <div className="grid touch-none select-none grid-cols-7 gap-1 text-center text-[11px] text-ink-400" data-testid="calendar-scrubber" {...calendarScrub}>{["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={`weekday-${i}`} className="pb-1">{d}</span>)}
+          <div className="grid touch-pan-y select-none grid-cols-7 gap-1 text-center text-[11px] text-ink-400" data-testid="calendar-scrubber" {...calendarScrub}>{["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={`weekday-${i}`} className="pb-1">{d}</span>)}
             {slots.map((date, i) => date ? <button key={date} className={cx("num flex h-9 items-center justify-center rounded-lg text-xs font-semibold sm:h-10", (flow === "spent" ? HEAT_COLORS : INCOME_HEAT_COLORS)[heatLevel(date)], date === day ? "ring-2 ring-lime ring-offset-2 ring-offset-ink-850" : date === today ? "ring-1 ring-white/40" : "", (date > today || date < trackingStart) && "opacity-20")} disabled={date > today || date < trackingStart} aria-label={`Select ${formatDay(date, { weekday: true, year: true })}`} aria-pressed={date === day} onClick={() => pickDay(date)} data-scrub-value={date} data-level={heatLevel(date)} data-testid={`calendar-${date}`}>{Number(date.slice(8))}</button> : <span key={`empty-${i}`} className="h-9 sm:h-10" />)}
           </div>
           <div className="mt-3 flex h-11 items-center justify-between gap-2 border-t border-white/5 pt-2 text-xs" aria-live="polite" data-testid="calendar-summary"><span className="text-ink-400">{formatDay(day)} · {summary.toLowerCase()}</span><Money paise={stats.dayPaise} className="num font-semibold" /></div>

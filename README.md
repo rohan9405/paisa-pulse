@@ -148,12 +148,12 @@ Category amounts are always visible alongside percentages. Hold and drag across 
 
 Category colours are permanent and shared across Today and Stats. They use a muted palette separate from status and comparison charts; category dots, labels and percentages align on one row.
 
-Today compares the selected day with the previous 28 completed days (including zero-spend days). The rolling trend covers the selected day and six days before it; its dotted line is their daily average. Incomplete reference windows show no comparison rather than inventing an average. Week/month cumulative comparisons still use equal calendar periods. Previous/next arrows inspect older seven-day windows without changing the daily snapshot; Latest returns to its most recent window. Stats ends with a month-labelled twelve-month spending heatmap: darker shades mean higher spending, and tapping a day shows its amount.
+Today compares the selected day with the previous 28 completed days (including zero-spend days). The rolling trend covers the selected day and six days before it; its dotted line is their daily average. Incomplete reference windows show no comparison rather than inventing an average. Week/month cumulative comparisons still use equal calendar periods. Previous/next arrows inspect seven-day windows without changing the daily snapshot; the right arrow can advance from an older calendar selection through today. Stats ends with a month-labelled twelve-month spending heatmap: darker shades mean higher spending, and tapping a day shows its amount.
 
 | Screen | What it does |
 |---|---|
 | Onboarding | Budget mode (set-aside, planned or actual, or "just track"), income, bills / investments / savings with due days and "already paid this month", tracking start date, opening adjustment (default ₹0), live pool preview incl. shortfall warning |
-| Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), always-visible category values, one category pattern, scrubbable rolling seven-day bars with weekday/date labels, previous/next ranges and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
+| Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), always-visible category values, one category pattern, scrubbable rolling seven-day bars with weekday/date labels, previous/next ranges through today and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
 | Briefing (legacy link) | Opens the unified Today view; no separate tab or morning/night report. Historical links retain their selected day. |
 | Activity | Search, kind/category/period filters, edit, delete, category correction (optionally saved as a rule), match to bill/savings reservation, link refunds, smart suggestions for bill matches and own-account transfers |
 | Stats | Tap a category to open that month’s filtered Activity. Week/month: Net In-Hand (income − expenses − investments), three summary cards, cumulative spend vs budget, daily spending chart with the month’s daily-average dotted line, category breakdown and planned payments; neon-green twelve-month spending heatmap below Expenses by category (darker means more spending) |
@@ -210,4 +210,8 @@ The daily spending chart’s dotted line is the selected month’s daily average
 
 ### Navigation update · 0.8.10
 
-Stats category rows open Activity with that category and the selected month prefilled, including older months. Activity’s period and category controls remain editable. The Today trend keeps its date range centered between arrows, with Latest centered in a separate reserved row so changing ranges does not shift the chart.
+Stats category rows open Activity with that category and the selected month prefilled, including older months. Activity’s period and category controls remain editable. The Today trend keeps its date range centered between arrows. Latest is removed; the next arrow can advance from older calendar selections up to today.
+
+Calendar months show only the weeks containing dates, removing the unused bottom row. Sliding across Today dates/bars and Stats chart dates gives a light haptic tick per new selection on Android, respecting the app’s Haptic feedback setting and phone settings.
+
+On Today, vertical swipes over the calendar and trend scroll the page; horizontal drags inspect dates/bars. Touch selection waits for a tap or horizontal intent so starting a page scroll does not change the selected date.

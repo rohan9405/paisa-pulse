@@ -41,10 +41,10 @@ export function dailyAnalytics(txns: Transaction[], trackingStart: DateKey, asOf
   };
 }
 
-/** Always 42 slots: picking a day or browsing February cannot resize the calendar. */
+/** Whole weeks only; omit unused trailing weeks. Picking a date never changes the grid. */
 export function calendarSlots(month: string): (DateKey | null)[] {
   const first = `${month}-01`;
   const blanks = diffDays(startOfWeek(first), first);
   const dates: (DateKey | null)[] = [...Array(blanks).fill(null), ...eachDay(first, endOfMonth(first))];
-  return [...dates, ...Array(42 - dates.length).fill(null)];
+  return [...dates, ...Array(Math.ceil(dates.length / 7) * 7 - dates.length).fill(null)];
 }
