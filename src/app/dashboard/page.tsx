@@ -9,6 +9,7 @@ import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, m
 import { formatINR } from "@/lib/money";
 import { markCommitmentPaid } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
+import { SpendHeatmap } from "@/components/SpendHeatmap";
 import { Card, EmptyState, InfoTip, Money, PageHeader, Pill, SectionTitle, Segmented, cx } from "@/components/ui";
 
 type Period = "week" | "month";
@@ -167,36 +168,6 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">Expenses by category</h2>
-              <InfoTip label="About expenses by category">Investments and savings aren't expenses, so they're not here.</InfoTip>
-            </div>
-            {cats.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-400">No expenses in this period.</p>
-            ) : (
-              <div className="space-y-3" data-testid="category-breakdown">
-                {cats.map((c) => (
-                  <div key={c.category} title={`${c.category}: ${formatINR(c.amountPaise)} across ${c.count} transactions`}>
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span>
-                        {categoryEmoji(c.category)} {c.category}
-                        <span className="ml-1.5 text-xs text-ink-400">×{c.count}</span>
-                      </span>
-                      <span className="num">
-                        {formatINR(c.amountPaise)}
-                        <span className="ml-2 inline-block w-9 text-right text-xs text-ink-400">{Math.round((c.amountPaise / Math.max(1, catTotal)) * 100)}%</span>
-                      </span>
-                    </div>
-                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
-                      <div className="h-full rounded-full" style={{ width: `${(c.amountPaise / catMax) * 100}%`, backgroundColor: categoryColor(c.category) }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
           {showPlanned && <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="font-semibold">Planned payments · {formatMonth(mk)}</h2>
@@ -234,6 +205,40 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>}
+
+          <Card>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-semibold">Expenses by category</h2>
+              <InfoTip label="About expenses by category">Investments and savings aren't expenses, so they're not here.</InfoTip>
+            </div>
+            {cats.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-400">No expenses in this period.</p>
+            ) : (
+              <div className="space-y-3" data-testid="category-breakdown">
+                {cats.map((c) => (
+                  <div key={c.category} title={`${c.category}: ${formatINR(c.amountPaise)} across ${c.count} transactions`}>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span>
+                        {categoryEmoji(c.category)} {c.category}
+                        <span className="ml-1.5 text-xs text-ink-400">×{c.count}</span>
+                      </span>
+                      <span className="num">
+                        {formatINR(c.amountPaise)}
+                        <span className="ml-2 inline-block w-9 text-right text-xs text-ink-400">{Math.round((c.amountPaise / Math.max(1, catTotal)) * 100)}%</span>
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div className="h-full rounded-full" style={{ width: `${(c.amountPaise / catMax) * 100}%`, backgroundColor: categoryColor(c.category) }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+
+          <SpendHeatmap txns={data.txns} trackingStart={data.profile!.trackingStart} today={today} endMonth={monthKey(toClamped)} />
+
         </div>
       )}
     </div>

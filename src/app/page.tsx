@@ -16,7 +16,9 @@ import { Notices } from "@/components/Notices";
 import { InsightCard, SyncPill } from "@/components/Overview";
 import { TxnEditor } from "@/components/TxnEditor";
 import { TxnRow } from "@/components/TxnRow";
-import { CategoryStrip, SnapshotVisuals, DailyDelta, WeeklyTrend, HEAT_COLORS, INCOME_HEAT_COLORS } from "@/components/DailyVisuals";
+import { CategoryStrip, SnapshotVisuals, DailyDelta, HEAT_COLORS, INCOME_HEAT_COLORS } from "@/components/DailyVisuals";
+import { TrendExplorer } from "@/components/TrendExplorer";
+import { usePointerScrub } from "@/components/hooks/usePointerScrub";
 import { Card, EmptyState, Money, SectionTitle, cx } from "@/components/ui";
 
 export default function TodayPage() {
@@ -26,7 +28,6 @@ export default function TodayPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [flow, setFlow] = useState<MoneyFlow>("spent");
   const [calendarMonth, setCalendarMonth] = useState(monthKey(today));
-  const [bar, setBar] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
   const anchor = useRef<number | null>(null);
@@ -72,14 +73,15 @@ export default function TodayPage() {
       anchor.current = null;
     }
   }, [day, flow, calendarMonth]);
-  const pickDay = (date: string) => { if (date === day) return; keepAnchor(); setSelected(date === today ? null : date); setBar(null); };
-  const pickFlow = (value: MoneyFlow) => { if (value === flow) return; setFlow(value); setBar(null); };
+  const pickDay = (date: string) => { if (date === day) return; keepAnchor(); setSelected(date === today ? null : date); };
+  const pickFlow = (value: MoneyFlow) => { if (value === flow) return; setFlow(value); };
+
+  const calendarScrub = usePointerScrub(pickDay);
 
   if (!data?.profile || !derived || !stats) return null;
   const live = day === today;
   const trackingStart = data.profile.trackingStart;
   const hasStarted = day >= trackingStart;
-  const selectedBar = stats.trend7.find((d) => d.date === bar);
   const summary = flow === "spent" ? "Spent" : "Income";
   const dayLabel = live ? "today" : formatDay(day);
   const dayTxns = stats.dayEntries.map((e) => data.txns.find((t) => t.id === e.id)!).filter(Boolean);
@@ -111,16 +113,13 @@ export default function TodayPage() {
 
       {flow === "spent" && insight && <div className="my-3" data-testid="pattern-insights"><InsightCard insight={insight} /></div>}
 
-      <Card className="mt-1 p-4" data-testid="week">
-        <div className="flex h-6 items-center justify-between gap-2"><h2 className="text-sm font-semibold">Last 7 days</h2><span className="num text-xs text-ink-300" aria-live="polite" data-testid="bar-value">{selectedBar ? `${formatDay(selectedBar.date)} · ${formatINR(selectedBar.amountPaise)}` : "Tap a bar"}</span></div>
-        <WeeklyTrend stats={stats} flow={flow} selected={bar} onSelect={setBar} />
-      </Card>
+      <TrendExplorer key={`${day}:${flow}`} txns={data.txns} trackingStart={trackingStart} asOf={day} flow={flow} />
 
       <div ref={calendarRef} className="mt-3 [overflow-anchor:none]" data-testid="calendar-anchor">
         <Card className="p-4" data-testid="calendar">
           <div className="mb-3 flex h-9 items-center justify-between gap-2"><button className="btn-ghost h-9 w-9 min-h-0 px-0" aria-label="Previous calendar month" disabled={calendarMonth <= monthKey(trackingStart)} onClick={() => { keepAnchor(); setCalendarMonth(addMonths(calendarMonth, -1)); }}>‹</button><h2 className="text-sm font-semibold">{formatMonth(calendarMonth)}</h2><button className="btn-ghost h-9 w-9 min-h-0 px-0" aria-label="Next calendar month" disabled={calendarMonth >= monthKey(today)} onClick={() => { keepAnchor(); setCalendarMonth(addMonths(calendarMonth, 1)); }}>›</button></div>
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-ink-400">{["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={`weekday-${i}`} className="pb-1">{d}</span>)}
-            {slots.map((date, i) => date ? <button key={date} className={cx("num flex h-9 items-center justify-center rounded-lg text-xs font-semibold sm:h-10", (flow === "spent" ? HEAT_COLORS : INCOME_HEAT_COLORS)[heatLevel(date)], date === day ? "ring-2 ring-lime ring-offset-2 ring-offset-ink-850" : date === today ? "ring-1 ring-white/40" : "", (date > today || date < trackingStart) && "opacity-20")} disabled={date > today || date < trackingStart} aria-label={`Select ${formatDay(date, { weekday: true, year: true })}`} aria-pressed={date === day} onClick={() => pickDay(date)} data-level={heatLevel(date)} data-testid={`calendar-${date}`}>{Number(date.slice(8))}</button> : <span key={`empty-${i}`} className="h-9 sm:h-10" />)}
+          <div className="grid touch-none select-none grid-cols-7 gap-1 text-center text-[11px] text-ink-400" data-testid="calendar-scrubber" {...calendarScrub}>{["M", "T", "W", "T", "F", "S", "S"].map((d, i) => <span key={`weekday-${i}`} className="pb-1">{d}</span>)}
+            {slots.map((date, i) => date ? <button key={date} className={cx("num flex h-9 items-center justify-center rounded-lg text-xs font-semibold sm:h-10", (flow === "spent" ? HEAT_COLORS : INCOME_HEAT_COLORS)[heatLevel(date)], date === day ? "ring-2 ring-lime ring-offset-2 ring-offset-ink-850" : date === today ? "ring-1 ring-white/40" : "", (date > today || date < trackingStart) && "opacity-20")} disabled={date > today || date < trackingStart} aria-label={`Select ${formatDay(date, { weekday: true, year: true })}`} aria-pressed={date === day} onClick={() => pickDay(date)} data-scrub-value={date} data-level={heatLevel(date)} data-testid={`calendar-${date}`}>{Number(date.slice(8))}</button> : <span key={`empty-${i}`} className="h-9 sm:h-10" />)}
           </div>
           <div className="mt-3 flex h-11 items-center justify-between gap-2 border-t border-white/5 pt-2 text-xs" aria-live="polite" data-testid="calendar-summary"><span className="text-ink-400">{formatDay(day)} · {summary.toLowerCase()}</span><Money paise={stats.dayPaise} className="num font-semibold" /></div>
         </Card>

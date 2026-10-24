@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePointerScrub } from "./hooks/usePointerScrub";
 import { categoryColor } from "@/lib/categoryColors";
 import { formatDay } from "@/lib/dates";
 import type { dailyAnalytics, MoneyFlow } from "@/lib/dailyAnalytics";
@@ -10,15 +11,12 @@ import { Money, Segmented, cx } from "./ui";
 type Snapshot = ReturnType<typeof dailyAnalytics>;
 
 export function CategoryStrip({ stats, flow }: { stats: Snapshot; flow: MoneyFlow }) {
-  const [picked, setPicked] = useState<string | null>(null);
-  const key = (label: string) => `${stats.asOf}:${flow}:${label}`;
-  const pick = (label: string) => setPicked(picked === key(label) ? null : key(label));
   return <div className="mt-4" data-testid="day-breakdown">
     <div className="flex h-3 gap-0.5 overflow-hidden rounded-full bg-white/5" aria-label={flow === "spent" ? "Spending breakdown" : "Income sources"}>
-      {stats.breakdown.map(c => <button type="button" key={c.label} onClick={() => pick(c.label)} aria-label={`${c.label}, ${formatINR(c.amountPaise)}`} style={{ flex: c.amountPaise, backgroundColor: categoryColor(flow === "income" ? "Income" : c.label) }} title={`${c.label} · ${formatINR(c.amountPaise)} · ${Math.round(100 * c.amountPaise / Math.max(1, stats.dayPaise))}%`} />)}
+      {stats.breakdown.map(c => <span key={c.label} aria-label={`${c.label}, ${formatINR(c.amountPaise)}`} style={{ flex: c.amountPaise, backgroundColor: categoryColor(flow === "income" ? "Income" : c.label) }} title={`${c.label} · ${formatINR(c.amountPaise)} · ${Math.round(100 * c.amountPaise / Math.max(1, stats.dayPaise))}%`} />)}
     </div>
     <div className="mt-2 grid h-[84px] grid-cols-2 content-start gap-x-4 gap-y-1 overflow-y-auto [scrollbar-width:thin]">
-      {stats.breakdown.length ? stats.breakdown.map(c => <button key={c.label} type="button" onClick={() => pick(c.label)} aria-expanded={picked === key(c.label)} className="grid h-10 min-w-0 grid-cols-[6px_minmax(0,1fr)_auto] grid-rows-[16px_14px] items-center gap-x-1.5 py-1 text-left text-[11px]" data-testid={`category-${c.label}`}><span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: categoryColor(flow === "income" ? "Income" : c.label) }} /><span className="truncate text-ink-300">{c.label}</span><span className="num text-right text-white">{Math.round(100 * c.amountPaise / Math.max(1, stats.dayPaise))}%</span><span className={cx("num col-span-2 col-start-2 row-start-2 text-[10px] text-white", picked !== key(c.label) && "invisible")}><Money paise={c.amountPaise} decimals="never" /></span></button>) : <span className="col-span-2 text-xs text-ink-400">No {flow === "spent" ? "expenses" : "income"} recorded.</span>}
+      {stats.breakdown.length ? stats.breakdown.map(c => <div key={c.label} className="grid h-10 min-w-0 grid-cols-[6px_minmax(0,1fr)_auto] grid-rows-[16px_14px] items-center gap-x-1.5 py-1 text-left text-[11px]" data-testid={`category-${c.label}`}><span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: categoryColor(flow === "income" ? "Income" : c.label) }} /><span className="truncate text-ink-300">{c.label}</span><span className="num text-right text-white">{Math.round(100 * c.amountPaise / Math.max(1, stats.dayPaise))}%</span><span className="num col-span-2 col-start-2 row-start-2 text-[10px] text-white" data-testid={`category-amount-${c.label}`}><Money paise={c.amountPaise} /></span></div>) : <span className="col-span-2 text-xs text-ink-400">No {flow === "spent" ? "expenses" : "income"} recorded.</span>}
     </div>
   </div>;
 }
@@ -65,6 +63,7 @@ export function DailyDelta({ stats, flow }: { stats: Snapshot; flow: MoneyFlow }
 }
 
 export function WeeklyTrend({ stats, flow, selected, onSelect }: { stats: Snapshot; flow: MoneyFlow; selected: string | null; onSelect: (date: string) => void }) {
+  const scrub = usePointerScrub(onSelect);
   const avg = stats.rolling7DailyAvgPaise;
   const max = Math.max(1, (avg ?? 0) * 1.25, ...stats.trend7.map(d => d.amountPaise));
   const tone = (amount: number) => {
@@ -74,13 +73,15 @@ export function WeeklyTrend({ stats, flow, selected, onSelect }: { stats: Snapsh
     return flow === "spent" ? low ? "bg-lime" : high ? "bg-coral" : "bg-amber" : low ? "bg-coral" : high ? "bg-lime" : "bg-amber";
   };
   return <>
-    <div className="relative mt-3 h-24">
-      <div className="flex h-full items-end gap-2">{stats.trend7.map(d => <button key={d.date} disabled={d.future || d.untracked} aria-label={`${formatDay(d.date, { weekday: true })}, ${flow} ${formatINR(d.amountPaise)}`} aria-pressed={selected === d.date} className="relative flex h-full min-w-0 flex-1 items-end rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white" onClick={() => onSelect(d.date)} data-testid={`trend-${d.date}`}>
+    <div className="mt-3 touch-none select-none" data-testid="trend-scrubber" {...scrub}>
+    <div className="relative h-24">
+      <div className="flex h-full items-end gap-2">{stats.trend7.map(d => <button key={d.date} disabled={d.future || d.untracked} aria-label={`${formatDay(d.date, { weekday: true })}, ${flow} ${formatINR(d.amountPaise)}`} aria-pressed={selected === d.date} className="relative flex h-full min-w-0 flex-1 items-end rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-white" onClick={() => onSelect(d.date)} data-scrub-value={d.date} data-testid={`trend-${d.date}`}>
         <span className={cx("block w-full rounded-md", d.future || d.untracked ? "bg-white/[0.03]" : tone(d.amountPaise), selected === d.date && "ring-2 ring-white ring-offset-2 ring-offset-ink-850")} style={{ height: `${d.future || d.untracked ? 4 : Math.max(3, 100 * d.amountPaise / max)}%` }} />
       </button>)}</div>
       {avg !== null && <span data-testid="week-average-line" className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-dotted border-white/65" style={{ bottom: `${100 * avg / max}%` }} />}
     </div>
-    <div className="mt-2 flex gap-2 text-center text-[11px] text-ink-400">{stats.trend7.map(d => <span key={d.date} className="flex-1">{new Date(`${d.date}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "narrow", timeZone: "UTC" })}</span>)}</div>
+    <div className="mt-3 flex gap-2 text-center">{stats.trend7.map(d => <button type="button" key={d.date} disabled={d.untracked || d.future} className="flex min-w-0 flex-1 flex-col items-center gap-1 disabled:opacity-25" onClick={() => onSelect(d.date)} aria-label={`Inspect ${formatDay(d.date, { weekday: true, year: true })}`} aria-pressed={selected === d.date} data-scrub-value={d.date} data-testid={`trend-date-${d.date}`}><span className="text-[9px] uppercase text-ink-400">{new Date(`${d.date}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", timeZone: "UTC" }).slice(0, 2)}</span><span className={cx("num grid h-8 w-8 place-items-center rounded-full text-xs font-semibold", selected === d.date ? "bg-lime text-ink-950" : "text-ink-300")}>{Number(d.date.slice(8))}</span></button>)}</div>
+    </div>
     <div className="mt-3 flex min-h-4 items-center gap-2 text-[10px] text-ink-400" data-testid="week-average-label"><span className="w-5 border-t-2 border-dotted border-white/65" />7-day daily avg{avg === null ? " · unavailable" : ` · ${formatINR(avg)}`}</div>
   </>;
 }

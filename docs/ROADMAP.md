@@ -1,6 +1,38 @@
 # drip roadmap
 
-Current checkout: **0.8.4** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+Current checkout: **0.8.9** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+
+## Implemented: chart navigation, heatmap and scrubbing (0.8.9, build 21)
+
+- Built on latest local `main`, 0.8.8 at `6afdc58`; earlier work was already committed. Fetch confirmed no missing remote commits.
+- Category amounts (including paise where present) are always visible beside percentages, with the same permanent colours and aligned legend rows.
+- Hold and drag across bars or their date labels to inspect values. Hold and drag across the Today calendar to update the selected day's analytics continuously. Taps and keyboard activation still work. Pointer capture survives rerenders; future/untracked dates cannot be selected, and the calendar stays anchored.
+- Seven-day date strip follows the supplied [reference](references/seven-day-date-strip.png): two-letter weekdays, day numbers, selected-day circle, **no dots**. Previous/next controls move by seven days; Latest restores the selected snapshot's most recent window. Earlier windows do not change the hero or calendar selection. Calendar/flow changes reset the trend window. Date ranges include years when crossing New Year.
+- The month-labelled twelve-month spending heatmap is the **last Stats section, immediately below Expenses by category**. The existing planned-payment section is placed above categories. Stats period navigation determines the heatmap's ending month; horizontal panning explores the year, and tapping a day reveals the amount.
+- Following the supplied [heatmap reference](references/monthly-spend-heatmap.png), one blue hue uses pale-to-dark steps: **higher spend = darker shade**. A common scale covers the displayed year. Recorded zero, untracked/future days and padding remain distinct. Includes bills, excludes investments/savings/transfers/income, and handles linked refunds as of the displayed month. The Today calendar retains its existing status colours.
+
+## Planned: product presentation (not started)
+
+Marketing assets, the README redesign and the website below remain roadmap-only. The chart updates above were subsequently authorised for implementation.
+
+### Marketing assets and current product screens
+
+- Review [openGym's README](https://github.com/DuarteSantos8/openGym/blob/main/README.md) and [one-page website](https://opengym.ch/) as structural references, with original drip positioning, copy and artwork.
+- Lead with everyday expense tracking and less manual work: SMS imports, recipient-level tagging and remembered corrections, daily/period comparisons, upcoming payments, data control and optional budgeting.
+- Plan an original branded hero/banner, polished phone compositions, concise feature panels, social preview images and store graphics. Capture a consistent, current set of Today, seven-day/calendar, Activity/Recipients, Stats, upcoming payments, widget and Settings screens using fictional data only.
+- Keep one repeatable screenshot source and shared assets for the repository, release/store listing and website. Do not copy openGym's product photos, branding, feature claims or layouts wholesale.
+
+### README structure and gaps to close
+
+- Proposed order: branded hero + concise pitch; verified release/platform links; captioned screenshot gallery; why drip; benefits grouped by tracking, insights, automation and data ownership; quick start/install; browser demo; privacy/data flow; backup/import; development; roadmap/changelog; support/contributing/license links where applicable.
+- Gaps in the current README: budget-first introduction despite tracking mode; no polished branded banner; screenshots not uniformly current; no concise “why drip” story or clear benefit groups; no public demo/website entry point; release/status links and support/contribution documentation need a consistency pass.
+- Match claims to the latest implementation. In particular, 0.8.8 has optional anonymous usage counters: describe their controls and data boundaries accurately rather than copying a “no telemetry” promise. Do not claim a store release, license, sync or platform support that has not been verified.
+
+### One-page drip website
+
+- Plan a mobile-first page with an original daily-tracking pitch, download and demo calls to action, selected feature stories, swipeable current screenshots, a fictional-data interactive demo if practical, install requirements, privacy/data ownership, backups, FAQs and project/support links.
+- Borrow the reference's progression from value proposition to product proof to trying/downloading the app; retain drip's minimal dark theme and typography. Link documentation and truthful release status. Keep personal financial data out of marketing assets and the public demo.
+- Execution order: agree the tracking-first pitch → review the completed chart UI → refresh product captures → create original marketing assets → restructure README → build/review the landing page → publish only when authorised.
 
 ## Config-owned merchant markers (0.8.5, build 17)
 

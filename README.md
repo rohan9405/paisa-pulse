@@ -144,17 +144,19 @@ docs/               budget rules, data integration, roadmap, marketing
 
 ## Screens
 
+Category amounts are always visible alongside percentages. Hold and drag across trend bars to inspect values or across calendar dates to select a day; taps and keyboard controls also work.
+
 Category colours are permanent and shared across Today and Stats. They use a muted palette separate from status and comparison charts; category dots, labels and percentages align on one row.
 
-Today compares the selected day with the previous 28 completed days (including zero-spend days). The rolling trend covers the selected day and six days before it; its dotted line is their daily average. Incomplete reference windows show no comparison rather than inventing an average. Week/month cumulative comparisons still use equal calendar periods.
+Today compares the selected day with the previous 28 completed days (including zero-spend days). The rolling trend covers the selected day and six days before it; its dotted line is their daily average. Incomplete reference windows show no comparison rather than inventing an average. Week/month cumulative comparisons still use equal calendar periods. Previous/next arrows inspect older seven-day windows without changing the daily snapshot; Latest returns to its most recent window. Stats ends with a month-labelled twelve-month spending heatmap: darker shades mean higher spending, and tapping a day shows its amount.
 
 | Screen | What it does |
 |---|---|
 | Onboarding | Budget mode (set-aside, planned or actual, or "just track"), income, bills / investments / savings with due days and "already paid this month", tracking start date, opening adjustment (default ₹0), live pool preview incl. shortfall warning |
-| Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), category values on tap, one category pattern, tappable rolling seven-day bars and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
+| Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), always-visible category values, one category pattern, scrubbable rolling seven-day bars with weekday/date labels, previous/next ranges and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
 | Briefing (legacy link) | Opens the unified Today view; no separate tab or morning/night report. Historical links retain their selected day. |
 | Activity | Search, kind/category/period filters, edit, delete, category correction (optionally saved as a rule), match to bill/savings reservation, link refunds, smart suggestions for bill matches and own-account transfers |
-| Stats | Week/month: total outgoings split into everyday / bills & savings / investments (transfers excluded), cumulative spend vs budget, daily spend, category breakdown, this month's bills with mark-paid |
+| Stats | Week/month: total outgoings split into everyday / bills & savings / investments (transfers excluded), cumulative spend vs budget, daily spend, category breakdown, this month's bills with mark-paid; twelve-month spending heatmap below Expenses by category (one hue, darker means more spending) |
 | Import CSV | Column mapping, date-format choice, three amount layouts, preview with per-row errors, duplicate detection, per-row include/exclude, undo import |
 | Settings | Budget · Data · App tabs. Budget: mode, changes effective from a date (history preserved), recurring payments. Data: tracking start (moving it earlier backfills SMS) / opening adjustment, category + tag rules, balances switch, backup folder, JSON/CSV export, restore, typed-confirmation delete, mode switch. App: fingerprint lock, haptics |
 
