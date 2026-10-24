@@ -6,7 +6,7 @@ import { Suspense, useMemo, useState } from "react";
 import { HoldList } from "@/components/HoldList";
 import { RecipientTagger } from "@/components/RecipientTagger";
 import { recipientKey, taggingFlow, recipientNeedsTagging, withinTaggingWindow } from "@/lib/recipients";
-import { CATEGORIES } from "@/lib/categorize";
+import { ACTIVE_CATEGORIES as CATEGORIES, displayCategory } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, monthKey, relativeDayLabel, startOfMonth } from "@/lib/dates";
 import { hasBudget, matchCommitment, modeOf, planForDate } from "@/lib/budget";
 import { commitmentCandidates, transferPairs } from "@/lib/match";
@@ -62,7 +62,7 @@ function Transactions() {
     return data.txns
       .filter((t) => t.date >= range[0] && t.date <= range[1])
       .filter((t) => (kind === "all" ? true : kind === "review" ? t.needsReview : t.kind === kind))
-      .filter((t) => !cat || t.category === cat)
+      .filter((t) => !cat || displayCategory(t.category) === cat)
       .filter((t) => !needle || [t.merchant, t.payee, t.category, t.note, t.source.raw, (t.amountPaise / 100).toString()].some((s) => s?.toLowerCase().includes(needle)))
       .sort((a, b) => (a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1));
   }, [data, q, kind, cat, range]);
@@ -162,7 +162,7 @@ function Transactions() {
       </div>
 
       <div className="-mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-        {(["all", "expense", "commitment", "investment", "transfer", "refund", "income", "review"] as KindFilter[]).map((k) => (
+        {(["all", "expense", "commitment", "investment", "transfer", "refund", "settlement", "income", "review"] as KindFilter[]).map((k) => (
           <button key={k} className={cx("chip", kind === k && "chip-on")} onClick={() => setKind(k)}>
             {k === "all" ? "All" : k === "review" ? `⚠️ Review${reviewCount ? ` (${reviewCount})` : ""}` : KIND_LABEL[k]}
           </button>

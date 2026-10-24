@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { hasBudget, modeOf, planForDate, poolSummary, setAsideOf } from "@/lib/budget";
-import { CATEGORIES, DEFAULT_SET_ASIDE, SET_ASIDE_OPTIONS, TAGS, categoryEmoji, tagEmoji } from "@/lib/categorize";
+import { ACTIVE_CATEGORIES as CATEGORIES, DEFAULT_SET_ASIDE, SET_ASIDE_OPTIONS, TAGS, categoryEmoji, displayCategory, tagEmoji } from "@/lib/categorize";
 import { formatDay, toISTKey } from "@/lib/dates";
 import { formatINR, paiseToRupeeInput, parseAmountToPaise, rupeesInputToPaise } from "@/lib/money";
 import { DEFAULT_PREFS, type CategoryRule, type Prefs, type Profile, type Recurring, type SetAsideMode, type TxnKind } from "@/lib/types";
@@ -410,12 +410,11 @@ function BudgetEditor() {
         {pool.hasBudget ? (
           <>
             {pool.mode === "planned" && <Line label="Take-home" value={formatINR(pool.incomePaise)} />}
-            <p className="text-xs text-ink-400">Set aside first: {pool.setAside.join(", ") || "nothing"}</p>
+            <p className="text-xs text-ink-400">Set aside first: {[...new Set(pool.setAside.map(displayCategory))].join(", ") || "nothing"}</p>
             {pool.mode === "planned" ? (
               <>
                 {pool.setAside.includes("Bills") && <Line label="Bills (planned)" value={`− ${formatINR(pool.billsPaise)}`} />}
-                {pool.setAside.includes("Investments") && <Line label="Investments (planned)" value={`− ${formatINR(pool.investmentsPaise)}`} />}
-                {pool.setAside.includes("Savings") && <Line label="Savings (planned)" value={`− ${formatINR(pool.savingsPaise)}`} />}
+                {(pool.setAside.includes("Investments") || pool.setAside.includes("Savings")) && <Line label="Investments (planned)" value={`− ${formatINR(pool.investmentsPaise + pool.savingsPaise)}`} />}
                 <Line label="Spending pool" value={formatINR(pool.poolPaise)} strong />
               </>
             ) : (
@@ -442,7 +441,7 @@ function BudgetEditor() {
         ]}
       />
       {trackOnly ? (
-        <p className="text-xs text-ink-400">No daily budget, just expense tracking. Bills, investments and savings are still shown separately in Stats.</p>
+        <p className="text-xs text-ink-400">No daily budget, just expense tracking. Bills count as expenses; investments are shown separately in Stats.</p>
       ) : (
         <div className="space-y-3" data-testid="set-aside-mode">
           <span className="label">How should bills and investments come off?</span>
@@ -480,7 +479,7 @@ function BudgetEditor() {
             <div className="flex flex-wrap gap-1.5" data-testid="set-aside-categories">
               {SET_ASIDE_OPTIONS.map((c) => (
                 <button key={c} className={cx("chip", setAside.includes(c) && "chip-on")} onClick={() => setSetAside((xs) => (xs.includes(c) ? xs.filter((x) => x !== c) : [...xs, c]))} aria-pressed={setAside.includes(c)}>
-                  {categoryEmoji(c)} {c}
+                  {categoryEmoji(c)} {displayCategory(c)}
                 </button>
               ))}
             </div>
@@ -614,7 +613,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   const saveOverride = async (g: CategoryRule) => {
     if (!editing) return;
     const own = mine(g);
-    const kind: TxnKind | undefined = editing.category === "Transfers" ? "transfer" : editing.category === "Income" ? "income" : editing.category === g.category ? g.kind : undefined;
+    const kind: TxnKind | undefined = editing.category === "Settlement" ? "settlement" : editing.category === "Transfers" ? "transfer" : editing.category === "Income" ? "income" : editing.category === g.category ? g.kind : undefined;
     await saveRule(db, { id: own?.id, pattern: g.pattern, direction: g.direction, category: editing.category, tag: editing.tag || undefined, kind, priority: 10 });
     setEditing(null);
     onToast("Saved as your rule; it stays when global rules change");
@@ -624,7 +623,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
   const add = async () => {
     const p = pattern.trim().toLowerCase();
     if (!p) return;
-    const kind: TxnKind | undefined = category === "Transfers" ? "transfer" : category === "Income" ? "income" : undefined;
+    const kind: TxnKind | undefined = category === "Settlement" ? "settlement" : category === "Transfers" ? "transfer" : category === "Income" ? "income" : undefined;
     await saveRule(db, { pattern: p, payee: isPayee ? p : undefined, category, tag: tag || undefined, kind, priority: 10 });
     setPattern("");
     setTag("");
@@ -640,7 +639,7 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
         <input className="input text-sm" placeholder="ramesh@okaxis or chai point" value={pattern} onChange={(e) => setPattern(e.target.value)} aria-label="Rule text or UPI ID" />
         <select className="input text-sm" value={category} onChange={(e) => (setCategory(e.target.value), setTag(""))} aria-label="Rule category">
           {CATEGORIES.filter((c) => c !== "Refunds").map((c) => (
-            <option key={c}>{c}</option>
+            <option key={c} value={c}>{displayCategory(c)}</option>
           ))}
         </select>
         <select className="input text-sm" value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Rule tag" disabled={!TAGS[category]}>
@@ -704,8 +703,8 @@ function RulesEditor({ onToast }: { onToast: (s: string) => void }) {
               <div className="grid gap-2 rounded-xl bg-white/[0.04] p-3 sm:grid-cols-[1fr_1fr_auto_auto]" data-testid="global-rule-editor">
                 <p className="text-xs text-ink-300 sm:col-span-4">“{g.pattern}” → your category</p>
                 <select className="input text-sm" value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value, tag: "" })} aria-label="Your category for this rule">
-                  {CATEGORIES.filter((c) => c !== "Refunds").map((c) => (
-                    <option key={c}>{c}</option>
+                  {[...new Set([...CATEGORIES.filter((c) => c !== "Refunds"), ...(typeof editing !== "undefined" && editing?.category === "Savings" ? ["Savings"] : [])])].map((c) => (
+                    <option key={c} value={c}>{displayCategory(c)}</option>
                   ))}
                 </select>
                 <select className="input text-sm" value={editing.tag} onChange={(e) => setEditing({ ...editing, tag: e.target.value })} aria-label="Your tag for this rule" disabled={!TAGS[editing.category]}>

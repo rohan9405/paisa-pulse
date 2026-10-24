@@ -20,6 +20,7 @@ export const CATEGORY_COLORS: Readonly<Record<(typeof CATEGORIES)[number], strin
   Transfers: "#7E8C94",
   Income: "#9BC5D4",
   Refunds: "#BBCCD5",
+  Settlement: "#C2B6A0",
   Other: "#A4A4AC",
 };
 

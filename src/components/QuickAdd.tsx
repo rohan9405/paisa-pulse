@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CATEGORIES, categorize, categoryEmoji } from "@/lib/categorize";
+import { ACTIVE_CATEGORIES as CATEGORIES, categorize, categoryEmoji, displayCategory } from "@/lib/categorize";
 import { formatINR, rupeesInputToPaise } from "@/lib/money";
+import { settlementCandidates } from "@/lib/reimbursements";
 import type { PaymentMethod } from "@/lib/types";
 import { useAppData, useStore } from "@/data/store";
 import { addManualTxn } from "@/data/repo";
@@ -26,6 +27,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
   const [catTouched, setCatTouched] = useState(false);
   const [date, setDate] = useState(today);
   const [method, setMethod] = useState<PaymentMethod>("upi");
+  const [originalId, setOriginalId] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -33,6 +35,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
 
   useEffect(() => {
     if (open) {
+      setOriginalId("");
       setAmount("");
       setMerchant("");
       setCategory("");
@@ -61,7 +64,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
     if (date > today) return setError("Date can't be in the future");
     setSaving(true);
     try {
-      await addManualTxn(db, { amountPaise: paise, merchant: merchant || category || "Expense", category: category || undefined, kind: category === "Income" ? "income" : undefined, date, method, note });
+      await addManualTxn(db, { amountPaise: paise, merchant: merchant || category || "Expense", category: category || undefined, kind: category === "Settlement" ? "settlement" : category === "Income" ? "income" : undefined, refundOf: category === "Settlement" ? originalId || undefined : undefined, date, method, note });
       const warn = trackingStart && date < trackingStart ? " (before tracking start — outside tracking summaries)" : "";
       setToast(`Added ${formatINR(paise)}${warn}`);
       onClose();
@@ -72,7 +75,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
     }
   };
 
-  const allCats = useMemo(() => CATEGORIES.filter((c) => !["Refunds", "Transfers"].includes(c)), []);
+  const allCats = useMemo(() => [...new Set([...CATEGORIES.filter((c) => !["Refunds", "Transfers"].includes(c)), ...(category === "Savings" ? [category] : [])])], [category]);
 
   return (
     <>
@@ -98,6 +101,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
           <Field label="Merchant / what">
             <input className="input" value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="Swiggy, auto, chai…" maxLength={60} data-testid="qa-merchant" />
           </Field>
+          {category === "Settlement" && <Field label="Settles which payment?"><select className="input" value={originalId} onChange={e => setOriginalId(e.target.value)} data-testid="qa-original-expense"><option value="">Link later · review</option>{settlementCandidates({ id: "new", date, amountPaise: paise ?? 0 }, data?.txns ?? []).map(t => <option value={t.id} key={t.id}>{t.date} · {t.merchant} · {formatINR(t.amountPaise)}</option>)}</select></Field>}
           <div>
             <span className="label">Category {suggestion && !catTouched && <span className="normal-case tracking-normal text-lime">· auto</span>}</span>
             <div className="-mx-1 flex flex-wrap gap-1.5">
@@ -108,7 +112,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
                   onClick={() => (setCategory(c), setCatTouched(true))}
                   className={cx("chip", category === c && "chip-on")}
                 >
-                  {categoryEmoji(c)} {c}
+                  {categoryEmoji(c)} {displayCategory(c)}
                 </button>
               ))}
               <select

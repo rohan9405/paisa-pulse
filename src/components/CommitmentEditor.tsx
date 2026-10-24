@@ -25,15 +25,14 @@ export const PRESETS: { name: string; kind: CommitmentKind; tag: string; dueDay:
   { name: "EMI", kind: "bill", tag: "EMI", dueDay: 5 },
   { name: "Insurance", kind: "bill", tag: "Insurance", dueDay: 20 },
   { name: "SIP", kind: "investment", tag: "SIP", dueDay: 5 },
-  { name: "RD / FD", kind: "savings", tag: "RD / FD", dueDay: 10 },
+  { name: "RD / FD", kind: "investment", tag: "RD / FD", dueDay: 10 },
 ];
 
 const KIND_CHIPS: { kind: CommitmentKind; label: string }[] = [
   { kind: "bill", label: "🧾 Bills" },
   { kind: "investment", label: "📈 Investments" },
-  { kind: "savings", label: "🏦 Savings" },
 ];
-const KIND_CATEGORY: Record<CommitmentKind, string> = { bill: "Bills", investment: "Investments", savings: "Savings" };
+const KIND_CATEGORY: Record<CommitmentKind, string> = { bill: "Bills", investment: "Investments", savings: "Investments" };
 
 export function newDraft(p?: Partial<CommitmentDraft>): CommitmentDraft {
   return { id: uid("c-"), name: "", kind: "bill", tag: "", amount: "", dueDay: "1", matchHint: "", alreadyPaid: false, ...p };
@@ -85,7 +84,7 @@ export function CommitmentList({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {KIND_CHIPS.map(({ kind: k, label }) => (
-              <button key={k} className={cx("chip", d.kind === k && "chip-on")} onClick={() => set(d.id, { kind: k, tag: (TAGS[KIND_CATEGORY[k]] ?? []).includes(d.tag) ? d.tag : "" })}>
+              <button key={k} className={cx("chip", (d.kind === "savings" ? "investment" : d.kind) === k && "chip-on")} onClick={() => set(d.id, { kind: k, tag: (TAGS[KIND_CATEGORY[k]] ?? []).includes(d.tag) ? d.tag : "" })}>
                 {label}
               </button>
             ))}

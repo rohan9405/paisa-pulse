@@ -17,7 +17,7 @@
  * admin password is what guards publishing; see SECURITY.md for what a config
  * can and can't do even then.
  */
-import { CATEGORIES, TAGS } from "../../src/lib/categorize";
+import { ACTIVE_CATEGORIES, TAGS } from "../../src/lib/categorize";
 import { SECTION_FIELDS, SECTION_LABEL, SECTIONS, describeChanges } from "../../src/lib/configDiff";
 import { CONFIG_PUBLIC_KEY } from "../../src/lib/configKey";
 import { MAX_CONFIG_BYTES, bytesToBase64url, verifyEnvelope } from "../../src/lib/configSignature";
@@ -174,7 +174,7 @@ export default {
 
     if (url.pathname === "/admin" && req.method === "GET") {
       const nonce = crypto.randomUUID().replace(/-/g, "");
-      const meta = { categories: CATEGORIES, tags: TAGS, tabIds: TAB_IDS, screenIds: SCREEN_IDS, allowedLinks: ALLOWED_LINK_PREFIXES, defaults: DEFAULT_CONFIG, sections: SECTIONS, sectionFields: SECTION_FIELDS, sectionLabels: SECTION_LABEL };
+      const meta = { categories: ACTIVE_CATEGORIES, tags: TAGS, tabIds: TAB_IDS, screenIds: SCREEN_IDS, allowedLinks: ALLOWED_LINK_PREFIXES, defaults: DEFAULT_CONFIG, sections: SECTIONS, sectionFields: SECTION_FIELDS, sectionLabels: SECTION_LABEL };
       return new Response(adminPage(meta, nonce), { headers: { "content-type": "text/html; charset=utf-8", ...adminHeaders(nonce) } });
     }
     if (url.pathname === "/admin/api/state" && req.method === "GET") {

@@ -1,3 +1,4 @@
+import { isReimbursementKind } from "./reimbursements";
 /**
  * Matching helpers: refunds → original expenses, payments → commitment
  * reservations, and debit/credit pairs that look like own-account transfers.
@@ -27,7 +28,7 @@ export interface RefundCandidate {
 /** Expenses a refund could belong to: same merchant, on/before the refund, within 120 days, not already fully refunded. */
 export function refundCandidates(refund: Transaction, txns: Transaction[]): RefundCandidate[] {
   const refundedSoFar = new Map<string, number>();
-  for (const t of txns) if (t.kind === "refund" && t.refundOf && t.id !== refund.id) refundedSoFar.set(t.refundOf, (refundedSoFar.get(t.refundOf) ?? 0) + t.amountPaise);
+  for (const t of txns) if (isReimbursementKind(t.kind) && t.refundOf && t.id !== refund.id) refundedSoFar.set(t.refundOf, (refundedSoFar.get(t.refundOf) ?? 0) + t.amountPaise);
   return txns
     .filter((t) => t.kind === "expense" && t.date <= refund.date && diffDays(t.date, refund.date) <= 120 && sameMerchant(t.merchant, refund.merchant))
     .filter((t) => t.amountPaise - (refundedSoFar.get(t.id) ?? 0) >= refund.amountPaise)
@@ -41,6 +42,7 @@ export function refundCandidates(refund: Transaction, txns: Transaction[]): Refu
 
 /** Link a refund if there is exactly one exact-amount candidate; otherwise flag for review. */
 export function autoLinkRefund(refund: Transaction, txns: Transaction[]): Pick<Transaction, "refundOf" | "needsReview" | "reviewReason"> {
+  if (refund.kind === "settlement") return { refundOf: undefined, needsReview: true, reviewReason: "Link this settlement to the original expense" };
   const cands = refundCandidates(refund, txns);
   const exact = cands.filter((c) => c.exactAmount);
   if (exact.length === 1) return { refundOf: exact[0].expense.id, needsReview: false, reviewReason: undefined };
@@ -118,11 +120,11 @@ function genericMerchant(m: string) {
  * edited. Returns the transactions to update.
  */
 export function learnFromLinked(txns: Transaction[]): Transaction[] {
-  const linked = txns.filter((t) => t.commitmentId && t.kind !== "income" && t.kind !== "refund").sort((a, b) => b.updatedAt - a.updatedAt);
+  const linked = txns.filter((t) => t.commitmentId && t.kind !== "income" && !isReimbursementKind(t.kind)).sort((a, b) => b.updatedAt - a.updatedAt);
   if (!linked.length) return [];
   const out: Transaction[] = [];
   for (const t of txns) {
-    if (t.commitmentId || t.kind === "income" || t.kind === "refund" || t.kind === "transfer") continue;
+    if (t.commitmentId || t.kind === "income" || isReimbursementKind(t.kind) || t.kind === "transfer") continue;
     if (t.source.providerId === "manual" || t.updatedAt !== t.createdAt) continue;
     const merchant = normalize(t.merchant);
     const teacher = linked.find((l) => {

@@ -1,3 +1,5 @@
+import { validateSettlement } from "@/lib/reimbursements";
+import { isReimbursementKind } from "@/lib/reimbursements";
 /**
  * Data operations. UI calls these; they keep financial rules (categorisation,
  * refund linking, provenance) out of components.
@@ -112,6 +114,13 @@ export interface NewTxnInput {
   method?: PaymentMethod;
   note?: string;
   commitmentId?: string;
+  refundOf?: string;
+}
+
+async function settlementContext(db: FinanceDB, t: Transaction): Promise<Transaction[]> {
+  if (t.kind !== "settlement" || !t.refundOf) return [];
+  const [original, credits] = await Promise.all([db.txns.get(t.refundOf), db.txns.where("refundOf").equals(t.refundOf).toArray()]);
+  return original ? [original, ...credits] : credits;
 }
 
 export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<Transaction> {
@@ -119,7 +128,7 @@ export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<T
   const guess = categorize(input.merchant, rules);
   const now = Date.now();
   const category = input.category || guess?.category || "Other";
-  const kind: TxnKind = input.kind ?? (category === "Income" ? "income" : !input.category && guess?.kind === "transfer" ? "transfer" : outflowKind(category));
+  const kind: TxnKind = input.kind ?? (category === "Settlement" ? "settlement" : category === "Income" ? "income" : !input.category && guess?.kind === "transfer" ? "transfer" : outflowKind(category));
   let t: Transaction = {
     id: uid("t-"),
     date: input.date,
@@ -131,22 +140,33 @@ export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<T
     method: input.method ?? detectMethod(input.merchant),
     note: input.note?.trim() || undefined,
     commitmentId: input.commitmentId,
+    refundOf: input.refundOf,
     source: { providerId: "manual", importedAt: now },
     createdAt: now,
     updatedAt: now,
   };
-  if (t.kind === "refund") t = { ...t, ...autoLinkRefund(t, await db.txns.toArray()) };
-  await db.txns.add(t);
+  if (isReimbursementKind(t.kind) && !t.refundOf) t = { ...t, ...autoLinkRefund(t, await db.txns.toArray()) };
+  await db.transaction("rw", db.txns, async () => {
+    validateSettlement(t, await settlementContext(db, t));
+    await db.txns.add(t);
+  });
   await db.connections.update("manual", { lastSyncAt: now, lastCount: 1, status: "connected" });
   return t;
 }
 
 export async function updateTxn(db: FinanceDB, id: string, patch: Partial<Transaction>) {
   const cleaned: Partial<Transaction> = { ...patch, userEdited: true, updatedAt: Date.now() };  if (patch.kind && patch.kind !== "commitment") cleaned.commitmentId = undefined;
-  if (patch.kind && patch.kind !== "refund") cleaned.refundOf = undefined;
+  if (patch.kind && !isReimbursementKind(patch.kind)) cleaned.refundOf = undefined;
   if (patch.refundOf) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });
   if (patch.kind === "commitment" && patch.commitmentId) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });
-  await db.txns.update(id, cleaned);
+  await db.transaction("rw", db.txns, async () => {
+    const current = await db.txns.get(id);
+    if (!current) throw new Error("Transaction not found");
+    const next = { ...current, ...cleaned };
+    validateSettlement(next, await settlementContext(db, next));
+    if (next.kind === "settlement" && !next.refundOf) Object.assign(cleaned, { needsReview: true, reviewReason: "Link this settlement to the original expense" });
+    await db.txns.update(id, cleaned);
+  });
   // Linking a payment to a planned line teaches drip about that payee's other payments.
   if (patch.commitmentId) {
     const learned = learnFromLinked(await db.txns.toArray());
@@ -320,7 +340,7 @@ export async function importCandidates(db: FinanceDB, rows: CandidateRow[], file
       createdAt: now,
       updatedAt: now,
     };
-    if (t.kind === "refund") t = { ...t, ...autoLinkRefund(t, [...existing, ...created, t]) };
+    if (isReimbursementKind(t.kind)) t = { ...t, ...autoLinkRefund(t, [...existing, ...created, t]) };
     created.push(t);
   }
   const batch: ImportBatch = {
@@ -352,7 +372,7 @@ export async function undoImport(db: FinanceDB, batchId: string) {
 export async function existingFingerprints(db: FinanceDB): Promise<Set<string>> {
   const all = await db.txns.toArray();
   return new Set(
-    all.map((t) => t.fingerprint ?? fingerprint({ date: t.date, amountPaise: t.amountPaise, direction: ["income", "refund"].includes(t.kind) ? "in" : "out", description: t.source.raw ?? t.merchant, reference: t.source.externalRef })),
+    all.map((t) => t.fingerprint ?? fingerprint({ date: t.date, amountPaise: t.amountPaise, direction: ["income", "refund", "settlement"].includes(t.kind) ? "in" : "out", description: t.source.raw ?? t.merchant, reference: t.source.externalRef })),
   );
 }
 

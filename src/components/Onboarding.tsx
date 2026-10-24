@@ -12,7 +12,7 @@ import { smsBridge } from "@/data/providers/sms";
 import { CommitmentList, type CommitmentDraft, validateDrafts } from "@/components/CommitmentEditor";
 import { AmountInput, Field, Money, cx } from "@/components/ui";
 
-const STEPS = ["Income", "Bills & savings", "Start"] as const;
+const STEPS = ["Income", "Bills & investments", "Start"] as const;
 
 export function Onboarding() {
   const { db, today, setMode } = useStore();
@@ -173,8 +173,7 @@ export function Onboarding() {
             <div className="card space-y-2 text-sm" data-testid="ob-summary">
               <Row label="Take-home" value={formatINR(preview.incomePaise)} />
               <Row label="Bills" value={`− ${formatINR(preview.billsPaise)}`} />
-              <Row label="Investments" value={`− ${formatINR(preview.investmentsPaise)}`} />
-              <Row label="Savings" value={`− ${formatINR(preview.savingsPaise)}`} />
+              <Row label="Investments" value={`− ${formatINR(preview.investmentsPaise + preview.savingsPaise)}`} />
               <div className="my-1 border-t border-white/5" />
               <Row label="Monthly spending pool" value={formatINR(preview.poolPaise)} strong />
               <Row label="Daily allowance this month" value={formatINR(preview.daily)} strong lime />

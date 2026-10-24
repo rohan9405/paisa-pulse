@@ -18,8 +18,13 @@ export const CATEGORIES = [
   "Transfers",
   "Income",
   "Refunds",
+  "Settlement",
   "Other",
 ] as const;
+/** Savings remains protocol-compatible for old rules/backups, but is not a new choice. */
+export const ACTIVE_CATEGORIES = CATEGORIES.filter(c => c !== "Savings");
+export const displayCategory = (category: string) => category === "Savings" ? "Investments" : category;
+
 export type Category = (typeof CATEGORIES)[number] | string;
 
 export const CATEGORY_EMOJI: Record<string, string> = {
@@ -40,11 +45,12 @@ export const CATEGORY_EMOJI: Record<string, string> = {
   Transfers: "🔁",
   Income: "💰",
   Refunds: "↩️",
+  Settlement: "🤝",
   Other: "✨",
 };
 
 export function categoryEmoji(c: string): string {
-  return CATEGORY_EMOJI[c] ?? "✨";
+  return CATEGORY_EMOJI[displayCategory(c)] ?? "✨";
 }
 
 /** Categories that are never "expenses": money you keep. Left out of expense breakdowns. */
@@ -52,12 +58,12 @@ export const NOT_EXPENSE = ["Investments", "Savings"];
 /** Set aside before the daily budget unless you change it in Settings. */
 export const DEFAULT_SET_ASIDE = ["Bills", "Investments", "Savings"];
 /** Categories that can be set aside. */
-export const SET_ASIDE_OPTIONS = ["Bills", "Investments", "Savings", "Subscriptions", "Education"];
+export const SET_ASIDE_OPTIONS = ["Bills", "Investments", "Subscriptions", "Education"];
 
 /** Suggested tags per category. Any text works as a tag; these are just one tap away. */
 export const TAGS: Record<string, string[]> = {
   Bills: ["Rent", "Utility", "Phone & internet", "EMI", "Insurance", "Maintenance"],
-  Investments: ["SIP", "Stocks", "Mutual fund", "NPS / PPF"],
+  Investments: ["SIP", "Stocks", "Mutual fund", "NPS / PPF", "RD / FD", "Emergency fund"],
   Savings: ["RD / FD", "Emergency fund"],
   Income: ["Salary", "Dividend income", "Interest"],
   Subscriptions: ["OTT", "Music", "Cloud"],

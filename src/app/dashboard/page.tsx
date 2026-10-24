@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, outgoingsInRange, planForDate, spendVsBudgetSeries } from "@/lib/budget";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, spendVsBudgetSeries } from "@/lib/budget";
 import { categoryColor } from "@/lib/categoryColors";
 import { categoryEmoji, tagEmoji } from "@/lib/categorize";
-import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfWeek } from "@/lib/dates";
+import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfMonth, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { markCommitmentPaid } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
@@ -33,8 +33,12 @@ export default function DashboardPage() {
 
   const view = useMemo(() => {
     if (!data || !derived) return null;
-    const out = outgoingsInRange(data.txns, from, toClamped);
+    const position = netInHandInRange(data.txns, from, toClamped);
     const cats = categoryBreakdown(data.txns, data.plans, from, toClamped);
+    const avgFrom = [startOfMonth(toClamped), data.profile!.trackingStart].sort().at(-1)!;
+    const avgTo = toClamped;
+    const monthDays = spendVsBudgetSeries(derived.ledger, avgFrom, avgTo);
+    const spendingAverage = monthDays.reduce((sum, d) => sum + d.spentPaise, 0) / Math.max(1, monthDays.length) / 100;
     const series = spendVsBudgetSeries(derived.ledger, from, toClamped).map((d) => ({
       label: formatDay(d.date),
       Spent: d.cumSpentPaise / 100,
@@ -46,11 +50,11 @@ export default function DashboardPage() {
     const budgetTotal = series.at(-1)?.Budget ?? 0;
     const budgetSpent = Math.round((series.at(-1)?.Spent ?? 0) * 100);
     const catTotal = cats.reduce((s, c) => s + c.amountPaise, 0);
-    return { out, cats, series, periodHasBudget, budgetTotal, budgetSpent, catTotal };
+    return { spendingAverage, position, cats, series, periodHasBudget, budgetTotal, budgetSpent, catTotal };
   }, [data, derived, from, toClamped]);
 
   if (!data || !derived || !view) return null;
-  const { out, cats, series, budgetTotal, budgetSpent, catTotal } = view;
+  const { spendingAverage, position, cats, series, budgetTotal, budgetSpent, catTotal } = view;
   const hasBudget = view.periodHasBudget;
   const catMax = Math.max(1, ...cats.map((c) => c.amountPaise));
   const future = from > today;
@@ -83,43 +87,13 @@ export default function DashboardPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="lg:col-span-2">
-            <div className="-mt-1 mb-1 flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold uppercase tracking-widest text-ink-400">Total outgoings</div>
-              <InfoTip label="About total outgoings">
-                <b className="text-white">Everyday:</b> food, shopping, travel and everything else.
-                <br />
-                <b className="text-white">Bills:</b> rent, utilities, EMIs.
-                <br />
-                <b className="text-white">Investments and savings</b> are money you keep, not expenses.
-                <br />
-                Transfers between your own accounts aren't counted.
-              </InfoTip>
+            <div className="mb-2 flex items-center justify-between gap-2"><h2 className="text-xs font-semibold uppercase tracking-widest text-ink-400">Net In-Hand</h2><InfoTip label="About Net In-Hand">Income minus expenses and investments. Income includes all income buckets; refunds and settlements reduce their linked payment and are never counted as income. Legacy savings are included under investments.</InfoTip></div>
+            <div className="num text-4xl font-bold" data-testid="net-in-hand"><Money paise={position.netPaise} /></div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <Split label="Income" paise={position.incomePaise} dot="bg-lime" testId="out-income" />
+              <Split label="Expenses" paise={position.expensesPaise} dot="bg-sky" testId="out-expenses" />
+              <Split label="Investments" paise={position.investmentsPaise} dot="bg-violet" testId="out-investments" />
             </div>
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <div className="num text-4xl font-bold" data-testid="total-outgoings">
-                  <Money paise={out.totalPaise} />
-                </div>
-              </div>
-              {hasBudget && budgetTotal > 0 && (
-                <div className="sm:text-right">
-                  <div className="text-xs text-ink-400">Budget spent vs allowance</div>
-                  <div className="num text-lg font-semibold">
-                    <span className={budgetSpent > budgetTotal * 100 ? "text-coral" : "text-lime"}>{formatINR(budgetSpent, { decimals: "never" })}</span>
-                    <span className="text-ink-400"> / {formatINR(Math.round(budgetTotal * 100), { decimals: "never" })}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Split label="Everyday" paise={out.everydayPaise} dot="bg-lime" testId="out-discretionary" />
-              <Split label="Bills" paise={out.billsPaise} dot="bg-sky" testId="out-bills" />
-              <Split label="Investments" paise={out.investmentsPaise} dot="bg-violet" testId="out-investments" />
-              <Split label="Savings" paise={out.savingsPaise} dot="bg-amber" />
-            </div>
-            <p className="mt-3 text-xs text-ink-400">
-              Excluded: <Money paise={out.transfersExcludedPaise} /> own-account transfers. Money in: <Money paise={out.incomePaise} />.
-            </p>
           </Card>
 
           <Card>
@@ -149,23 +123,25 @@ export default function DashboardPage() {
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="font-semibold">Daily spending</h2>
-              <InfoTip label="About daily spending">Each bar shows recorded spending; budget periods include payments that count against the budget.</InfoTip>
+              <InfoTip label="About daily chart">Recorded spending per day; budget periods include payments that count against the budget. The dotted line is the month’s average across tracked calendar days, including zero days, up to this period’s end.</InfoTip>
             </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>
             ) : (
-              <div className="h-56">
+              <div className="h-56" data-testid="chart-daily">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={series} margin={{ top: 6, right: 8, left: -8, bottom: 0 }} barCategoryGap={2}>
                     <CartesianGrid stroke="#ffffff10" vertical={false} />
                     <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" minTickGap={24} />
                     <YAxis {...AXIS} tickFormatter={(v) => formatINR(v * 100, { compact: true })} width={52} />
                     <Tooltip content={<DayTip hasBudget={hasBudget} />} cursor={{ fill: "#ffffff08" }} />
+                    <ReferenceLine y={spendingAverage} stroke="#b4b4c4" strokeDasharray="2 4" ifOverflow="extendDomain" />
                     <Bar dataKey="daySpent" name="Spent" fill="#c6ff3d" radius={[4, 4, 0, 0]} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
+            <p className="mt-2 text-[10px] text-ink-400" data-testid="daily-month-average">··· Month’s daily avg · {formatINR(Math.round(spendingAverage * 100))}</p>
           </Card>
 
           {showPlanned && <Card>
@@ -247,12 +223,12 @@ export default function DashboardPage() {
 
 function Split({ label, paise, dot, testId }: { label: string; paise: number; dot: string; testId?: string }) {
   return (
-    <div className="rounded-2xl bg-white/[0.03] p-3">
-      <div className="flex items-center gap-2 text-xs text-ink-400">
+    <div className="min-w-0 rounded-2xl bg-white/[0.03] p-2.5 sm:p-3">
+      <div className="flex min-w-0 items-center gap-1.5 text-[10px] text-ink-400 sm:text-xs">
         <span className={cx("h-2 w-2 rounded-full", dot)} />
-        {label}
+        <span className="truncate" title={label}>{label}</span>
       </div>
-      <div className="num mt-1 text-lg font-semibold" data-testid={testId}>
+      <div className="num mt-1 truncate text-base font-semibold sm:text-lg" title={formatINR(paise)} data-testid={testId}>
         <Money paise={paise} />
       </div>
     </div>

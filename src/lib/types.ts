@@ -96,7 +96,7 @@ export interface Account {
  * - refund: money back for an earlier expense
  * - income: salary, interest, other inflows
  */
-export type TxnKind = "expense" | "commitment" | "investment" | "transfer" | "refund" | "income";
+export type TxnKind = "expense" | "commitment" | "investment" | "transfer" | "refund" | "settlement" | "income";
 
 export type PaymentMethod = "upi" | "card" | "cash" | "netbanking" | "wallet" | "other";
 
@@ -129,7 +129,7 @@ export interface Transaction {
   note?: string;
   /** For kind=commitment: the reserved commitment it pays. */
   commitmentId?: string;
-  /** For kind=refund: the expense it reverses. */
+  /** For refund or settlement: original expense; shared indexed link retained for backup compatibility. */
   refundOf?: string;
   /** Flagged for the user to review (e.g. refund with no matching expense). */
   needsReview?: boolean;

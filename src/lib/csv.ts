@@ -209,11 +209,12 @@ export function validateRows(
     const payee = findPayee(description);
     const rule = categorize(description, opts.rules, payee, { merchant: base.merchant, direction });
     let kind: TxnKind = direction === "out" ? "expense" : "income";
-    if (rule?.kind && (rule.kind === "transfer" || (direction === "out" && rule.kind !== "income" && rule.kind !== "refund") || (direction === "in" && rule.kind === "income"))) kind = rule.kind;
+    if (rule?.kind && (rule.kind === "transfer" || (direction === "out" && !["income", "refund", "settlement"].includes(rule.kind)) || (direction === "in" && ["income", "refund", "settlement"].includes(rule.kind)))) kind = rule.kind;
+    if (direction === "in" && rule?.category === "Settlement") kind = "settlement";
     if (direction === "in" && kind === "income" && /refund|reversal|cashback|rev\b/i.test(description)) kind = "refund";
     if (direction === "out" && kind === "expense" && rule && !rule.kind) kind = outflowKind(rule.category);
-    const category = kind === "refund" ? "Refunds" : kind === "income" ? (rule?.kind === "income" ? rule.category : "Income") : rule?.category ?? "Other";
-    const tag = kind === "refund" || kind === "transfer" ? undefined : rule?.tag;
+    const category = kind === "settlement" ? "Settlement" : kind === "refund" ? "Refunds" : kind === "income" ? (rule?.kind === "income" ? rule.category : "Income") : rule?.category ?? "Other";
+    const tag = kind === "refund" || kind === "settlement" || kind === "transfer" ? undefined : rule?.tag;
 
     const row: CandidateRow = { ...base, status: "valid", date, amountPaise, direction, fingerprint: fp, kind, category, tag, payee, method: detectMethod(description) };
     if (opts.existingFingerprints.has(fp)) {

@@ -138,7 +138,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
 
 // ------------------------------------------------------------------ validation
 
-const KINDS: TxnKind[] = ["expense", "commitment", "investment", "transfer", "refund", "income"];
+const KINDS: TxnKind[] = ["expense", "commitment", "investment", "transfer", "refund", "settlement", "income"];
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown, max: number, min = 1) => (typeof v === "string" && v.trim().length >= min && v.trim().length <= max ? v.trim() : undefined);
 const int = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : undefined);

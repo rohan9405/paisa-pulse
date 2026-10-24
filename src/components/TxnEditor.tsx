@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { hasBudget, commitmentCategory, matchCommitment, modeOf, planForDate, setAsideOf } from "@/lib/budget";
-import { CATEGORIES, TAGS, categoryEmoji, outflowKind } from "@/lib/categorize";
+import { ACTIVE_CATEGORIES as CATEGORIES, TAGS, categoryEmoji, displayCategory, outflowKind } from "@/lib/categorize";
 import { formatDay } from "@/lib/dates";
 import { recipientKey, recipientMatches } from "@/lib/recipients";
+import { isReimbursementKind, settlementCandidates } from "@/lib/reimbursements";
 import { refundCandidates } from "@/lib/match";
 import { formatINR, paiseToRupeeInput, rupeesInputToPaise } from "@/lib/money";
 import type { Transaction, TxnKind } from "@/lib/types";
@@ -19,18 +20,20 @@ export const KIND_LABEL: Record<TxnKind, string> = {
   investment: "Investment",
   transfer: "Own transfer",
   refund: "Refund",
+  settlement: "Settlement",
   income: "Income",
 };
 
-type Flow = "out" | "transfer" | "refund" | "income";
-const FLOW_LABEL: Record<Flow, string> = { out: "Money out", transfer: "Own transfer", refund: "Refund", income: "Income" };
+type Flow = "out" | "transfer" | "refund" | "settlement" | "income";
+const FLOW_LABEL: Record<Flow, string> = { out: "Money out", transfer: "Own transfer", refund: "Refund", settlement: "Settlement", income: "Income" };
 const FLOW_HELP: Record<Flow, string> = {
   out: "Spending, a bill or an investment: the category decides which.",
   transfer: "Between your own accounts, or paying your credit card bill. Ignored everywhere.",
+  settlement: "Someone paid back their share. Link it to your original expense.",
   refund: "Money back. Link it to the original payment to reduce its net cost.",
   income: "Money in, e.g. salary or dividends. Funds the allowance in actual set-aside mode.",
 };
-const flowOf = (k: TxnKind): Flow => (k === "transfer" ? "transfer" : k === "refund" ? "refund" : k === "income" ? "income" : "out");
+const flowOf = (k: TxnKind): Flow => (k === "transfer" ? "transfer" : k === "settlement" ? "settlement" : k === "refund" ? "refund" : k === "income" ? "income" : "out");
 
 export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: () => void }) {
   const { db, today } = useStore();
@@ -71,8 +74,8 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
   const plans = data?.plans ?? [];
   const txns = data?.txns ?? [];
   const draft = useMemo<Transaction | null>(
-    () => (txn ? { ...txn, date: date || txn.date, merchant, category, tag: tag || undefined, commitmentId: undefined, amountPaise: rupeesInputToPaise(amount) ?? txn.amountPaise } : null),
-    [txn, date, merchant, amount, category, tag],
+    () => (txn ? { ...txn, kind: flow === "settlement" ? "settlement" : txn.kind, date: date || txn.date, merchant, category, tag: tag || undefined, commitmentId: undefined, amountPaise: rupeesInputToPaise(amount) ?? txn.amountPaise } : null),
+    [txn, date, merchant, amount, category, tag, flow],
   );
   const plan = useMemo(() => (draft ? planForDate(plans, draft.date) : null), [draft, plans]);
   // Planned lines this payment could belong to (planned mode, set-aside category).
@@ -83,6 +86,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
   const autoLine = useMemo(() => (draft && lineOpts.length ? matchCommitment(draft, plan) : null), [draft, plan, lineOpts]);
   const refundOpts = useMemo(() => {
     if (!draft) return [];
+    if (draft.kind === "settlement") return settlementCandidates(draft, txns).map(t => ({ t, suggested: false }));
     const strong = refundCandidates(draft, txns).map((c) => c.expense);
     const recent = txns
       .filter((t) => t.kind === "expense" && t.date <= draft.date && t.amountPaise >= draft.amountPaise && !strong.some((s) => s.id === t.id))
@@ -103,27 +107,27 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     if (!p) return setError("Enter an amount above ₹0");
     if (!date || date > today) return setError("Pick a date up to today");
     const kind: TxnKind = flow === "out" ? (commitmentId && commitmentId !== "none" ? "commitment" : outflowKind(category) === "transfer" ? "transfer" : outflowKind(category)) : flow;
-    const cat = flow === "transfer" ? "Transfers" : flow === "refund" ? "Refunds" : flow === "income" && category !== "Income" ? "Income" : category;
+    const cat = flow === "settlement" ? "Settlement" : flow === "transfer" ? "Transfers" : flow === "refund" ? "Refunds" : flow === "income" && category !== "Income" ? "Income" : category;
     const patch: Partial<Transaction> = {
       amountPaise: p,
       date,
       merchant: merchant.trim() || "Unknown",
       category: cat,
-      tag: flow === "refund" || flow === "transfer" ? undefined : tag.trim() || undefined,
+      tag: flow === "refund" || flow === "settlement" || flow === "transfer" ? undefined : tag.trim() || undefined,
       kind,
       note: note.trim() || undefined,
       commitmentId: kind === "commitment" ? commitmentId : undefined,
-      refundOf: kind === "refund" && refundOf ? refundOf : undefined,
+      refundOf: isReimbursementKind(kind) && refundOf ? refundOf : undefined,
     };
-    if (kind === "refund" && !refundOf) Object.assign(patch, { needsReview: true, reviewReason: "No original expense linked" });
-    if (kind !== "refund" && txn.needsReview) Object.assign(patch, { needsReview: false, reviewReason: undefined });
+    if (isReimbursementKind(kind) && !refundOf) Object.assign(patch, { needsReview: true, reviewReason: "No original expense linked" });
+    if (!isReimbursementKind(kind) && txn.needsReview) Object.assign(patch, { needsReview: false, reviewReason: undefined });
     setSaving(true);
     try {
       await updateTxn(db, txn.id, patch);
       const saved = { ...txn, ...patch } as Transaction;
       if (classChanged && (flow === "out" || flow === "income")) await applyCategory(db, saved, cat, tag, { remember, scope: applyPast && matching.length > 0 ? "all" : "one" });
       onClose();
-    } catch { setError("Could not save changes. Please try again."); } finally { setSaving(false); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not save changes. Please try again."); } finally { setSaving(false); }
   };
 
   const remove = async () => {
@@ -162,10 +166,10 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
       <div className="space-y-4">
         {txn.needsReview && <p className="rounded-xl bg-amber/10 p-3 text-sm text-amber">⚠️ {txn.reviewReason ?? "Needs review"}</p>}
         {(() => {
-          const refunded = txns.filter((t) => t.kind === "refund" && t.refundOf === txn.id).reduce((s, t) => s + t.amountPaise, 0);
+          const refunded = txns.filter((t) => isReimbursementKind(t.kind) && t.refundOf === txn.id).reduce((s, t) => s + t.amountPaise, 0);
           return refunded > 0 ? (
             <p className="rounded-xl bg-lime/10 p-3 text-sm text-lime">
-              ↩️ {formatINR(refunded)} refunded — {formatINR(Math.max(0, txn.amountPaise - refunded))} net payment after refunds.
+              ↩️ {formatINR(refunded)} returned — {formatINR(Math.max(0, txn.amountPaise - refunded))} net payment after refunds and settlements.
             </p>
           ) : null;
         })()}
@@ -189,7 +193,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
                 onClick={() => {
                   setFlow(f);
                   if (f === "income" && category !== "Income") (setCategory("Income"), setTag(""));
-                  if (f === "out" && ["Income", "Refunds", "Transfers"].includes(category)) (setCategory("Other"), setTag(""));
+                  if (f === "out" && ["Income", "Refunds", "Settlement", "Transfers"].includes(category)) (setCategory("Other"), setTag(""));
                 }}
               >
                 {FLOW_LABEL[f]}
@@ -198,9 +202,9 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
           </div>
           <p className="mt-1.5 text-xs text-ink-400">{FLOW_HELP[flow]}</p>
         </div>
-        {flow === "refund" && (
-          <Field label="Refund for which expense?" hint="Linked refunds reduce the original payment's net cost on its date. Unlinked refunds stay flagged.">
-            <select className="input" value={refundOf} onChange={(e) => setRefundOf(e.target.value)}>
+        {(flow === "refund" || flow === "settlement") && (
+          <Field label={flow === "settlement" ? "Settlement for which expense?" : "Refund for which expense?"} hint="Linked refunds and settlements reduce the original payment’s net cost. Unlinked credits stay flagged.">
+            <select className="input" value={refundOf} onChange={(e) => setRefundOf(e.target.value)} data-testid="txn-original-expense">
               <option value="">Not linked (flag for review)</option>
               {refundOpts.map(({ t, suggested }) => (
                 <option key={t.id} value={t.id}>
@@ -216,9 +220,9 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
           <>
             <Field label="Category">
               <select className="input" value={category} onChange={(e) => (setCategory(e.target.value), setTag(""), setCommitmentId(""))} data-testid="txn-category">
-                {[...new Set([...CATEGORIES.filter((c) => (flow === "income" ? c === "Income" : !["Income", "Refunds", "Transfers"].includes(c))), category])].map((c) => (
+                {[...new Set([...CATEGORIES.filter((c) => (flow === "income" ? c === "Income" : !["Income", "Refunds", "Settlement", "Transfers"].includes(c))), category])].map((c) => (
                   <option key={c} value={c}>
-                    {categoryEmoji(c)} {c}
+                    {categoryEmoji(c)} {displayCategory(c)}
                   </option>
                 ))}
               </select>

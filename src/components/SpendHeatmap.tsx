@@ -6,8 +6,8 @@ import { spendHeatmap } from "@/lib/spendHeatmap";
 import type { Transaction } from "@/lib/types";
 import { Card, Money, cx } from "./ui";
 
-// Low spend is pale; high spend is darker, all within the same blue hue.
-const SHADES = ["#e5edf3", "#bed3e2", "#8eafc7", "#5b86a6", "#315b7a"];
+// Low spend is pale; high spend is darker, all within the same neon-green hue.
+const SHADES = ["#e2f4c5", "#c6ff3d", "#9bd11c", "#6c9518", "#405c12"];
 export function SpendHeatmap({ txns, trackingStart, today, endMonth }: { txns: Transaction[]; trackingStart: string; today: string; endMonth: string }) {
   const view = useMemo(() => spendHeatmap(txns, trackingStart, today, endMonth), [txns, trackingStart, today, endMonth]);
   const scroller = useRef<HTMLDivElement>(null);

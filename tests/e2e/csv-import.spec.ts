@@ -44,7 +44,7 @@ test("CSV import: mapping, validation, dedupe on re-import, refund flag", async 
 
   // Transfer excluded, refund flagged for review.
   await page.goto("/dashboard");
-  await expect(page.getByTestId("out-discretionary")).toHaveText("₹1,700.50");
+  await expect(page.getByTestId("out-expenses")).toHaveText("₹1,700.50");
   await page.goto("/transactions?review=1");
   await expect(page.getByTestId("txn-row")).toHaveCount(1);
   await expect(page.getByTestId("txn-row")).toContainText("review");

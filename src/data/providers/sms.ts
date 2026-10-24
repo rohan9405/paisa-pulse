@@ -1,3 +1,4 @@
+import { isReimbursementKind } from "@/lib/reimbursements";
 /**
  * Bank SMS provider. Only available inside the Android app (android/), which
  * exposes the phone's SMS inbox to the page as `window.PaisaSms`. Messages are
@@ -141,7 +142,7 @@ async function doSync(db: FinanceDB): Promise<number> {
     if (already) { if (ipo) ipoEvents.push({ event: ipo, txnId: already.id }); continue; }
     const now = Date.now();
     let t: Transaction = { id: uid("t-"), date: c.date, amountPaise: c.amountPaise, kind: c.kind, merchant: c.merchant, category: c.category, tag: c.tag, payee: c.payee, method: c.method, fingerprint: c.fingerprint, source: { providerId: "sms", importBatchId: batchId, externalRef: c.reference, raw: c.raw, importedAt: now }, createdAt: now, updatedAt: now };
-    if (t.kind === "refund") t = { ...t, ...autoLinkRefund(t, [...existing, ...created, t]) };
+    if (isReimbursementKind(t.kind)) t = { ...t, ...autoLinkRefund(t, [...existing, ...created, t]) };
     created.push(t);
     byFp.set(c.fingerprint, t);
     if (c.reference) byRef.set(c.reference, t);

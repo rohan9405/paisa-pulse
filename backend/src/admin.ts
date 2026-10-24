@@ -59,7 +59,7 @@ const $ = (id) => document.getElementById(id);
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const opt = (list, v) => list.map((x) => "<option" + (x === v ? " selected" : "") + ">" + esc(x) + "</option>").join("");
-const KINDS = ["", "expense", "investment", "transfer", "income", "refund"];
+const KINDS = ["", "expense", "investment", "transfer", "income", "refund", "settlement"];
 const working = () => saved || live;
 const sectionDiffers = (a, b, s) => META.sectionFields[s].some((f) => JSON.stringify(a[f] ?? null) !== JSON.stringify(b[f] ?? null));
 function msg(t, ok) { $("msg").className = "msg " + (ok ? "ok" : "err"); $("msg").textContent = t || ""; }
@@ -105,7 +105,7 @@ const VIEWS = {
 };
 function ruleRow(r) {
   const tags = META.tags[r.category] || [];
-  return '<tr data-row="rules"><td><input data-k="contains" value="' + esc(r.contains) + '"></td><td><select data-k="category">' + opt(META.categories, r.category) + '</select></td><td><input data-k="tag" value="' + esc(r.tag) + '" placeholder="' + esc(tags.slice(0, 2).join(", ")) + '"></td><td><select data-k="kind">' + opt(KINDS, r.kind || "") + '</select></td><td><select data-k="direction">' + opt(["", "in", "out"], r.direction || "") + '</select></td><td><input type="number" data-k="priority" value="' + Number(r.priority ?? 5) + '" style="width:64px"></td><td><input type="checkbox" class="chk" data-k="applyToHistory"' + (r.applyToHistory ? ' checked' : '') + '></td><td><input type="number" min="0" data-k="historyRevision" value="' + Number(r.historyRevision ?? 0) + '" style="width:64px"></td><td><button class="x" data-action="remove">✕</button></td></tr>';
+  return '<tr data-row="rules"><td><input data-k="contains" value="' + esc(r.contains) + '"></td><td><select data-k="category">' + opt([...new Set([...META.categories, r.category])], r.category) + '</select></td><td><input data-k="tag" value="' + esc(r.tag) + '" placeholder="' + esc(tags.slice(0, 2).join(", ")) + '"></td><td><select data-k="kind">' + opt(KINDS, r.kind || "") + '</select></td><td><select data-k="direction">' + opt(["", "in", "out"], r.direction || "") + '</select></td><td><input type="number" data-k="priority" value="' + Number(r.priority ?? 5) + '" style="width:64px"></td><td><input type="checkbox" class="chk" data-k="applyToHistory"' + (r.applyToHistory ? ' checked' : '') + '></td><td><input type="number" min="0" data-k="historyRevision" value="' + Number(r.historyRevision ?? 0) + '" style="width:64px"></td><td><button class="x" data-action="remove">✕</button></td></tr>';
 }
 function merchantRow(m) { return '<tr data-row="merchants"><td><input data-a value="' + esc(m.contains) + '"></td><td><input data-b value="' + esc(m.name) + '"></td><td><input type="checkbox" class="chk" data-w' + (m.word ? " checked" : "") + '></td><td><button class="x" data-action="remove">✕</button></td></tr>'; }
 function rereadCard(r) {

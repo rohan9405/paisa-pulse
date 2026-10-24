@@ -281,17 +281,18 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
 
   let kind: TxnKind = p.direction === "out" ? "expense" : "income";
   // Same precedence as CSV import (csv.ts validateRows).
-  if (rule?.kind && (rule.kind === "transfer" || (p.direction === "out" && rule.kind !== "income" && rule.kind !== "refund") || (p.direction === "in" && rule.kind === "income"))) kind = rule.kind;
-  if (p.refund) kind = "refund";
+  if (rule?.kind && (rule.kind === "transfer" || (p.direction === "out" && !["income", "refund", "settlement"].includes(rule.kind)) || (p.direction === "in" && ["income", "refund", "settlement"].includes(rule.kind)))) kind = rule.kind;
+  if (p.direction === "in" && rule?.category === "Settlement") kind = "settlement";
+  if (p.refund && kind !== "settlement") kind = "refund";
   // Money back from a shop or service (e.g. "credited … from WWW MYNTRA COM") is a refund, not income.
-  if (p.direction === "in" && rule && !rule.kind && rule.category !== "Income") kind = "refund";
+  if (p.direction === "in" && rule && !rule.kind && rule.category !== "Income" && rule.category !== "Settlement") kind = "refund";
   // A rule that only sets Investments / Savings still makes the payment an investment.
   if (p.direction === "out" && kind === "expense" && rule && !rule.kind) kind = outflowKind(rule.category);
   // Paying a card bill: the card spends were already counted when they happened.
   if (p.cardBillPayment) kind = "transfer";
 
-  let category = kind === "transfer" ? "Transfers" : kind === "refund" ? "Refunds" : kind === "income" && !rule ? "Income" : (rule?.category ?? "Other");
-  let tag = kind === "transfer" || kind === "refund" ? undefined : rule?.tag;
+  let category = kind === "transfer" ? "Transfers" : kind === "settlement" ? "Settlement" : kind === "refund" ? "Refunds" : kind === "income" && !rule ? "Income" : (rule?.category ?? "Other");
+  let tag = kind === "transfer" || kind === "refund" || kind === "settlement" ? undefined : rule?.tag;
   // Lite payments send no SMS, so the top-up stands in for the everyday spends it pays for.
   if (p.upiLiteTopUp) [kind, category, tag] = ["expense", "Other", "UPI Lite"];
 

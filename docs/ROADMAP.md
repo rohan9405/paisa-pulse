@@ -2,6 +2,13 @@
 
 Current checkout: **0.8.9** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
 
+## Implemented: Net In-Hand, settlements and daily spending average (0.8.9)
+
+- Stats headline is **Net In-Hand = income − expenses − investments**, with Income / Expenses / Investments cards. Income includes all income buckets except refunds and settlements. Expenses are net of linked reimbursements and exclude investments.
+- Settlement credits link to an original expense across different payers; multiple shares are supported, with remaining-amount validation and concurrent-write protection. Unlinked credits require review and do not become income. Existing user edits and remote-rule protections remain in place.
+- Savings is removed from new choices; existing data, backups and rules remain valid and display under Investments.
+- Daily spending retains a single view. A dotted line shows the selected month’s daily average through the period cutoff, counting zero-spend tracked days.
+
 ## Implemented: chart navigation, heatmap and scrubbing (0.8.9, build 21)
 
 - Built on latest local `main`, 0.8.8 at `6afdc58`; earlier work was already committed. Fetch confirmed no missing remote commits.
@@ -9,7 +16,7 @@ Current checkout: **0.8.9** (24 Oct 2026). Core money tracking, recipient taggin
 - Hold and drag across bars or their date labels to inspect values. Hold and drag across the Today calendar to update the selected day's analytics continuously. Taps and keyboard activation still work. Pointer capture survives rerenders; future/untracked dates cannot be selected, and the calendar stays anchored.
 - Seven-day date strip follows the supplied [reference](references/seven-day-date-strip.png): two-letter weekdays, day numbers, selected-day circle, **no dots**. Previous/next controls move by seven days; Latest restores the selected snapshot's most recent window. Earlier windows do not change the hero or calendar selection. Calendar/flow changes reset the trend window. Date ranges include years when crossing New Year.
 - The month-labelled twelve-month spending heatmap is the **last Stats section, immediately below Expenses by category**. The existing planned-payment section is placed above categories. Stats period navigation determines the heatmap's ending month; horizontal panning explores the year, and tapping a day reveals the amount.
-- Following the supplied [heatmap reference](references/monthly-spend-heatmap.png), one blue hue uses pale-to-dark steps: **higher spend = darker shade**. A common scale covers the displayed year. Recorded zero, untracked/future days and padding remain distinct. Includes bills, excludes investments/savings/transfers/income, and handles linked refunds as of the displayed month. The Today calendar retains its existing status colours.
+- Following the supplied [heatmap reference](references/monthly-spend-heatmap.png), one neon-green hue uses pale-to-dark steps: **higher spend = darker shade**. A common scale covers the displayed year. Recorded zero, untracked/future days and padding remain distinct. Includes bills, excludes investments/savings/transfers/income, and handles linked refunds as of the displayed month. The Today calendar retains its existing status colours.
 
 ## Planned: product presentation (not started)
 

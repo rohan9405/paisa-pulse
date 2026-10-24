@@ -54,8 +54,8 @@ test("onboarding → quick-add → reload persistence → dashboard updates", as
 
   // Dashboard reflects the expense; rent paid → not upcoming; SIP still to pay
   await page.goto("/dashboard");
-  await expect(page.getByTestId("out-discretionary")).toHaveText("₹250");
-  await expect(page.getByTestId("total-outgoings")).toHaveText("₹250");
+  await expect(page.getByTestId("out-expenses")).toHaveText("₹250");
+  await expect(page.getByTestId("net-in-hand")).toHaveText("−₹250");
   await expect(page.getByTestId("category-breakdown")).toContainText("Food & Dining");
   const bills = page.getByTestId("upcoming-bills");
   await expect(bills).toContainText("Rent");
@@ -66,7 +66,7 @@ test("onboarding → quick-add → reload persistence → dashboard updates", as
   await page.getByTestId("qa-amount").fill("100.50");
   await page.getByTestId("qa-merchant").fill("Uber");
   await page.getByTestId("qa-save").click();
-  await expect(page.getByTestId("out-discretionary")).toHaveText("₹350.50");
+  await expect(page.getByTestId("out-expenses")).toHaveText("₹350.50");
   await expect(page.getByTestId("category-breakdown")).toContainText("Transport");
 });
 

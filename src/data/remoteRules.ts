@@ -1,3 +1,4 @@
+import { isReimbursementKind } from "@/lib/reimbursements";
 import { categorize, outflowKind } from "@/lib/categorize";
 import { taggingCutoff } from "@/lib/recipients";
 import { toISTKey } from "@/lib/dates";
@@ -35,16 +36,16 @@ export async function applyRemoteHistory(db: FinanceDB): Promise<number> {
       const txns = await db.txns.where("date").between(taggingCutoff(today), today, true, true).toArray();
       const rules = await db.rules.toArray();
       for (const t of txns) {
-        if (isUserEdited(t) || t.commitmentId || t.holdId || t.kind === "refund" || t.kind === "transfer") continue;
+        if (isUserEdited(t) || t.commitmentId || t.holdId || isReimbursementKind(t.kind) || t.kind === "transfer") continue;
         const direction = t.kind === "income" ? "in" : "out";
         const c = categorize(`${t.merchant} ${t.source.raw ?? ""}`, rules, t.payee, { merchant: t.merchant, direction });
         if (!c?.ruleId || !enabled.has(c.ruleId)) continue;
-        const kind = direction === "in" ? "income" : c.kind === "transfer" ? "transfer" : outflowKind(c.category);
-        if (direction === "out" && ["Income", "Refunds"].includes(c.category)) continue;
-        if (direction === "in" && c.category !== "Income") continue;
+        const kind = direction === "in" ? (c.kind === "settlement" || c.category === "Settlement" ? "settlement" : "income") : c.kind === "transfer" ? "transfer" : outflowKind(c.category);
+        if (direction === "out" && ["Income", "Refunds", "Settlement"].includes(c.category)) continue;
+        if (direction === "in" && !["Income", "Settlement"].includes(c.category)) continue;
         if (t.category === c.category && t.tag === c.tag && t.kind === kind) continue;
         // Keep automatic provenance: a later explicit history job may refine it.
-        changes.push({ ...t, category: c.category, tag: c.tag, kind });
+        changes.push({ ...t, category: c.category, tag: c.tag, kind, ...(kind === "settlement" ? { needsReview: true, reviewReason: "Link this settlement to the original expense" } : {}) });
       }
       if (changes.length) await db.txns.bulkPut(changes);
     }
@@ -76,13 +77,13 @@ export async function applySmsReread(db: FinanceDB): Promise<number> {
       if (t.source.providerId !== "sms" || !raw || isUserEdited(t) || t.commitmentId || t.holdId || t.tag === "UPI Lite") continue;
       if (job.only === "unnamed" && !FALLBACK_NAME.test(t.merchant)) continue;
       if (contains && !raw.toLowerCase().includes(contains)) continue;
-      const direction = t.kind === "income" || t.kind === "refund" ? "in" : "out";
+      const direction = t.kind === "income" || isReimbursementKind(t.kind) ? "in" : "out";
       const next = { ...t };
       if (job.names) next.merchant = merchantFromSms(raw, direction) ?? t.merchant;
-      if (job.categories && t.kind !== "refund" && t.kind !== "transfer") {
+      if (job.categories && !isReimbursementKind(t.kind) && t.kind !== "transfer") {
         const c = categorize(`${next.merchant} ${raw}`, rules, t.payee, { merchant: next.merchant, direction });
-        const kind = c && (direction === "in" ? "income" : c.kind === "transfer" ? "transfer" : outflowKind(c.category));
-        if (c && kind && !(direction === "out" && ["Income", "Refunds"].includes(c.category)) && !(direction === "in" && c.category !== "Income")) Object.assign(next, { category: c.category, tag: c.tag, kind });
+        const kind = c && (direction === "in" ? (c.kind === "settlement" || c.category === "Settlement" ? "settlement" : "income") : c.kind === "transfer" ? "transfer" : outflowKind(c.category));
+        if (c && kind && !(direction === "out" && ["Income", "Refunds", "Settlement"].includes(c.category)) && !(direction === "in" && !["Income", "Settlement"].includes(c.category))) Object.assign(next, { category: c.category, tag: c.tag, kind, ...(kind === "settlement" ? { needsReview: true, reviewReason: "Link this settlement to the original expense" } : {}) });
       }
       if (next.merchant !== t.merchant || next.category !== t.category || next.tag !== t.tag || next.kind !== t.kind) changes.push(next);
     }

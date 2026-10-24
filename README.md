@@ -10,7 +10,7 @@ Bills and savings are set aside first; the rest becomes a daily allowance that r
   <img src="docs/screenshots/today.png" width="19%" alt="Today: actual spend, 28-day average and period comparison">
   <img src="docs/screenshots/today-calendar.png" width="19%" alt="Rolling seven-day trend and spending calendar">
   <img src="docs/screenshots/activity.png" width="19%" alt="Activity list with filters">
-  <img src="docs/screenshots/stats.png" width="19%" alt="Stats: outgoings split and spend vs budget">
+  <img src="docs/screenshots/stats.png" width="19%" alt="Stats: Net In-Hand, income, expenses and investments">
   <img src="docs/screenshots/welcome.png" width="19%" alt="Welcome screen">
 </p>
 
@@ -156,7 +156,7 @@ Today compares the selected day with the previous 28 completed days (including z
 | Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), always-visible category values, one category pattern, scrubbable rolling seven-day bars with weekday/date labels, previous/next ranges and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
 | Briefing (legacy link) | Opens the unified Today view; no separate tab or morning/night report. Historical links retain their selected day. |
 | Activity | Search, kind/category/period filters, edit, delete, category correction (optionally saved as a rule), match to bill/savings reservation, link refunds, smart suggestions for bill matches and own-account transfers |
-| Stats | Week/month: total outgoings split into everyday / bills & savings / investments (transfers excluded), cumulative spend vs budget, daily spend, category breakdown, this month's bills with mark-paid; twelve-month spending heatmap below Expenses by category (one hue, darker means more spending) |
+| Stats | Week/month: Net In-Hand (income − expenses − investments), three summary cards, cumulative spend vs budget, daily spending chart with the month’s daily-average dotted line, category breakdown and planned payments; neon-green twelve-month spending heatmap below Expenses by category (darker means more spending) |
 | Import CSV | Column mapping, date-format choice, three amount layouts, preview with per-row errors, duplicate detection, per-row include/exclude, undo import |
 | Settings | Budget · Data · App tabs. Budget: mode, changes effective from a date (history preserved), recurring payments. Data: tracking start (moving it earlier backfills SMS) / opening adjustment, category + tag rules, balances switch, backup folder, JSON/CSV export, restore, typed-confirmation delete, mode switch. App: fingerprint lock, haptics |
 
@@ -201,3 +201,9 @@ Tracking mode reports actual expenses including bills, with investments/savings 
 Remote navigation now offers five actions (Today, Manual log, Activity, Stats, Settings); legacy Brief IDs open Today. It supports and a configurable highlighted primary action. Remote categorisation changes affect future imports by default. A per-rule history checkbox explicitly allows updating untouched matching transactions within twelve months; user edits and personal rules always win. Neither a presentation change nor a parser version change triggers an automatic inbox reread. Empty SMS polls avoid transaction/rule scans and database writes.
 
 Mandate reminders require a confirmed repeating frequency. Old guessed schedules are retained as unconfirmed; confirm frequency/due day in Settings. IPO and one-time mandates do not recur monthly. Backups include IPO holds and completed history-job receipts.
+
+### Settlements and Stats accounting
+
+Income includes every income bucket, excluding refunds and settlements. Link a Settlement to the expense you paid for a group; multiple people’s shares reduce that expense just like linked refunds, capped at the original amount. Unlinked settlements stay marked for review and never inflate income. Investments are separate from expenses. Savings is removed from new category choices; existing Savings data and rules remain intact and appear under Investments.
+
+The daily spending chart’s dotted line is the selected month’s daily average through the selected period’s end (through today for the current period), counting tracked zero days.

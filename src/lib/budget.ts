@@ -1,3 +1,4 @@
+import { isReimbursementKind } from "./reimbursements";
 /**
  * Budget engine. Pure functions only — no React, no storage.
  *
@@ -218,7 +219,7 @@ export interface BudgetEntries {
 export function budgetEntries(txns: Transaction[], plans: BudgetPlan[], asOf: DateKey): BudgetEntries {
   const live = txns.filter((t) => t.date <= asOf);
   const refunds = new Map<string, Paise>();
-  for (const t of live) if (t.kind === "refund" && t.refundOf) refunds.set(t.refundOf, (refunds.get(t.refundOf) ?? 0) + t.amountPaise);
+  for (const t of live) if (isReimbursementKind(t.kind) && t.refundOf) refunds.set(t.refundOf, (refunds.get(t.refundOf) ?? 0) + t.amountPaise);
 
   const spend: SpendEntry[] = [];
   const setAside: SetAsideEntry[] = [];
@@ -529,14 +530,14 @@ export function everydayEntries(txns: Transaction[], from: DateKey, to: DateKey)
 
 /** Tracking expenses include bills and exclude money retained as investments/savings. */
 export function expenseEntries(txns: Transaction[], from: DateKey, to: DateKey): SpendEntry[] {
-  return netOutflows(txns, from, to).filter(({ t }) => !["Investments", "Savings"].includes(t.category))
+  return netOutflows(txns, from, to).filter(({ t }) => !(t.kind === "investment" || ["Investments", "Savings"].includes(t.category)))
     .map(({ t, net }) => ({ date: t.date, amountPaise: net, category: t.category, txnId: t.id, merchant: t.merchant, source: "expense" }));
 }
 
 /** Net outflows (after linked refunds) in a date range, by what they're for. */
 function netOutflows(txns: Transaction[], from: DateKey, to: DateKey) {
   const refunds = new Map<string, Paise>();
-  for (const t of txns) if (t.kind === "refund" && t.refundOf && t.date <= to) refunds.set(t.refundOf, (refunds.get(t.refundOf) ?? 0) + t.amountPaise);
+  for (const t of txns) if (isReimbursementKind(t.kind) && t.refundOf && t.date <= to) refunds.set(t.refundOf, (refunds.get(t.refundOf) ?? 0) + t.amountPaise);
   return txns
     .filter((t) => isOutflow(t) && t.date >= from && t.date <= to)
     .map((t) => ({ t, net: Math.max(0, t.amountPaise - (refunds.get(t.id) ?? 0)) }))
@@ -577,7 +578,7 @@ export function categoryBreakdown(
   const exclude = new Set([...NOT_EXPENSE, ...(opts.exclude ?? [])]);
   const map = new Map<string, { amountPaise: Paise; count: number }>();
   for (const { t, net } of netOutflows(txns, from, to)) {
-    if (exclude.has(t.category)) continue;
+    if (t.kind === "investment" || exclude.has(t.category)) continue;
     const cur = map.get(t.category) ?? { amountPaise: 0, count: 0 };
     cur.amountPaise += net;
     cur.count += 1;
@@ -619,4 +620,14 @@ export function sum(xs: number[]): number {
   let s = 0;
   for (const x of xs) s += x;
   return s;
+}
+
+/** Economic position for Stats: reimbursements reduce their linked expense,
+ * never become income. Legacy Savings records are retained under Investments. */
+export function netInHandInRange(txns: Transaction[], from: DateKey, to: DateKey) {
+  const out = netOutflows(txns, from, to);
+  const investmentsPaise = sum(out.filter(({ t }) => t.kind === "investment" || ["Investments", "Savings"].includes(t.category)).map(x => x.net));
+  const moneyOutPaise = sum(out.map(x => x.net));
+  const incomePaise = sum(txns.filter(t => t.kind === "income" && !["Refunds", "Settlement"].includes(t.category) && t.date >= from && t.date <= to).map(t => t.amountPaise));
+  return { incomePaise, expensesPaise: moneyOutPaise - investmentsPaise, investmentsPaise, moneyOutPaise, netPaise: incomePaise - moneyOutPaise };
 }
