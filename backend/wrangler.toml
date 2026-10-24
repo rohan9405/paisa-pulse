@@ -11,3 +11,9 @@ id = "76c6a9394fad41519bb428a34239af30"
 
 [observability]
 enabled = false
+
+# Anonymous usage counters (src/usage.ts). Created with `npx wrangler d1 create drip-usage`; tables: usage.sql.
+[[d1_databases]]
+binding = "USAGE"
+database_name = "drip-usage"
+database_id = "dba0e52c-0180-4c5a-9988-4c3cef364cbd"
