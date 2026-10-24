@@ -4,6 +4,8 @@ Current checkout: **0.8.11** (24 Oct 2026). Core money tracking, recipient taggi
 
 ## Implemented: compact calendar, gesture direction and chart haptics (0.8.11, build 23)
 
+Installed over the existing phone app on 24 Oct 2026; Android package version 0.8.11 / 23 verified.
+
 - Vertical swipes over Today calendar/trend scroll the page. Touch selection waits for horizontal drag intent or a completed tap; native scroll cancellation does not select a date. Mouse scrubbing retains free movement.
 - Stats grid explicitly allows cards to shrink to the viewport; the year heatmap scrolls inside its card instead of forcing all charts wider.
 - Calendar uses only occupied weeks (four, five or six), with no unused trailing row. Date selection keeps its existing viewport anchor.
