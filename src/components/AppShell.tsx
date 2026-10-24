@@ -7,6 +7,7 @@ import { useAppData, useStore } from "@/data/store";
 import { useSmsSync } from "@/data/useSmsSync";
 import { useAutoBackup } from "@/data/useAutoBackup";
 import { useHomeWidget } from "@/data/useHomeWidget";
+import { smsBridge } from "@/data/providers/sms";
 import { haptic, setHapticsEnabled } from "@/data/device";
 import { DEFAULT_PREFS } from "@/lib/types";
 import type { TabId } from "@/lib/remoteConfig";
@@ -27,6 +28,8 @@ const TAB_ROUTES: Record<TabId, { href: string; icon: ComponentType }> = {
   briefing: { href: "/briefing", icon: IconBriefing },
   activity: { href: "/transactions", icon: IconList },
   stats: { href: "/dashboard", icon: IconChart },
+  manual: { href: "#manual-log", icon: IconPlus },
+  settings: { href: "/settings", icon: IconSettings },
 };
 const NAV_EXTRA_ALL = [
   { href: "/import", label: "Import CSV", icon: IconUpload },
@@ -46,10 +49,10 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   useAutoBackup(data?.profile ? db : null, mode);
   useHomeWidget(data, mode, today);
   const config = useRemoteConfig();
-  const NAV = config.tabs.filter((t) => t.visible).map((t) => ({ ...TAB_ROUTES[t.id], label: t.label }));
-  const NAV_EXTRA = NAV_EXTRA_ALL.filter((n) => n.href !== "/import" || config.features.csvImport);
-  const half = Math.ceil(NAV.length / 2);
-  // Remote config: cached copy first, then the latest from the server; on change, rules are refreshed and SMS re-read.
+  const NAV = config.tabs.filter((t) => t.visible && t.id !== "briefing").map((t) => ({ ...TAB_ROUTES[t.id], id: t.id, label: t.label }));
+  const NAV_EXTRA = NAV_EXTRA_ALL.filter((n) => (n.href !== "/import" || config.features.csvImport) && !NAV.some((t) => t.href === n.href));
+  const primary = config.tabs.find((t) => t.id === (config.primaryAction === "briefing" ? "today" : config.primaryAction) && t.visible) ?? config.tabs.find((t) => t.id === "today")!;
+  // Remote config updates presentation/future rules; history remains opt-in.
   useEffect(() => {
     loadCachedConfig().then(refreshConfig);
     window.addEventListener("paisa-resume", refreshConfig);
@@ -57,7 +60,7 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   }, []);
   useEffect(() => {
     if (!db) return;
-    const onConfig = () => ensureRules(db).then(() => window.dispatchEvent(new Event("paisa-resume")));
+    const onConfig = () => { ensureRules(db).catch(console.error); };
     window.addEventListener("drip-config", onConfig);
     return () => window.removeEventListener("drip-config", onConfig);
   }, [db]);
@@ -100,13 +103,12 @@ function InteractiveShell({ children }: { children: ReactNode }) {
         {/* Desktop sidebar */}
         <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-white/5 px-4 py-6 md:flex">
           <Brand />
-          <button className="btn-primary mt-6 w-full" onClick={() => open()}>
-            <IconPlus /> Add expense
+          <button className="btn-primary mt-6 w-full" onClick={() => primary.id === "manual" ? open() : router.push(TAB_ROUTES[primary.id].href)} data-testid="desktop-primary">
+            {(() => { const Icon = TAB_ROUTES[primary.id].icon; return <Icon />; })()} {primary.label}
           </button>
           <nav className="mt-6 space-y-1">
-            {[...NAV, ...NAV_EXTRA].map((n) => (
-              <NavLink key={n.href} {...n} active={isActive(pathname, n.href)} />
-            ))}
+            {NAV.map((n) => n.id === "manual" ? <button key={n.id} className="flex min-h-[44px] w-full items-center gap-3 rounded-2xl px-3 text-sm font-semibold text-ink-300" onClick={() => open()} aria-label="Add expense"><IconPlus />{n.label}</button> : <NavLink key={n.id} {...n} active={isActive(pathname, n.href)} />)}
+            {NAV_EXTRA.map((n) => <NavLink key={n.href} {...n} active={isActive(pathname, n.href)} />)}
           </nav>
           <div className="mt-auto">
             <ModeBadge mode={mode} onSwitch={() => setMode(null)} />
@@ -133,24 +135,24 @@ function InteractiveShell({ children }: { children: ReactNode }) {
               ))}
             </div>
           </div>
-          <main className="mx-auto w-full max-w-5xl px-4 pb-32 md:px-8 md:pb-12 md:pt-6">{children}</main>
+          <main className="mx-auto w-full max-w-5xl px-4 pb-32 md:px-8 md:pb-12 md:pt-6">
+            {mode === "personal" && <SmsSetupNotice />}
+            {children}
+          </main>
         </div>
       </div>
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/5 bg-ink-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden" aria-label="Primary">
-        <div className="mx-auto grid max-w-md grid-cols-5 items-center px-2 py-1.5">
-          {NAV.slice(0, half).map((n) => (
-            <TabLink key={n.href} {...n} active={isActive(pathname, n.href)} />
-          ))}
-          <div className="flex justify-center">
-            <button onClick={() => open()} aria-label="Add expense" className="-mt-6 grid h-14 w-14 place-items-center rounded-2xl bg-lime text-ink-950 shadow-[0_8px_30px_rgba(198,255,61,0.35)] active:scale-95">
-              <IconPlus />
-            </button>
-          </div>
-          {NAV.slice(half).map((n) => (
-            <TabLink key={n.href} {...n} active={isActive(pathname, n.href)} />
-          ))}
+        <div className="mx-auto grid max-w-lg items-center px-1 py-1.5" style={{ gridTemplateColumns: `repeat(${NAV.length}, minmax(0, 1fr))` }}>
+          {NAV.map((n) => {
+            const highlighted = n.id === primary.id;
+            const active = n.id !== "manual" && isActive(pathname, n.href);
+            const Icon = n.icon;
+            const cls = cx("flex min-h-[60px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-0.5 text-[10px] font-semibold transition", highlighted ? "-mt-5 bg-lime text-ink-950 shadow-[0_6px_24px_rgba(198,255,61,0.3)]" : active ? "text-lime" : "text-ink-400");
+            const content = <><Icon /><span className="text-center leading-tight">{n.label}</span></>;
+            return n.id === "manual" ? <button key={n.id} className={cls} onClick={() => open()} aria-label="Add expense" data-primary={highlighted} data-testid="nav-manual">{content}</button> : <Link key={n.id} href={n.href} className={cls} aria-current={active ? "page" : undefined} data-primary={highlighted} data-testid={`nav-${n.id}`}>{content}</Link>;
+          })}
         </div>
       </nav>
 
@@ -159,8 +161,30 @@ function InteractiveShell({ children }: { children: ReactNode }) {
   );
 }
 
+function SmsSetupNotice() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const update = () => setVisible(!!smsBridge() && !smsBridge()!.hasPermission());
+    update();
+    window.addEventListener("paisa-sms-permission", update);
+    window.addEventListener("paisa-resume", update);
+    return () => {
+      window.removeEventListener("paisa-sms-permission", update);
+      window.removeEventListener("paisa-resume", update);
+    };
+  }, []);
+  if (!visible) return null;
+  return (
+    <div className="my-4 rounded-2xl border border-white/10 bg-ink-900 p-4 text-sm" data-testid="sms-setup-notice">
+      <p className="font-semibold">Automatically track bank SMS</p>
+      <p className="mt-1 text-ink-300">Optional SMS access imports bank alerts on this phone. Manual entries and CSV import work without it.</p>
+      <button className="btn-ghost mt-3" onClick={() => smsBridge()?.requestPermission()}>Set up SMS import</button>
+    </div>
+  );
+}
+
 function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/" ? (pathname === "/" || pathname.startsWith("/briefing")) : pathname.startsWith(href);
 }
 
 function NavLink({ href, label, icon: Icon, active }: { href: string; label: string; icon: ComponentType; active: boolean }) {

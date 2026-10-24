@@ -136,6 +136,11 @@ export interface CategorizeResult {
  */
 export function categorize(text: string, rules: CategoryRule[], payee?: string, context?: { merchant?: string; direction?: "in" | "out" }): CategorizeResult | null {
   rules = rules.filter((r) => !r.direction || !context?.direction || r.direction === context.direction);
+  // A user's matching rule always wins, even over a remote priority of 100.
+  if (rules.some((r) => !r.builtIn)) {
+    const personal = categorize(text, rules.filter((r) => !r.builtIn).map((r) => ({ ...r, builtIn: true })), payee, context);
+    if (personal) return personal;
+  }
   const pay = payee ? normalize(payee) : "";
   if (pay) {
     const byPayee = rules.filter((r) => r.payee && normalize(r.payee) === pay).sort((a, b) => b.priority - a.priority)[0];

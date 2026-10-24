@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { getDB } from "@/data/db";
 import { ensureRules } from "@/data/repo";
+import { loadCachedConfig } from "@/data/remoteConfigLoader";
 import { syncSms } from "@/data/providers/sms";
 import { toISTKey } from "@/lib/dates";
 import { widgetSnapshot } from "@/lib/widget";
@@ -26,6 +27,7 @@ export default function WidgetSyncPage() {
           ok = true;
           return;
         }
+        await loadCachedConfig();
         await ensureRules(db);
         await syncSms(db);
         const [profile, plans, txns] = await Promise.all([db.profile.get("me"), db.plans.toArray(), db.txns.toArray()]);

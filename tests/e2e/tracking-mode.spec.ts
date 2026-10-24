@@ -1,7 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { dailyAllocation } from "../../src/lib/budget";
-import { daysInMonth, parseKey, toISTKey } from "../../src/lib/dates";
-import { formatINR } from "../../src/lib/money";
 
 async function start(page: Page, mode: "tracking" | "actual") {
   await page.goto("/");
@@ -30,6 +27,7 @@ test("tracking hides budget inputs and keeps remembered transaction tagging", as
   await add(page, "500", "Local Tracking Shop");
   await expect(page.getByTestId("spent-today")).toHaveText("₹500");
   await expect(page.getByTestId("available")).toHaveCount(0);
+  await page.getByTestId("day-payments").locator("summary").click();
   await page.getByTestId("today-list").getByRole("button").filter({ hasText: "Local Tracking Shop" }).click();
   await page.getByTestId("txn-category").selectOption("Groceries");
   await page.getByTestId("txn-save").click();
@@ -47,38 +45,33 @@ test("tracking hides budget inputs and keeps remembered transaction tagging", as
   await page.getByTestId("save-budget").click();
   await expect(page.getByTestId("save-budget")).toBeHidden();
   await page.goto("/");
-  const allocation = dailyAllocation(30_000_00, toISTKey());
-  // The new plan applies today; today's expenses now count against today's budget.
-  await expect(page.getByTestId("available")).toHaveAttribute("aria-label", formatINR(allocation - 700_00));
+  await expect(page.getByTestId("spent-today")).toHaveText("₹700");
+  await expect(page.getByTestId("available")).toHaveCount(0);
 });
 
 test("actual mode takes no budget amounts and is funded by recorded income", async ({ page }) => {
   await start(page, "actual");
-  await expect(page.getByTestId("available")).toHaveAttribute("aria-label", "₹0");
+  await expect(page.getByTestId("spent-today")).toHaveText("₹0");
   // A small non-salary credit funds today in any week; a salary from the 25th on would count for next month.
   await add(page, "9000", "Freelance payment", "Income");
-  const { y, m, d } = parseKey(toISTKey());
-  const daysLeft = daysInMonth(y, m) - d + 1;
-  const allocation = daysLeft === 1 ? 9_000_00 : Math.floor(9_000_00 / daysLeft);
-  await expect(page.getByTestId("available")).toHaveAttribute("aria-label", formatINR(allocation));
+  await page.getByRole("tab", { name: "Income", exact: true }).click();
+  await expect(page.getByTestId("income-today")).toHaveText("₹9,000");
+  await expect(page.getByTestId("available")).toHaveCount(0);
   await page.goto("/settings");
   await page.getByTestId("edit-budget").click();
   await expect(page.getByTestId("settings-income")).toHaveCount(0);
   await expect(page.getByLabel("Monthly amount")).toHaveCount(0);
-  await page.getByRole("tab", { name: "Just track", exact: true }).click();
+  await page.getByRole("tab", { name: "Track expenses", exact: true }).click();
   await expect(page.getByTestId("set-aside-categories")).toHaveCount(0);
   await page.getByTestId("save-budget").click();
   await expect(page.getByTestId("save-budget")).toBeHidden();
   await page.goto("/briefing");
   await expect(page.getByTestId("calendar")).toBeVisible();
-  // Before 5 pm the morning brief shows, with a "Night" switch; after, the night brief is already up.
-  const night = page.getByRole("button", { name: /Night/ });
-  if (await night.count()) await night.click();
-  await expect(page.getByTestId("evening")).toBeVisible();
+  await expect(page.getByTestId("unified-today")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Morning|Night/ })).toHaveCount(0);
   await expect(page.getByText("+5 bonus XP")).toHaveCount(0);
   await expect(page.getByTestId("tomorrow")).toHaveCount(0);
-  await page.screenshot({ path: test.info().outputPath("tracking-night.png"), fullPage: true });
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { name: "Cumulative everyday spending" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cumulative expenses" })).toBeVisible();
   await expect(page.getByText("Budget spent vs allowance")).toHaveCount(0);
 });

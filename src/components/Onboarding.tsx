@@ -100,7 +100,7 @@ export function Onboarding() {
             {(
               [
                 [false, "💧 Daily budget", "Know what you can spend each day."],
-                [true, "👀 Just track", "See where money goes, no daily limit."],
+                [true, "👀 Track expenses", "See where money goes, no daily limit."],
               ] as const
             ).map(([track, label, help]) => (
               <button key={label} onClick={() => setTrackOnly(track)} className={cx("rounded-2xl border p-3 text-left text-sm", trackOnly === track ? "border-lime/50 bg-lime/[0.07]" : "border-white/10")} aria-pressed={trackOnly === track} data-testid={track ? "ob-track" : "ob-budget"}>

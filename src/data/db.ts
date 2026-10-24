@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Recurring, Transaction } from "@/lib/types";
+import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Recurring, Transaction, FundHold } from "@/lib/types";
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 
 /**
@@ -15,6 +15,7 @@ export class FinanceDB extends Dexie {
   imports!: Table<ImportBatch, string>;
   accounts!: Table<Account, string>;
   recurring!: Table<Recurring, string>;
+  holds!: Table<FundHold, string>;
 
   constructor(name: string) {
     super(name);
@@ -48,6 +49,14 @@ export class FinanceDB extends Dexie {
         });
         await rules.bulkPut(currentBuiltInRules());
       });
+    // v4: IPO holds are separate from settled transactions and recurring bills.
+    this.version(4).stores({ holds: "id, reference, status" }).upgrade(async (tx) => {
+      // Old parsers guessed monthly when frequency was missing. Without source
+      // evidence we cannot safely retain that guessed schedule.
+      await tx.table<Recurring, string>("recurring").toCollection().modify((r) => {
+        if (r.source === "mandate" && !r.startDate && !r.userEdited) r.frequency = "unknown";
+      });
+    });
   }
 }
 

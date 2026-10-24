@@ -31,8 +31,9 @@ test("onboarding → quick-add → reload persistence → dashboard updates", as
   await expect(page.getByTestId("ob-summary")).toContainText(formatINR(allocation));
   await page.getByTestId("ob-finish").click();
 
-  // Today: full daily allocation available
-  await expect(page.getByTestId("available")).toHaveAttribute("aria-label", formatINR(allocation));
+  // Today shows actual spending; budget allowance is not part of this screen.
+  await expect(page.getByTestId("spent-today")).toHaveText("₹0");
+  await expect(page.getByTestId("available")).toHaveCount(0);
   await expect(page.getByTestId("demo-banner")).toHaveCount(0);
 
   // Quick-add an expense
@@ -42,14 +43,13 @@ test("onboarding → quick-add → reload persistence → dashboard updates", as
   await page.getByRole("button", { name: /Food & Dining/ }).click();
   await page.getByTestId("qa-save").click();
 
-  const expected = formatINR(allocation - 250_00);
-  await expect(page.getByTestId("available")).toHaveAttribute("aria-label", expected);
+  await expect(page.getByTestId("spent-today")).toHaveText("₹250");
   await expect(page.getByTestId("spent-today")).toHaveText("₹250");
   await expect(page.getByTestId("today-list")).toContainText("Chai Point");
 
   // Reload: data persists in IndexedDB
   await page.reload();
-  await expect(page.getByTestId("available")).toHaveAttribute("aria-label", expected);
+  await expect(page.getByTestId("spent-today")).toHaveText("₹250");
   await expect(page.getByTestId("today-list")).toContainText("Chai Point");
 
   // Dashboard reflects the expense; rent paid → not upcoming; SIP still to pay
@@ -74,7 +74,7 @@ test("demo mode is clearly labelled and separate from personal data", async ({ p
   await page.goto("/");
   await page.getByTestId("start-demo").click();
   await expect(page.getByTestId("demo-banner")).toContainText(/fictional/i);
-  await expect(page.getByTestId("available")).toBeVisible();
+  await expect(page.getByTestId("spent-today")).toBeVisible();
   await page.goto("/import");
   await expect(page.getByText("CSV import is for personal mode")).toBeVisible();
 });

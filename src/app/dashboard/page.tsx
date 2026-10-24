@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, outgoingsInRange, planForDate, spendVsBudgetSeries } from "@/lib/budget";
+import { categoryColor } from "@/lib/categoryColors";
 import { categoryEmoji, tagEmoji } from "@/lib/categorize";
 import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
@@ -122,7 +123,7 @@ export default function DashboardPage() {
 
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative everyday spending"}</h2>
+              <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative expenses"}</h2>
               <InfoTip label="About spend vs budget">{hasBudget ? "Below the dashed line = on track." : "Set an income in Settings to compare against a budget."}</InfoTip>
             </div>
             {series.length === 0 ? (
@@ -188,7 +189,7 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
-                      <div className="h-full rounded-full bg-lime" style={{ width: `${(c.amountPaise / catMax) * 100}%` }} />
+                      <div className="h-full rounded-full" style={{ width: `${(c.amountPaise / catMax) * 100}%`, backgroundColor: categoryColor(c.category) }} />
                     </div>
                   </div>
                 ))}

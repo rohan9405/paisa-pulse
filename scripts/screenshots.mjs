@@ -33,12 +33,17 @@ await page.goto(`${base}/`);
 await page.getByText("Set up my budget").waitFor();
 await page.screenshot({ path: join(OUT, "welcome.png") });
 
-await page.evaluate(() => localStorage.setItem("paisa-pulse:mode", "demo"));
-for (const [name, path] of [["today", "/"], ["briefing", "/briefing/"], ["activity", "/transactions/"], ["stats", "/dashboard/"]]) {
+await page.getByTestId("start-demo").click();
+await page.getByTestId("unified-today").waitFor();
+for (const [name, path] of [["today", "/"], ["activity", "/transactions/"], ["stats", "/dashboard/"]]) {
   await page.goto(`${base}${path}`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1200); // let charts and number animations settle
   await page.screenshot({ path: join(OUT, `${name}.png`) });
+  if (name === "today") {
+    await page.getByTestId("calendar-anchor").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: join(OUT, "today-calendar.png") });
+  }
   console.log("saved", name);
 }
 

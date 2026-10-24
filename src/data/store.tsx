@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { type DateKey, toISTKey } from "@/lib/dates";
-import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Recurring, Transaction } from "@/lib/types";
+import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Recurring, Transaction, FundHold } from "@/lib/types";
 import { type FinanceDB, getDB } from "./db";
 import { ensureRules, seedDemo } from "./repo";
 
@@ -106,6 +106,7 @@ export interface AppData {
   imports: ImportBatch[];
   accounts: Account[];
   recurring: Recurring[];
+  holds: FundHold[];
 }
 
 /** Live snapshot of the active mode's database. `undefined` while loading. */
@@ -114,7 +115,7 @@ export function useAppData(): AppData | undefined {
   return useLiveQuery(
     async () => {
       if (!db) return undefined;
-      const [profile, plans, txns, rules, connections, imports, accounts, recurring] = await Promise.all([
+      const [profile, plans, txns, rules, connections, imports, accounts, recurring, holds] = await Promise.all([
         db.profile.get("me"),
         db.plans.toArray(),
         db.txns.toArray(),
@@ -123,8 +124,9 @@ export function useAppData(): AppData | undefined {
         db.imports.orderBy("importedAt").reverse().toArray(),
         db.accounts.toArray(),
         db.recurring.toArray(),
+        db.holds.toArray(),
       ]);
-      return { profile: profile ?? null, plans, txns, rules, connections, imports, accounts, recurring };
+      return { profile: profile ?? null, plans, txns, rules, connections, imports, accounts, recurring, holds };
     },
     [db, mode],
   );

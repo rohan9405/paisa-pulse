@@ -2,6 +2,7 @@ package dev.paisapulse.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,7 @@ import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.webkit.ValueCallback;
@@ -128,12 +130,39 @@ public class MainActivity extends Activity {
         root.addView(web);
         root.addView(lockCover);
         setContentView(root);
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                () -> { if (web.canGoBack()) web.goBack(); else finish(); });
+        }
+        // Android 15+ enforces edge-to-edge for modern targets. Keep the WebView
+        // and lock cover clear of system bars, cutouts and the on-screen keyboard.
+        if (Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.systemBars()
+                        | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+                v.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+                return WindowInsets.CONSUMED;
+            });
+            root.requestApplyInsets();
+        }
         if (saved != null && !"dev.paisapulse.app.WIDGET_OPEN".equals(getIntent().getAction())) web.restoreState(saved);
         else web.loadUrl("https://" + HOST + widgetRoute(getIntent()));
 
-        if (checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] {Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS}, SMS_REQUEST);
-        }
+    }
+
+    /** Always disclose sensitive access before Android's runtime prompt. */
+    void requestSmsAccess() {
+        new AlertDialog.Builder(this)
+            .setTitle("Automatically track bank SMS?")
+            .setMessage("drip reads your SMS inbox and receives new SMS to find bank transaction alerts and calculate your budget. With a home-screen widget installed, this can also happen while the app is closed.\n\nPersonal senders are filtered out; OTPs, offers and unrelated messages are ignored by the parser. Bank transactions are processed and stored on this phone, never uploaded to Soft Orbit Apps.\n\nSMS access is optional. You can use manual entries or CSV import instead and revoke access in Android Settings > Apps > drip > Permissions.")
+            .setPositiveButton("Agree and continue", (dialog, which) -> {
+                getSharedPreferences("privacy", 0).edit().putInt("smsConsent", 1).apply();
+                requestPermissions(new String[] {Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS}, SMS_REQUEST);
+            })
+            .setNegativeButton("Not now", null)
+            .setNeutralButton("Privacy policy", (dialog, which) -> web.loadUrl("https://" + HOST + "/privacy.html"))
+            .show();
     }
 
     @Override

@@ -29,7 +29,7 @@ public final class WidgetSyncService extends JobService {
     private final Runnable timeout=()->finish(false);
 
     static void schedule(Context c) {
-        if(!DripWidgetProvider.hasWidgets(c)) return;
+        if(!DripWidgetProvider.hasWidgets(c) || !new SmsBridge(c).hasPermission()) return;
         JobScheduler jobs=(JobScheduler)c.getSystemService(JOB_SCHEDULER_SERVICE);
         if(jobs.getPendingJob(JOB_ID)!=null) return;
         JobInfo.Builder b=new JobInfo.Builder(JOB_ID,new ComponentName(c,WidgetSyncService.class));
@@ -45,7 +45,7 @@ public final class WidgetSyncService extends JobService {
     }
     static void cancel(Context c) { ((JobScheduler)c.getSystemService(JOB_SCHEDULER_SERVICE)).cancel(JOB_ID); }
     @Override public boolean onStartJob(JobParameters p) {
-        if(checkSelfPermission(Manifest.permission.READ_SMS)!=PackageManager.PERMISSION_GRANTED) {
+        if(!new SmsBridge(this).hasPermission()) {
             getSharedPreferences("widget",0).edit().putString("syncStatus","error").apply();
             DripWidgetProvider.refresh(this);return false;
         }

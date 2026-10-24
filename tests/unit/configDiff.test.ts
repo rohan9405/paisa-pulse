@@ -12,6 +12,7 @@ describe("version history summaries", () => {
   it("describes each changed section in one line", () => {
     const a = base();
     const b = base();
+    a.tabs[1].visible = true;
     b.tabs = [b.tabs[0], b.tabs[3], b.tabs[2], { ...b.tabs[1], label: "Brief", visible: false }];
     b.rules = [{ contains: "tea stall", category: "Food & Dining", priority: 5 }];
     b.replaceBuiltInRules = true;
@@ -20,7 +21,7 @@ describe("version history summaries", () => {
     b.announcement = { id: "a1", text: "New: balances on Today", tone: "info" };
     expect(changedSections(a, b)).toEqual(["tabs", "rules", "budget", "features", "announcement"]);
     expect(describeChanges(a, b)).toEqual([
-      "Tabs: order changed, briefing renamed “Brief”, briefing hidden",
+      "Tabs: order changed, briefing hidden",
       "Rules: 1 added; now replaces built-ins",
       "Budget and insights: lateSalaryDay 25 → 27",
       "Features: badges off",

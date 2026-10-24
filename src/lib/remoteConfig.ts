@@ -11,7 +11,7 @@
 import { CATEGORIES } from "./categorize";
 import type { TxnKind } from "./types";
 
-export const TAB_IDS = ["today", "briefing", "activity", "stats"] as const;
+export const TAB_IDS = ["today", "briefing", "manual", "activity", "stats", "settings"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 export const SCREEN_IDS = ["today", "briefing", "activity", "stats", "settings", "import"] as const;
 export type ScreenId = (typeof SCREEN_IDS)[number];
@@ -26,6 +26,10 @@ export interface RemoteRule {
   direction?: "in" | "out";
   /** Higher wins; built-ins are 0, your own rules 10. */
   priority: number;
+  /** Off by default. Applies this rule to untouched payments in the last 12 months. */
+  applyToHistory?: boolean;
+  /** Increment to explicitly repeat a history job without changing the rule. */
+  historyRevision?: number;
 }
 
 export interface RemoteConfig {
@@ -34,6 +38,7 @@ export interface RemoteConfig {
   publishedAt?: string;
   /** Bottom tabs, in order. Today can't be hidden. */
   tabs: { id: TabId; label: string; visible: boolean }[];
+  primaryAction: TabId;
   /** Page title / subtitle per screen; empty = the screen's own text. */
   screens: Partial<Record<ScreenId, { title?: string; subtitle?: string }>>;
   /** Extra categorisation rules, applied like built-ins. */
@@ -80,11 +85,14 @@ export interface RemoteConfig {
 
 export const DEFAULT_CONFIG: RemoteConfig = {
   version: 0,
+  primaryAction: "today",
   tabs: [
     { id: "today", label: "Today", visible: true },
-    { id: "briefing", label: "Briefing", visible: true },
+    { id: "briefing", label: "Brief", visible: false },
+    { id: "manual", label: "Manual log", visible: true },
     { id: "activity", label: "Activity", visible: true },
     { id: "stats", label: "Stats", visible: true },
+    { id: "settings", label: "Settings", visible: true },
   ],
   screens: {},
   rules: [],
@@ -155,6 +163,8 @@ export function parseRemoteConfig(input: unknown): ParseResult {
     else errors.push("tabs: none valid");
   }
 
+  if (TAB_IDS.some((id) => id === input.primaryAction) && c.tabs.some((t) => t.id === input.primaryAction && t.visible)) c.primaryAction = input.primaryAction as TabId;
+
   if (isObj(input.screens)) {
     for (const id of SCREEN_IDS) {
       const s = input.screens[id];
@@ -177,7 +187,7 @@ export function parseRemoteConfig(input: unknown): ParseResult {
       }
       const kind = KINDS.find((k) => k === r.kind);
       const direction = r.direction === "in" || r.direction === "out" ? r.direction : undefined;
-      c.rules.push({ contains: contains.toLowerCase(), category, tag: str(r.tag, 30), kind, direction, priority: int(r.priority, 0, 100) ?? 5 });
+      c.rules.push({ contains: contains.toLowerCase(), category, tag: str(r.tag, 30), kind, direction, priority: int(r.priority, 0, 100) ?? 5, ...(r.applyToHistory === true ? { applyToHistory: true, historyRevision: int(r.historyRevision, 0, 1e9) ?? 0 } : {}) });
     }
   }
 

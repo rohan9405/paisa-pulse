@@ -7,11 +7,11 @@
  * direction, account, counterparty and bank reference from the body.
  */
 import { getConfig } from "./remoteConfig";
-import { type DateKey, toISTKey } from "./dates";
+import { type DateKey, toISTKey, isDateKey } from "./dates";
 import { type Paise, parseAmountToPaise } from "./money";
 import { categorize, detectMethod, extractMerchant, outflowKind } from "./categorize";
 import { cleanMerchantName } from "./merchants";
-import type { CategoryRule, PaymentMethod, TxnKind } from "./types";
+import type { CategoryRule, PaymentMethod, TxnKind, Recurring } from "./types";
 
 export interface RawSms {
   /** Inbox row id on the phone. */
@@ -285,7 +285,7 @@ export interface ParsedMandate {
   /** Who it pays, e.g. "Netflix", "Groww". */
   name?: string;
   payee?: string;
-  frequency: "monthly" | "weekly" | "quarterly" | "yearly";
+  frequency: Recurring["frequency"];
   /** UMN / UMRN / mandate reference. */
   ref?: string;
   /** First / next debit date if the message says so. */
@@ -302,7 +302,7 @@ export function parseMandate(sms: Pick<RawSms, "address" | "body" | "date">): Pa
   const bank = bankForSender(sms.address);
   if (!bank) return null;
   const body = sms.body.replace(/\s+/g, " ").trim();
-  if (!MANDATE.test(body) || NOT_A_TXN[0].test(body)) return null;
+  if (!MANDATE.test(body) || NOT_A_TXN[0].test(body) || /\b(ipo|asba)\b/i.test(body) || /\b(failed|unsuccessful|could not)\b/i.test(body)) return null;
   let event: ParsedMandate["event"] | null = null;
   if (/\b(revoked|cancell?ed|deleted|paused|deactivated|stopped)\b/i.test(body)) event = "revoked";
   else if (/\b(modified|updated|amended|changed)\b/i.test(body)) event = "modified";
@@ -311,8 +311,8 @@ export function parseMandate(sms: Pick<RawSms, "address" | "body" | "date">): Pa
   // A debit made under a mandate is a transaction, handled by parseBankSms.
   if (/\b(debited|deducted|paid|spent)\b/i.test(body) && event === "created" && !/\b(mandate|auto\s?pay)\b.{0,40}\b(created|registered|set ?up)/i.test(body)) return null;
 
-  const freq = body.match(/\b(daily|weekly|monthly|quarterly|half[- ]?yearly|yearly|annually|annual)\b/i)?.[1].toLowerCase() ?? "monthly";
-  const frequency: ParsedMandate["frequency"] = freq.startsWith("week") ? "weekly" : freq.startsWith("quarter") ? "quarterly" : /year|annual/.test(freq) ? "yearly" : "monthly";
+  const freq = body.match(/\b(daily|weekly|monthly|quarterly|half[- ]?yearly|yearly|annually|annual|one[- ]?time|once|as presented)\b/i)?.[1].toLowerCase();
+  const frequency: ParsedMandate["frequency"] = !freq || freq === "as presented" ? "unknown" : /one|once/.test(freq) ? "once" : freq.startsWith("daily") ? "daily" : freq.startsWith("week") ? "weekly" : freq.startsWith("quarter") ? "quarterly" : freq.startsWith("half") ? "half-yearly" : /year|annual/.test(freq) ? "yearly" : "monthly";
   // Most specific wording first; "for Rs 649" or "to your a/c" aren't names.
   let name: string | undefined;
   for (const kw of ["towards", "in favou?r of", "for merchant", "payee", "for", "to"]) {
@@ -331,5 +331,6 @@ export function parseMandate(sms: Pick<RawSms, "address" | "body" | "date">): Pa
     const yr = dateM[3].length === 2 ? 2000 + Number(dateM[3]) : Number(dateM[3]);
     if (mon >= 1 && mon <= 12) startDate = `${yr}-${String(mon).padStart(2, "0")}-${String(Number(dateM[1])).padStart(2, "0")}`;
   }
+  if (startDate && !isDateKey(startDate)) startDate = undefined;
   return { bank, event, amountPaise: findAmount(body), name, payee: findPayee(body), frequency, ref, startDate };
 }

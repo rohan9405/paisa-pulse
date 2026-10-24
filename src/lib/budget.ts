@@ -277,6 +277,8 @@ export interface DayRow {
   date: DateKey;
   hasBudget: boolean;
   everydayPaise: Paise;
+  /** Actual expenses including bills, excluding investments, savings and transfers. */
+  expensePaise: Paise;
   allocationPaise: Paise;
   spentPaise: Paise;
   /** Plan adjustments that day: + a planned payment came in under, − actual-mode payments beyond the pool. */
@@ -327,6 +329,7 @@ export function computeLedger(input: {
   };
   const spentByDay = byDay(entries.spend);
   const everydayByDay = byDay(everydayEntries(txns, start, today));
+  const expensesByDay = byDay(expenseEntries(txns, start, today));
   const setAsideByDay = byDay(entries.setAside);
   const creditByDay = byDay(entries.credits);
 
@@ -403,6 +406,7 @@ export function computeLedger(input: {
         date: day,
         hasBudget: dayHasBudget,
         everydayPaise: everydayByDay.get(day) ?? 0,
+        expensePaise: expensesByDay.get(day) ?? 0,
         allocationPaise: allocation,
         spentPaise: spent,
         adjustPaise: adjust,
@@ -416,7 +420,7 @@ export function computeLedger(input: {
 
   const todayRow: DayRow =
     days[days.length - 1] ??
-    { date: today, hasBudget: budget, everydayPaise: 0, allocationPaise: 0, spentPaise: 0, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: 0, underBudget: true };
+    { date: today, hasBudget: budget, everydayPaise: 0, expensePaise: 0, allocationPaise: 0, spentPaise: 0, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: 0, underBudget: true };
 
   let streak = 0;
   for (let i = budget ? days.length - 2 : -1; i >= 0; i--) {
@@ -523,6 +527,12 @@ export function everydayEntries(txns: Transaction[], from: DateKey, to: DateKey)
     .map(({ t, net }) => ({ date: t.date, amountPaise: net, category: t.category, txnId: t.id, merchant: t.merchant, source: "expense" }));
 }
 
+/** Tracking expenses include bills and exclude money retained as investments/savings. */
+export function expenseEntries(txns: Transaction[], from: DateKey, to: DateKey): SpendEntry[] {
+  return netOutflows(txns, from, to).filter(({ t }) => !["Investments", "Savings"].includes(t.category))
+    .map(({ t, net }) => ({ date: t.date, amountPaise: net, category: t.category, txnId: t.id, merchant: t.merchant, source: "expense" }));
+}
+
 /** Net outflows (after linked refunds) in a date range, by what they're for. */
 function netOutflows(txns: Transaction[], from: DateKey, to: DateKey) {
   const refunds = new Map<string, Paise>();
@@ -597,7 +607,7 @@ export function spendVsBudgetSeries(ledger: Ledger, from: DateKey, to: DateKey) 
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const row = byDate.get(d);
     const b = (row?.allocationPaise ?? 0) + Math.max(0, row?.adjustPaise ?? 0);
-    const s = (ledger.hasBudget ? row?.spentPaise ?? 0 : row?.everydayPaise ?? 0) + (ledger.hasBudget ? Math.max(0, -(row?.adjustPaise ?? 0)) : 0);
+    const s = (ledger.hasBudget ? row?.spentPaise ?? 0 : row?.expensePaise ?? 0) + (ledger.hasBudget ? Math.max(0, -(row?.adjustPaise ?? 0)) : 0);
     cumBudget += b;
     cumSpent += s;
     out.push({ date: d, budgetPaise: b, spentPaise: s, cumBudgetPaise: cumBudget, cumSpentPaise: cumSpent });

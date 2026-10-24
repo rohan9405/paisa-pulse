@@ -50,9 +50,9 @@ export function Welcome() {
           A daily budget that refills every midnight (IST). Underspend and it rolls over. Overspend and tomorrow knows. Bills, savings and SIPs are set aside first.
         </p>
         <ul className="mt-6 space-y-2 text-sm text-ink-300">
-          <li>☀️ Morning briefing + 🌙 evening report</li>
+          <li>📊 Daily spending, income and patterns</li>
           <li>📥 Import any bank CSV, with duplicate checks</li>
-          <li>🔒 Nothing leaves this browser. No analytics.</li>
+          <li>🔒 Your transactions stay on your device. No analytics.</li>
         </ul>
       </div>
       <div className="relative mt-10 space-y-3">
@@ -68,6 +68,9 @@ export function Welcome() {
           <input type="file" accept="application/json,.json" className="sr-only" disabled={!!busy} onChange={(e) => restore(e.target.files?.[0])} />
         </label>
         {restoreErr && <p className="text-center text-xs text-coral">{restoreErr}</p>}
+        <p className="pt-2 text-center text-xs text-ink-400">
+          by Soft Orbit Apps · <a className="underline" href="/privacy.html">Privacy policy</a>
+        </p>
       </div>
     </div>
   );

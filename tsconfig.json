@@ -32,9 +32,11 @@
     "**/*.ts",
     "**/*.tsx",
     ".next-e2e/types/**/*.ts",
+    ".next-preview/types/**/*.ts",
+    ".next-today-check/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-preview/types/**/*.ts"
+    ".next-visual-check/types/**/*.ts"
   ],
   "exclude": [
     "backend",

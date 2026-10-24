@@ -28,7 +28,7 @@ export function monthPace(ledger: Ledger, today: DateKey): MonthPace {
   const dim = daysInMonth(y, m);
   const rows = ledger.days.filter((r) => r.date >= startOfMonth(today) && r.date <= today);
   const done = rows.filter((r) => r.date < today);
-  const spent = rows.reduce((s, r) => s + (ledger.hasBudget ? r.hasBudget ? r.spentPaise : 0 : r.everydayPaise), 0);
+  const spent = rows.reduce((s, r) => s + (ledger.hasBudget ? r.hasBudget ? r.spentPaise : 0 : r.expensePaise), 0);
   const allocated = rows.reduce((s, r) => s + r.allocationPaise, 0);
   let projected: number | null = null;
   if (ledger.hasBudget && ledger.mode === "planned" && rows.every((r) => r.hasBudget) && done.length >= 3) {
@@ -45,7 +45,7 @@ export function monthPace(ledger: Ledger, today: DateKey): MonthPace {
 export function usualDailySpend(ledger: Ledger, today: DateKey, days = 28): number {
   const from = addDays(today, -days);
   const rows = ledger.days.filter((r) => r.date >= from && r.date < today);
-  return rows.length ? Math.round(rows.reduce((s, r) => s + (ledger.hasBudget ? r.hasBudget ? r.spentPaise : 0 : r.everydayPaise), 0) / rows.length) : 0;
+  return rows.length ? Math.round(rows.reduce((s, r) => s + (ledger.hasBudget ? r.hasBudget ? r.spentPaise : 0 : r.expensePaise), 0) / rows.length) : 0;
 }
 
 export interface WeekDay {
@@ -63,7 +63,7 @@ export function weekDays(ledger: Ledger, today: DateKey): WeekDay[] {
   const start = startOfWeek(today);
   return eachDay(start, addDays(start, 6)).map((date) => {
     const row = ledger.days.find((r) => r.date === date);
-    return { date, hasBudget: row?.hasBudget ?? false, spentPaise: ledger.hasBudget ? row?.spentPaise ?? 0 : row?.everydayPaise ?? 0, allocationPaise: row?.allocationPaise ?? 0, future: date > today, untracked: !row && date <= today };
+    return { date, hasBudget: row?.hasBudget ?? false, spentPaise: ledger.hasBudget ? row?.spentPaise ?? 0 : row?.expensePaise ?? 0, allocationPaise: row?.allocationPaise ?? 0, future: date > today, untracked: !row && date <= today };
   });
 }
 
@@ -84,10 +84,10 @@ export function monthCalendar(ledger: Ledger, day: DateKey): { blanks: number; d
     const row = ledger.days.find((r) => r.date === date);
     if (date > ledger.today) return { date, hasBudget: row?.hasBudget ?? false, state: "future", spentPaise: 0 };
     if (!row) return { date, hasBudget: false, state: "untracked", spentPaise: 0 };
-    if (date === ledger.today) return { date, hasBudget: row?.hasBudget ?? false, state: "today", spentPaise: row.spentPaise };
+    if (date === ledger.today) return { date, hasBudget: row?.hasBudget ?? false, state: "today", spentPaise: row.hasBudget ? row.spentPaise : row.expensePaise };
     if (row.spentPaise === 0 && (row.hasBudget || row.setAsidePaise === 0)) return { date, hasBudget: row?.hasBudget ?? false, state: "nospend", spentPaise: 0 };
-    if (!row.hasBudget) return { date, hasBudget: row?.hasBudget ?? false, state: "spent", spentPaise: row.spentPaise };
-    return { date, hasBudget: row?.hasBudget ?? false, state: row.underBudget ? "under" : "over", spentPaise: row.spentPaise };
+    if (!row.hasBudget) return { date, hasBudget: row?.hasBudget ?? false, state: "spent", spentPaise: row.hasBudget ? row.spentPaise : row.expensePaise };
+    return { date, hasBudget: row?.hasBudget ?? false, state: row.underBudget ? "under" : "over", spentPaise: row.hasBudget ? row.spentPaise : row.expensePaise };
   });
   return { blanks, days };
 }
@@ -106,7 +106,7 @@ export interface Insight {
  * One nudge comparing the last 7 days with the 4 weeks before: the category that
  * rose the most, or, failing that, a note if overall spending is well below usual.
  */
-export function weeklyInsight(txns: Transaction[], plans: BudgetPlan[], today: DateKey): Insight | null {
+export function weeklyInsight(txns: Transaction[], plans: BudgetPlan[], today: DateKey, options: { categoryOnly?: boolean } = {}): Insight | null {
   // Thresholds (default: ₹300 and +25%) come from the remote config.
   const minDiff = getConfig().budget.insightMinRupees * 100;
   const risePct = getConfig().budget.insightRisePct;
@@ -124,6 +124,8 @@ export function weeklyInsight(txns: Transaction[], plans: BudgetPlan[], today: D
     if (!best || diff > best.diff) best = { category: c.category, pct: Math.round((diff / u) * 100), diff };
   }
   if (best) return { text: `${best.category} is ${best.pct}% above your usual this week`, tone: "warn" };
+
+  if (options.categoryOnly) return null;
 
   const weekTotal = week.reduce((s, c) => s + c.amountPaise, 0);
   const usualTotal = before.reduce((s, c) => s + c.amountPaise, 0) / 4;

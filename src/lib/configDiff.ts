@@ -22,7 +22,7 @@ export const SECTION_LABEL: Record<Section, string> = {
 
 /** The config fields each section edits. */
 export const SECTION_FIELDS: Record<Section, (keyof RemoteConfig)[]> = {
-  tabs: ["tabs"],
+  tabs: ["tabs", "primaryAction"],
   screens: ["screens"],
   rules: ["rules", "disabledRules", "replaceBuiltInRules"],
   merchants: ["merchants", "replaceBuiltInMerchants"],
@@ -59,6 +59,7 @@ export function describeChanges(a: RemoteConfig, b: RemoteConfig): string[] {
     switch (s) {
       case "tabs": {
         const bits: string[] = [];
+        if (a.primaryAction !== b.primaryAction) bits.push(`primary ${a.primaryAction} → ${b.primaryAction}`);
         if (!same(a.tabs.map((t) => t.id), b.tabs.map((t) => t.id))) bits.push("order changed");
         for (const t of b.tabs) {
           const old = a.tabs.find((x) => x.id === t.id);

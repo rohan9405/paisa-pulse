@@ -21,7 +21,7 @@ test("personal budget reaches the launcher bridge; demo stays private and widget
   await page.getByTestId("ob-next").click();
   await page.getByTestId("ob-next").click();
   await page.getByTestId("ob-finish").click();
-  await expect(page.getByTestId("available")).toBeVisible();
+  await expect(page.getByTestId("spent-today")).toBeVisible();
   const snapshot = () => page.evaluate(() => (window as unknown as { widgetCapture: { snapshots: { capturedDate: string; rows: { date: string; available: number; spent: number }[] }[] } }).widgetCapture.snapshots.at(-1));
   await expect.poll(snapshot).toBeTruthy();
   const before = (await snapshot())!;
@@ -67,7 +67,7 @@ test("widget refresh imports bank SMS in the background route without showing ap
   await page.getByTestId("ob-next").click();
   await page.getByTestId("ob-next").click();
   await page.getByTestId("ob-finish").click();
-  await expect(page.getByTestId("available")).toBeVisible();
+  await expect(page.getByTestId("spent-today")).toBeVisible();
   await page.goto("/widget-sync/");
   await expect.poll(() => page.evaluate(() => (window as unknown as { widgetJobResult: boolean | null }).widgetJobResult)).toBe(true);
   const snapshot = await page.evaluate(() => (window as unknown as { widgetResult: { capturedDate: string; rows: { date: string; spent: number }[] } }).widgetResult);

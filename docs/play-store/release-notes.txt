@@ -1,0 +1,7 @@
+<en-IN>
+Meet drip by Soft Orbit Apps.
+• Daily budgeting and on-device bank SMS tracking.
+• Manual expenses, CSV import, insights and a home-screen widget.
+• Backup and restore, with optional app lock.
+• Clear, optional SMS consent and an accessible privacy policy.
+</en-IN>

@@ -1,6 +1,51 @@
 # drip roadmap
 
-Where the app is (v0.5.0): on-device budget, bank SMS import on Android (HDFC / ICICI / SBI / Axis / Kotak), backfill from a chosen date, CSV import, demo mode. No server and no internet permission.
+Current checkout: **0.8.4** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
+
+## Category alignment fix (0.8.4, build 16)
+
+- Category dots, names and percentages share one grid row; tap-to-show amounts occupy a reserved second row.
+- Permanent muted colours cover every built-in category, shared by Today and Stats; no sort-order or hash assignments and no reserved violet/lime/coral/amber status colours. Custom unknown categories use the neutral Other fallback. Income-source tags retain the Income category colour.
+- 218 unit tests and TypeScript pass. Signed 0.8.4 (build 16) installed over the existing phone app on 24 Oct with data retained; installed version and launch verified.
+
+## Implemented 24 Oct: unified Today
+
+- Today and Brief share one scrollable screen. The separate Brief tab and morning/night copy are removed; old Brief links still open Today, including dated links. Legacy remote primary `briefing` maps to Today. Other primary actions retain their raised highlight; selected navigation uses colour only, without a dot.
+- Visual polish: category percentages share one segmented colour strip; Week / Month tabs (default Month) display one comparison bar at a time; current vs smaller previous-period amount uses “last month/week”, with “(till date)” in the current-period title. Comparisons each use one bar with a prior-period marker and a coloured difference (lower spending / higher income green, the reverse red). Week comparison covers the same weekdays last week. Usual/day and budget available are removed from Today. The hero has a percentage versus the previous 28 completed days’ daily average (compact “28d avg” label); category taps reveal amounts without shifting layout. Rolling seven-day bars use green/yellow/red relative to the displayed rolling seven days’ average, with a dotted average line and a compact label. The calendar has five green/yellow/red spend-intensity levels and a lime selection outline.
+- Spent / Income switch shares selected-day totals and breakdown, week-to-date, rolling seven-day trend, month cumulative and last month through the comparable day. Bills count as expenses; investments, savings, transfers and refund credits do not count as income. Future transactions/refunds never leak into historical snapshots.
+- At most one category-pattern insight, shown only with sufficient history and a meaningful change. No generic morning brief or filler insight. Rolling seven-day bars reveal values on tap.
+- Calendar uses six fixed rows and preserves its viewport position when selecting a date or browsing months. Selection updates all historical analytics; daily transactions are expandable. Upcoming payments and reported balances remain explicitly current.
+- Verified with 217 unit tests, TypeScript, production static export and browser demo checks (income, historical snapshots, calendar position and bar values). Signed 0.8.3 (build 15) installed over the existing phone app on 24 Oct with data retained; installed version and launch verified.
+
+- **Documentation/config rollout:** Today and calendar screenshots refreshed; README and screenshot regeneration script match the unified screen. Config editor deployed as `88d4b1c5-d69e-48ca-8775-2a6a437c2f88`: five navigation options, legacy Brief/night settings hidden and retained for compatibility. No global config was published and no rule/history settings changed.
+
+## Implemented 24 Oct: tracking, safe rules, IPOs and navigation
+
+- **Track expenses** is distinct from **Daily budget (Actual or Planned)**. Tracking's Today, month/week summaries, briefings and widget count actual expenses including Bills. Investments, Savings and own transfers stay separate. No allowance, rollover, deficit, budget target or budget upsell on the tracking home screen. Mode changes retain dated history.
+- **Six configurable navigation actions:** Today, Brief, Manual log, Activity, Stats and Settings. The remote editor controls order, labels, visibility and exactly one highlighted primary action. Every action supports the same raised lime treatment; the active page has its own indicator. Manual log opens a sheet. Today is the fallback and remains accessible.
+- **Remote rules default to future transactions only.** Publishing text/navigation/features or changing a rule never re-reads the inbox. Each remote rule has an explicit **Apply to past 12 months** checkbox and history revision. Opt-in jobs use stored transactions and a date index, run once per rule change/revision, and do not reprocess history for unrelated publishes. Nothing older than twelve months is rewritten.
+- **User control wins:** matching personal rules take precedence over all global rule priorities. User-added rules survive global replacement/removal; editing a built-in creates a personal copy. User-edited transactions (including legacy edits) and linked payments are protected from remote history jobs. Parser upgrades no longer automatically reclassify old transactions.
+- **Lighter SMS refresh:** check the cursor/inbox before loading rules or transaction history. Empty minute ticks do no full-table reads or database writes and do not change last-sync time. Only explicit earlier tracking start or re-enabling balance reads backfills SMS; a balance-only rescan never reclassifies transactions. New messages retain deduplication and deleted-payment protection.
+- **IPO holds:** completed IPO/ASBA block, allotment-debit, release and cancellation messages are tracked as events in a separate backed-up holds table. Blocks/releases are not expenses or income; only a settled debit creates Investments · IPO. Partial allotments, repeated confirmations and bank/account/reference separation are handled. Cancellation/expiry does not imply release; ambiguous or incomplete events remain marked for review. Today shows open blocks; Activity includes settled history. Bank-reported available balances are not reduced a second time.
+- **Recurring accuracy:** no missing-frequency → monthly guess. Daily/weekly/monthly/quarterly/half-yearly/yearly schedules retain their anchor and month-end clamping; one-time and unknown mandates are excluded from recurring reminders. Separate mandate references stay separate, and one ambiguous payment cannot clear multiple mandates. Payments not seen after five days stay visible. Frequency and due day can be corrected locally; removing a reminder keeps a tombstone. Unverified schedules from the old parser migrate to unconfirmed, preserving the records.
+
+**Verification (24 Oct):** 210 unit tests, app/backend type checks and all 24 mobile/desktop browser tests passed. Signed 0.8.1 (build 13) installed over the existing phone app with its data retained; launch and six-action navigation verified. The config-editor code is deployed; no global config was published and no historical-rule job was enabled by deployment.
+
+**Still to validate with real samples:** bank-specific IPO/ASBA wording, identifiers and revised/partial settlements. Unsupported wording is not guessed; no claim of universal IPO or mandate coverage.
+
+**Remote rollout:** the new primary-action and per-rule-history controls require the updated client and config backend. Deploying editor code does not publish a new global config or opt any rule into history. Older clients retain their old behaviour until updated.
+
+## In progress / next
+
+- Finish Play Store release packaging and account/policy submission (privacy/assets/AAB work is present; store approval remains external).
+- Real anonymised bank SMS fixtures; “could not read” recovery; broader bank coverage.
+- Confirm IPO and recurring edge cases on actual devices and add formats from samples.
+- Scheduled notifications remain unimplemented; any future notification should add information beyond the unified Today view.
+- Planned amounts suggested from last month; encrypted backups.
+- Gmail/cross-source reconciliation, currencies, card rewards and social features remain future work.
+
+The older phased sections below retain design context; the dated status above takes precedence over outdated “next release” labels.
+
 
 Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
@@ -8,7 +53,7 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
 ## Answers first (items 5, 6, 9)
 
-**Does it need a server or internet? (6)** Not for your data. (Since 0.7.0 the app downloads one settings file from the config backend; nothing is uploaded.) The app already runs fully offline: everything is parsed and stored on the phone, and the Android app has no internet permission at all. The Mac was only used to *deliver* the APK, not to run anything. The friends leaderboard (8) needs a server. Planned Gmail import also needs opt-in internet access; its authentication and sync architecture still needs a decision. Currency conversion can stay offline with manually entered or imported rates; automatic rate updates would also need opt-in internet. The existing SMS import, budget, and planned local notifications stay offline.
+**Does it need a server or internet? (6)** Not for your data. (Since 0.7.0 the app downloads one settings file from the config backend; nothing is uploaded.) Transaction parsing and storage work offline. Internet access is restricted to downloading signed global config; personal financial data is not uploaded. The Mac was only used to *deliver* the APK, not to run anything. The friends leaderboard (8) needs a server. Planned Gmail import also needs opt-in internet access; its authentication and sync architecture still needs a decision. Currency conversion can stay offline with manually entered or imported rates; automatic rate updates would also need opt-in internet. The existing SMS import, budget, and planned local notifications stay offline.
 
 **How does it refresh? (9)** It reads new SMS when the app opens, when you switch back to it, and every 60 seconds while it's on screen. Each check reads only messages newer than the last one already read (a saved cursor), so nothing is parsed twice. Nothing runs while the app is closed, but your inbox keeps the messages, so they appear next time you open it. **Decision: no background refresh and no refresh schedule.** The only work done while closed is the morning/night brief (see Phase 3).
 
@@ -20,7 +65,7 @@ Effort: **S** ≈ a day · **M** ≈ 2–4 days · **L** ≈ a week or more.
 
 ---
 
-## Built, not released yet (next: 0.6.0): money model
+## Money model (implemented; earlier release notes)
 
 - **Bills and Investments are separate categories.** Rent, electricity, phone and internet, EMIs and insurance are **Bills**, each with a tag (Rent, Utility, Phone & internet, EMI, Insurance, Maintenance). SIPs, Zerodha, Groww, INDmoney, BSE StAR MF, CAMS and KFintech are **Investments** (tags SIP, Stocks, Mutual fund, NPS / PPF). Savings stays separate (RD / FD, Emergency fund).
 - **Category + tag rules, by payee.** The bank SMS parser now keeps the payee's UPI ID. In a transaction, "Always use this for ramesh@okaxis" saves a rule with category *and* tag (e.g. Bills · Rent) and fixes your past payments to that UPI ID. Settings → Rules accepts a UPI ID or any text, with a tag.
@@ -70,8 +115,8 @@ Decided 23 Oct: no review inbox tab and no badge. Tagging must take almost no ef
 
 ## Phase 1: Accuracy
 
-### Lighter refresh · S
-While the app is open, a check runs every 60 s. Today each check loads every transaction and saves a "last synced" time even when no SMS arrived, and that save makes the screen reload all data and redraw.
+### ✅ Lighter refresh (implemented 24 Oct)
+While the app is open, a check runs every 60 s. The cursor/inbox probe now happens before rule/transaction table reads; unchanged polls do not write or redraw the data snapshot.
 - Ask the inbox for new SMS first; if there are none, stop (no reads, no writes).
 - Only save the "last synced" time when something was added.
 
@@ -137,8 +182,8 @@ Tracking-only is a full money-tracking experience with no allowance or budget ju
 
 Built (see the top). Still to do:
 - **Planned amounts learned from last month:** in Planned mode, offer to fill planned lines from last month's actual Bills / Investments payments instead of typing them.
-- **Missed payments:** flag a recurring payment that didn't arrive within 5 days of its due date.
-- **Recurring totals:** "₹18,450/month committed across 9 autopays", including subscriptions.
+- ✅ **Missed payments:** payments not seen after five days remain visible; incomplete SMS coverage is not treated as proof of non-payment.
+- ✅ **Recurring totals:** confirmed frequencies contribute a monthly equivalent, labelled “up to” because mandate amounts can be caps; unconfirmed schedules are counted separately.
 
 ---
 

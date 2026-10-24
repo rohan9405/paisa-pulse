@@ -11,21 +11,23 @@ import type { ParsedMandate } from "@/lib/sms";
 import type { AppMode, SetAsideMode, BudgetPlan, CategoryRule, Commitment, ImportBatch, Prefs, Profile, Recurring, Transaction, TxnKind, PaymentMethod } from "@/lib/types";
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 import { type FinanceDB, uid } from "./db";
+import { applyRemoteHistory } from "./remoteRules";
 import { generateDemoData } from "./providers/demo";
 
 /** Keeps the built-in rules in step with this version of the app; your own rules are untouched. */
 export async function ensureRules(db: FinanceDB) {
-  const fresh = currentBuiltInRules();
+  const personalIds = new Set(await db.rules.filter((r) => !r.builtIn).primaryKeys());
+  const fresh = currentBuiltInRules().filter((r) => !personalIds.has(r.id));
   const have = await db.rules.filter((r) => !!r.builtIn).toArray();
   const same = have.length === fresh.length && fresh.every((r) => {
     const h = have.find((x) => x.id === r.id);
     return h && h.pattern === r.pattern && h.category === r.category && h.tag === r.tag && h.kind === r.kind && h.direction === r.direction && h.priority === r.priority;
   });
-  if (same) return;
-  await db.transaction("rw", db.rules, async () => {
+  if (!same) await db.transaction("rw", db.rules, async () => {
     await db.rules.bulkDelete(have.map((r) => r.id));
     await db.rules.bulkPut(fresh);
   });
+  await applyRemoteHistory(db);
 }
 
 export async function ensureConnections(db: FinanceDB, mode: AppMode) {
@@ -39,11 +41,12 @@ export async function ensureConnections(db: FinanceDB, mode: AppMode) {
 
 export async function seedDemo(db: FinanceDB, today: DateKey) {
   const { profile, plan, txns, recurring } = generateDemoData(today);
-  await db.transaction("rw", [db.profile, db.plans, db.txns, db.connections, db.rules, db.recurring], async () => {
+  await db.transaction("rw", [db.profile, db.plans, db.txns, db.connections, db.rules, db.recurring, db.holds], async () => {
     await db.profile.clear();
     await db.plans.clear();
     await db.txns.clear();
     await db.recurring.clear();
+    await db.holds.clear();
     await db.profile.put(profile);
     await db.plans.put(plan);
     await db.txns.bulkPut(txns);
@@ -138,7 +141,7 @@ export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<T
 }
 
 export async function updateTxn(db: FinanceDB, id: string, patch: Partial<Transaction>) {
-  const cleaned: Partial<Transaction> = { ...patch, updatedAt: Date.now() };
+  const cleaned: Partial<Transaction> = { ...patch, userEdited: true, updatedAt: Date.now() };
   if (patch.kind && patch.kind !== "commitment") cleaned.commitmentId = undefined;
   if (patch.kind && patch.kind !== "refund") cleaned.refundOf = undefined;
   if (patch.refundOf) Object.assign(cleaned, { needsReview: false, reviewReason: undefined });
@@ -212,7 +215,7 @@ export async function applyCategory(db: FinanceDB, txn: Transaction, category: s
     const same = scope === "one" ? [] : recipientMatches(recent, txn, scope, today).filter((t) => t.category !== category || t.tag !== cleanTag);
     if (same.length) {
       const updatedAt = Date.now();
-      await db.txns.bulkPut(same.map((t) => ({ ...t, ...classify(t, category, cleanTag), updatedAt })));
+      await db.txns.bulkPut(same.map((t) => ({ ...t, ...classify(t, category, cleanTag), userEdited: true, updatedAt })));
     }
     return same.length;
   });
@@ -233,7 +236,7 @@ export async function setRecurringFromTxn(db: FinanceDB, txn: Transaction, on: b
   const existing = (await db.recurring.toArray()).find((r) => recurringKey(r) === key);
   const now = Date.now();
   await db.transaction("rw", [db.txns, db.recurring], async () => {
-    await db.txns.update(txn.id, { recurring: on || undefined, updatedAt: now });
+    await db.txns.update(txn.id, { recurring: on || undefined, userEdited: true, updatedAt: now });
     if (on) {
       await db.recurring.put({
         id: existing?.id ?? uid("rec-"),
@@ -241,6 +244,7 @@ export async function setRecurringFromTxn(db: FinanceDB, txn: Transaction, on: b
         payee: txn.payee,
         amountPaise: txn.amountPaise,
         frequency: existing?.frequency ?? "monthly",
+        userEdited: true,
         dueDay: parseKey(txn.date).d,
         category: txn.category,
         tag: txn.tag,
@@ -260,13 +264,14 @@ export async function setRecurringFromTxn(db: FinanceDB, txn: Transaction, on: b
 export async function applyMandate(db: FinanceDB, m: ParsedMandate, receivedOn: DateKey, rules: CategoryRule[]): Promise<boolean> {
   const name = m.name ?? m.payee ?? "Autopay";
   const all = await db.recurring.toArray();
-  const existing = all.find((r) => (m.ref && r.mandateRef === m.ref) || recurringKey(r) === recurringKey({ payee: m.payee, name }));
+  const existing = m.ref ? all.find((r) => r.source === "mandate" && r.mandateRef?.toLowerCase() === m.ref!.toLowerCase() && (!r.bank || r.bank === m.bank)) : all.find((r) => !r.mandateRef && recurringKey(r) === recurringKey({ payee: m.payee, name }));
   const now = Date.now();
   if (m.event === "revoked") {
     if (!existing || existing.status === "revoked") return false;
     await db.recurring.update(existing.id, { status: "revoked", updatedAt: now });
     return true;
   }
+  if (existing?.userEdited) return false;
   const guess = categorize(name, rules, m.payee);
   const due = m.startDate ?? receivedOn;
   const { d, m: month } = parseKey(due);
@@ -275,9 +280,11 @@ export async function applyMandate(db: FinanceDB, m: ParsedMandate, receivedOn: 
     name: existing?.name ?? name,
     payee: m.payee ?? existing?.payee,
     amountPaise: m.amountPaise ?? existing?.amountPaise ?? 0,
-    frequency: m.frequency,
+    frequency: m.frequency === "unknown" ? existing?.frequency ?? "unknown" : m.frequency,
+    bank: m.bank,
+    startDate: m.startDate ?? existing?.startDate ?? receivedOn,
     dueDay: existing && m.event === "modified" && !m.startDate ? existing.dueDay : d,
-    dueMonth: m.frequency === "yearly" || m.frequency === "quarterly" ? month : undefined,
+    dueMonth: m.frequency === "yearly" || m.frequency === "quarterly" || m.frequency === "half-yearly" ? month : undefined,
     category: existing?.category ?? guess?.category ?? "Bills",
     tag: existing?.tag ?? guess?.tag,
     source: "mandate",
@@ -286,6 +293,7 @@ export async function applyMandate(db: FinanceDB, m: ParsedMandate, receivedOn: 
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
+  if (existing && Object.entries(next).every(([key, value]) => key === "updatedAt" || existing[key as keyof Recurring] === value)) return false;
   await db.recurring.put(next);
   return true;
 }
@@ -349,7 +357,9 @@ export async function existingFingerprints(db: FinanceDB): Promise<Set<string>> 
 }
 
 export async function saveRule(db: FinanceDB, rule: Omit<CategoryRule, "id"> & { id?: string }) {
-  await db.rules.put({ ...rule, id: rule.id ?? uid("rule-") });
+  // Editing a built-in makes a personal copy; remote refreshes cannot delete it.
+  const existing = rule.id ? await db.rules.get(rule.id) : undefined;
+  await db.rules.put({ ...rule, builtIn: false, id: existing?.builtIn ? uid("rule-") : rule.id ?? uid("rule-") });
 }
 
 export async function recategorizeAll(db: FinanceDB) {
@@ -406,6 +416,7 @@ export async function exportAll(db: FinanceDB, mode: AppMode) {
     connections: await db.connections.toArray(),
     accounts: await db.accounts.toArray(),
     recurring: await db.recurring.toArray(),
+    holds: await db.holds.toArray(),
   };
 }
 
@@ -417,14 +428,15 @@ export async function importBackup(db: FinanceDB, data: unknown) {
   for (const t of d.txns) {
     if (!t.id || typeof t.date !== "string" || !Number.isSafeInteger(t.amountPaise)) throw new Error("Backup contains an invalid transaction; nothing was restored.");
   }
-  await db.transaction("rw", [db.profile, db.plans, db.txns, db.rules, db.imports, db.connections, db.accounts, db.recurring], async () => {
-    await Promise.all([db.profile.clear(), db.plans.clear(), db.txns.clear(), db.rules.clear(), db.imports.clear(), db.recurring.clear()]);
+  await db.transaction("rw", [db.profile, db.plans, db.txns, db.rules, db.imports, db.connections, db.accounts, db.recurring, db.holds], async () => {
+    await Promise.all([db.profile.clear(), db.plans.clear(), db.txns.clear(), db.rules.clear(), db.imports.clear(), db.recurring.clear(), db.holds.clear()]);
     await db.profile.put(d.profile!);
     // Older backups use the old categories; bring them up to date.
     await db.plans.bulkPut(d.plans.map(migratePlan));
     await db.txns.bulkPut(d.txns.map(migrateTxn));
     await db.rules.bulkPut((d.rules ?? []).filter((r) => !r.builtIn).map(migrateRule));
     await db.recurring.bulkPut(d.recurring ?? []);
+    await db.holds.bulkPut(d.holds ?? []);
     await db.imports.bulkPut(d.imports ?? []);
     // Older backups have no connections; then SMS sync rescans from the tracking start (duplicates are skipped).
     if (d.connections) {
@@ -456,5 +468,5 @@ export async function setPrefs(db: FinanceDB, patch: Partial<Prefs>) {
   await db.profile.update("me", { prefs: { ...p.prefs, ...patch } });
   // Balances off: forget the ones already read. Back on: re-read the inbox once to find them again.
   if (patch.balances === false) await db.accounts.clear();
-  if (patch.balances === true) await db.connections.update("sms", { parserVersion: 0 });
+  if (patch.balances === true) await db.connections.update("sms", { balancesRescan: true });
 }

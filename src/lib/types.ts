@@ -139,6 +139,9 @@ export interface Transaction {
   source: Provenance;
   createdAt: number;
   updatedAt: number;
+  /** Explicit user edits are never overwritten by automatic processing. */
+  userEdited?: boolean;
+  holdId?: string;
 }
 
 export interface CategoryRule {
@@ -177,6 +180,10 @@ export interface ProviderConnection {
   parserVersion?: number;
   /** SMS: remote config version the inbox was last read with; a new one re-reads once. */
   configVersion?: number;
+  /** Completed opt-in per-rule history jobs, keyed by rule identity. */
+  ruleHistory?: Record<string, string>;
+  /** Explicit device setting requests a balance-only inbox rescan. */
+  balancesRescan?: boolean;
   /** SMS: fingerprints of imported transactions you deleted, so a re-read never brings them back. */
   dismissed?: string[];
 }
@@ -188,11 +195,15 @@ export interface Recurring {
   payee?: string;
   /** Usual (or maximum mandate) amount. */
   amountPaise: Paise;
-  frequency: "monthly" | "weekly" | "quarterly" | "yearly";
+  frequency: "daily" | "weekly" | "monthly" | "quarterly" | "half-yearly" | "yearly" | "once" | "unknown";
   /** Day of month it's due (monthly/quarterly/yearly). */
   dueDay: number;
   /** For yearly/quarterly: a month it's due (1-12). */
   dueMonth?: number;
+  startDate?: DateKey;
+  userEdited?: boolean;
+  /** Do not merge two distinct mandates to one payee. */
+  bank?: string;
   category: string;
   tag?: string;
   source: "mandate" | "manual";
@@ -215,3 +226,28 @@ export interface ImportBatch {
 }
 
 export type { DateKey, MonthKey, Paise };
+
+export interface HoldEvent {
+  id: string;
+  type: "blocked" | "debited" | "released" | "cancelled";
+  amountPaise: Paise;
+  at: number;
+  raw: string;
+}
+
+export interface FundHold {
+  id: string;
+  name: string;
+  bank: string;
+  account?: string;
+  reference?: string;
+  events: HoldEvent[];
+  blockedPaise: Paise;
+  debitedPaise: Paise;
+  releasedPaise: Paise;
+  remainingPaise: Paise;
+  status: "blocked" | "partial" | "settled" | "released" | "needs_review";
+  needsReview: boolean;
+  createdAt: number;
+  updatedAt: number;
+}

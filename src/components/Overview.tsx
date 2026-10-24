@@ -14,7 +14,7 @@ export function PaceCard({ pace, hasBudget, lastMonthByNowPaise }: { pace: Month
     return (
       <Card data-testid="pace">
         <div className="flex items-baseline justify-between text-sm">
-          <span className="font-semibold">{month} everyday spending</span>
+          <span className="font-semibold">{month} expenses</span>
           <Money paise={pace.spentPaise} className="num font-semibold" />
         </div>
         {lastMonthByNowPaise !== undefined && lastMonthByNowPaise > 0 && (

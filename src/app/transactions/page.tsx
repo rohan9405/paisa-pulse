@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
+import { HoldList } from "@/components/HoldList";
 import { RecipientTagger } from "@/components/RecipientTagger";
 import { recipientKey, taggingFlow, recipientNeedsTagging, withinTaggingWindow } from "@/lib/recipients";
 import { CATEGORIES } from "@/lib/categorize";
@@ -287,6 +288,7 @@ function Transactions() {
         )}
       </div>}
       {recipient && <RecipientTagger txns={recipient} onClose={() => setRecipient(null)} />}
+      {view === "transactions" && <HoldList holds={data.holds} history />}
       <TxnEditor txn={editing} onClose={() => setEditing(null)} />
     </div>
   );

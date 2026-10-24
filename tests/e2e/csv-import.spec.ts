@@ -25,7 +25,7 @@ test("CSV import: mapping, validation, dedupe on re-import, refund flag", async 
   await page.getByTestId("ob-next").click();
   await page.getByTestId("ob-start").fill(addDays(today, -5));
   await page.getByTestId("ob-finish").click();
-  await expect(page.getByTestId("available")).toBeVisible();
+  await expect(page.getByTestId("spent-today")).toBeVisible();
 
   await page.goto("/import");
   await page.getByTestId("csv-input").setInputFiles(file);

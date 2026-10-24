@@ -5,7 +5,7 @@ import { monthCalendar, monthPace, usualDailySpend, weekDays, weeklyInsight } fr
 import { plan, txn } from "./helpers";
 
 function ledger(rows: [string, number, number][], today: string, hasBudget = true): Ledger {
-  const days: DayRow[] = rows.map(([date, alloc, spent]) => ({ date, hasBudget, everydayPaise: spent, allocationPaise: alloc, spentPaise: spent, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: alloc - spent, underBudget: spent <= alloc }));
+  const days: DayRow[] = rows.map(([date, alloc, spent]) => ({ date, hasBudget, expensePaise: spent, everydayPaise: spent, allocationPaise: alloc, spentPaise: spent, adjustPaise: 0, setAsidePaise: 0, carriedInPaise: 0, closingPaise: alloc - spent, underBudget: spent <= alloc }));
   return { started: true, hasBudget, mode: "planned", today, days, todayRow: days[days.length - 1], availablePaise: 0, totalAllocatedPaise: 0, totalSpentPaise: 0, streak: 0, nextAllocationPaise: 0 };
 }
 
@@ -66,6 +66,7 @@ describe("weekly insight", () => {
   it("says so when the whole week is well below usual, and stays quiet without history", () => {
     const before = [0, 7, 14, 21].map((w) => spend(addDays("2026-10-15", -w), 2000, "Shopping"));
     expect(weeklyInsight([...before, spend("2026-10-21", 500, "Shopping")], plans, "2026-10-22")).toEqual({ text: "This week's spending is 75% below your usual", tone: "good" });
+    expect(weeklyInsight([...before, spend("2026-10-21", 500, "Shopping")], plans, "2026-10-22", { categoryOnly: true })).toBeNull();
     expect(weeklyInsight([spend("2026-10-21", 500, "Shopping")], plans, "2026-10-22")).toBeNull();
   });
 });

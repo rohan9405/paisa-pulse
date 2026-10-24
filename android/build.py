@@ -2,7 +2,8 @@
 """Build the drip Android app: static Next.js export inside a WebView shell.
 
 Uses the Android SDK tools directly (aapt2, javac, d8, zipalign, apksigner); no
-Gradle and no third-party Android libraries. Output: android/build/PaisaPulse.apk.
+Gradle and no third-party Android libraries. Outputs: android/build/PaisaPulse.apk
+and, with --bundle, a signed and validated drip.aab for Google Play.
 
     python3 android/build.py               # rebuild web + APK
     python3 android/build.py --skip-web    # reuse the last web export
@@ -23,6 +24,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import zipfile
+import hashlib
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "android"
@@ -35,16 +37,17 @@ PIN = SOURCE / "signing-cert.sha256"
 LAST_CODE = SOURCE / "last-version-code"
 
 # Optional machine-specific paths (git-ignored), e.g.
-# {"build_tools": ".../build-tools/35.0.0", "platform": ".../platforms/android-35/android.jar", "java": ".../Contents/Home"}
+# {"build_tools": ".../build-tools/35.0.0", "platform": ".../platforms/android-36/android.jar", "java": ".../Contents/Home"}
 LOCAL = SOURCE / "local.json"
 
 
 def defaults() -> dict:
     local = json.loads(LOCAL.read_text()) if LOCAL.exists() else {}
     sdk = Path(os.environ.get("ANDROID_HOME", "~/Library/Android/sdk")).expanduser()
+    project_platform = SOURCE / ".sdk/platforms/android-36/android.jar"
     return {
         "build_tools": os.environ.get("ANDROID_BUILD_TOOLS") or local.get("build_tools") or str(sdk / "build-tools/35.0.0"),
-        "platform": os.environ.get("ANDROID_JAR") or local.get("platform") or str(sdk / "platforms/android-35/android.jar"),
+        "platform": os.environ.get("ANDROID_JAR") or (str(project_platform) if project_platform.exists() else local.get("platform") or str(sdk / "platforms/android-36/android.jar")),
         "java": os.environ.get("JAVA_HOME") or local.get("java") or "",
     }
 
@@ -60,6 +63,8 @@ def main():
     parser.add_argument("--platform", default=d["platform"])
     parser.add_argument("--java", default=d["java"], help="JDK home (17+)")
     parser.add_argument("--skip-web", action="store_true")
+    parser.add_argument("--bundle", action="store_true", help="also build a signed Play App Bundle")
+    parser.add_argument("--bundletool", default=os.environ.get("BUNDLETOOL_JAR", str(SOURCE / ".tools/bundletool.jar")))
     parser.add_argument("--new-key", action="store_true", help="first build only: create a signing key and pin it")
     args = parser.parse_args()
     if not args.java:
@@ -67,13 +72,24 @@ def main():
     tools, java = Path(args.build_tools), Path(args.java)
     env = {**os.environ, "JAVA_HOME": str(java), "PATH": f"{java}/bin:{os.environ['PATH']}"}
     check_update_safety(args.new_key)
+    if args.bundle and not Path(args.bundletool).is_file():
+        raise SystemExit("Missing bundletool; see docs/PLAY_STORE.md for setup.")
+    if not Path(args.platform).is_file():
+        raise SystemExit("Android API 36 SDK missing; install platforms;android-36 or set ANDROID_JAR.")
+    properties = Path(args.platform).parent / "source.properties"
+    api = re.search(r"AndroidVersion.ApiLevel\s*=\s*(\d+)", properties.read_text()) if properties.exists() else None
+    if not api or int(api.group(1)) < 36:
+        raise SystemExit("Compile against Android API 36 or newer; the old API 35 local.json path is not Play-ready.")
 
     if not args.skip_web:
         shutil.rmtree(WEB, ignore_errors=True)
-        version_name = re.search(r'android:versionName="([^"]+)"', (SOURCE / "AndroidManifest.xml").read_text()).group(1)
+        version_name = release_version()["version"]
         run("npx", "next", "build", cwd=ROOT, env={**env, "NEXT_STATIC_EXPORT": "1", "NEXT_DIST_DIR": ".next-android", "NEXT_PUBLIC_CONFIG_URL": config_url(), "NEXT_PUBLIC_APP_VERSION": version_name})
+        (WEB / ".drip-build-fingerprint").write_text(web_fingerprint())
     if not (WEB / "index.html").exists():
         raise SystemExit("No web export at .next-android; run without --skip-web.")
+    if args.skip_web and (not (WEB / ".drip-build-fingerprint").exists() or (WEB / ".drip-build-fingerprint").read_text() != web_fingerprint()):
+        raise SystemExit("Web sources, version or config changed; rebuild without --skip-web.")
 
     shutil.rmtree(OUT, ignore_errors=True)
     for part in ("classes", "generated", "dex", "resources"):
@@ -82,7 +98,8 @@ def main():
     for res in sorted(p for p in (SOURCE / "res").rglob("*") if p.is_file()):
         run(tools / "aapt2", "compile", res, "-o", OUT / "resources")
     run(tools / "aapt2", "link", "-o", OUT / "unsigned.apk", "--manifest", SOURCE / "AndroidManifest.xml",
-        "-I", args.platform, "--java", OUT / "generated", *sorted((OUT / "resources").glob("*.flat")))
+        "-I", args.platform, "--version-code", version_code(), "--version-name", release_version()["version"],
+        "--java", OUT / "generated", *sorted((OUT / "resources").glob("*.flat")))
 
     sources = sorted((SOURCE / "src").rglob("*.java")) + sorted((OUT / "generated").rglob("*.java"))
     run(java / "bin/javac", "--release", "8", "-Xlint:-options", "-classpath", args.platform, "-d", OUT / "classes", *sources)
@@ -113,7 +130,13 @@ def main():
     elif PIN.read_text().strip() != digest:
         apk.unlink()
         raise SystemExit(f"Signed with the wrong key ({digest}); expected {PIN.read_text().strip()}. This APK could not update the installed app.")
+    if args.bundle:
+        build_bundle(tools, java, args, env)
     LAST_CODE.write_text(str(version_code()) + "\n")
+    metadata = {"version": release_version()["version"], "versionCode": version_code(),
+                "applicationId": "dev.paisapulse.app", "signingCertificateSha256": digest,
+                "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [apk, OUT / "drip.aab"] if p.exists()}}
+    (OUT / "release.json").write_text(json.dumps(metadata, indent=2) + "\n")
     print("Built and verified:", apk, f"(versionCode {version_code()}, key {digest[:12]}…)")
 
 
@@ -126,8 +149,47 @@ def config_url() -> str:
     return url
 
 
+def release_version() -> dict:
+    data = json.loads((ROOT / "package.json").read_text())
+    if not re.fullmatch(r"\d+\.\d+\.\d+", data["version"]):
+        raise SystemExit("package.json version must be major.minor.patch")
+    if type(data.get("androidVersionCode")) is not int or not 0 < data["androidVersionCode"] <= 2100000000:
+        raise SystemExit("package.json androidVersionCode must be a positive Play-compatible integer")
+    return data
+
+
+def web_fingerprint() -> str:
+    digest = hashlib.sha256(config_url().encode())
+    paths = [ROOT / name for name in ("package.json", "package-lock.json", "next.config.mjs", "tailwind.config.ts", "postcss.config.mjs")]
+    paths += [p for folder in ("src", "public") for p in (ROOT / folder).rglob("*") if p.is_file()]
+    for path in sorted(paths):
+        digest.update(str(path.relative_to(ROOT)).encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def version_code() -> int:
-    return int(re.search(r'android:versionCode="(\d+)"', (SOURCE / "AndroidManifest.xml").read_text()).group(1))
+    return release_version()["androidVersionCode"]
+
+
+def build_bundle(tools, java, args, env):
+    """Use Google's bundletool with an AAPT2 proto resource module, retaining the APK build."""
+    proto = OUT / "proto.apk"
+    run(tools / "aapt2", "convert", "--output-format", "proto", "-o", proto, OUT / "unsigned.apk")
+    module = OUT / "base.zip"
+    with zipfile.ZipFile(proto) as src, zipfile.ZipFile(module, "w", zipfile.ZIP_DEFLATED) as dst:
+        for name in src.namelist():
+            if name.endswith("/") or name.startswith("META-INF/"): continue
+            target = "manifest/AndroidManifest.xml" if name == "AndroidManifest.xml" else "dex/" + name if re.fullmatch(r"classes\d*\.dex", name) else name
+            dst.writestr(target, src.read(name))
+    bundle = OUT / "drip.aab"
+    run(java / "bin/java", "-jar", args.bundletool, "build-bundle", f"--modules={module}", f"--output={bundle}", env=env)
+    run(java / "bin/jarsigner", "-keystore", KEY, "-storepass", "android", bundle, "paisa", env=env)
+    verification = subprocess.run([str(java / "bin/jarsigner"), "-verify", str(bundle)], check=True, capture_output=True, text=True, env=env)
+    if "jar verified." not in verification.stdout:
+        raise SystemExit("App Bundle signature verification failed")
+    run(java / "bin/java", "-jar", args.bundletool, "validate", f"--bundle={bundle}", env=env)
+    print("Signed and validated Play bundle:", bundle)
 
 
 def check_update_safety(new_key: bool):

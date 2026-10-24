@@ -21,7 +21,7 @@ import { useRemoteConfig } from "@/data/remoteConfigLoader";
 
 type Tab = "budget" | "data" | "app";
 const TABS: { value: Tab; label: string }[] = [
-  { value: "budget", label: "Budget" },
+  { value: "budget", label: "Tracking & budget" },
   { value: "data", label: "Data" },
   { value: "app", label: "App" },
 ];
@@ -181,6 +181,9 @@ export default function SettingsPage() {
       <p className="mt-8 text-center text-xs text-ink-400">
         drip · tracking since {formatDay(profile.trackingStart, { year: true })}
         {sms?.lastSyncAt ? ` · SMS read ${new Date(sms.lastSyncAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })}` : ""} · no analytics, no external AI
+      </p>
+      <p className="mt-2 text-center text-xs text-ink-400">
+        v{process.env.NEXT_PUBLIC_APP_VERSION} · Soft Orbit Apps · <a className="underline" href="/privacy.html">Privacy policy</a>
       </p>
       <Toast message={toast} onDone={() => setToast(null)} />
     </div>
@@ -418,7 +421,7 @@ function BudgetEditor() {
         onChange={(v) => setTrackOnly(v === "track")}
         options={[
           { value: "budget", label: "Daily budget" },
-          { value: "track", label: "Just track" },
+          { value: "track", label: "Track expenses" },
         ]}
       />
       {trackOnly ? (
@@ -487,7 +490,10 @@ function BudgetEditor() {
 function recurringSummary(rs: Recurring[]) {
   const active = rs.filter((r) => r.status === "active");
   if (!active.length) return "None yet";
-  return `${active.length} · ${formatINR(active.reduce((s, r) => s + (r.frequency === "monthly" ? r.amountPaise : 0), 0), { decimals: "never" })}/month`;
+  const factor: Partial<Record<Recurring["frequency"], number>> = { daily: 365 / 12, weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, "half-yearly": 1 / 6, yearly: 1 / 12 };
+  const confirmed = active.filter((r) => factor[r.frequency]);
+  const unknown = active.filter((r) => r.frequency === "unknown").length;
+  return `${active.length} active${confirmed.length ? ` · up to ${formatINR(Math.round(confirmed.reduce((sum, r) => sum + r.amountPaise * factor[r.frequency]!, 0)), { decimals: "never" })}/month` : ""}${unknown ? ` · ${unknown} unconfirmed` : ""}`;
 }
 
 function RecurringList() {
@@ -509,11 +515,17 @@ function RecurringList() {
                 {r.category}
                 {r.tag ? ` · ${r.tag}` : ""} · {r.frequency} · day {r.dueDay} · {r.source === "mandate" ? "autopay SMS" : "marked by you"}
                 {r.status === "revoked" ? " · cancelled" : ""}
+                {r.frequency === "unknown" && " · no reminder until frequency is confirmed"}
+                {r.frequency === "once" && " · not a repeating payment"}
+                <select className="input mt-2 text-xs" aria-label={`Frequency for ${r.name}`} value={r.frequency} onChange={(e) => db.recurring.update(r.id, { frequency: e.target.value as Recurring["frequency"], userEdited: true, updatedAt: Date.now() })}>
+                  {["unknown", "once", "daily", "weekly", "monthly", "quarterly", "half-yearly", "yearly"].map((f) => <option key={f} value={f}>{f === "unknown" ? "Frequency not confirmed" : f}</option>)}
+                </select>
+                <label className="mt-1 block">Due day <input className="input w-20 text-xs" type="number" min={1} max={31} aria-label={`Due day for ${r.name}`} value={r.dueDay} onChange={(e) => { const day = Number(e.target.value); if (Number.isInteger(day) && day >= 1 && day <= 31) db.recurring.update(r.id, { dueDay: day, userEdited: true, updatedAt: Date.now() }); }} /></label>
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-2">
               <Money paise={r.amountPaise} decimals="never" className="num" />
-              <button className="text-xs text-coral" onClick={() => db.recurring.delete(r.id)} aria-label={`Remove ${r.name}`}>
+              <button className="text-xs text-coral" onClick={() => db.recurring.update(r.id, { status: "revoked", userEdited: true, updatedAt: Date.now() })} aria-label={`Remove ${r.name}`}>
                 Remove
               </button>
             </span>

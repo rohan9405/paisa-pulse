@@ -9,17 +9,17 @@ A Cloudflare Worker that serves drip's **remote config**: global settings you ca
 
 ## What you can change
 
-- **Bottom tabs:** order, names, show / hide (Today always shows).
-- **Screen titles and subtitles:** Today, Briefing, Activity, Stats, Settings, Import.
+- **Navigation:** five actions (Today, Manual log, Activity, Stats, Settings); Brief is merged into Today, with legacy IDs retained for compatibility, order, names, show / hide, and one highlighted primary action (Today always shows).
+- **Screen titles and subtitles:** Today, Activity, Stats, Settings, Import. Legacy Briefing titles and night-brief settings remain in stored configs for older clients, but are hidden in the editor.
 - **Categorisation rules:** "contains → category / tag / kind", money in or out only, priority; switch built-in rules off.
 - **Merchant names:** text contains → clean name.
 - **Bank SMS senders:** add a bank by its sender ID (e.g. `YESBNK`).
 - **Ignore phrases:** SMS containing them are never read as transactions.
-- **Budget and insights:** late-salary day and amount, night-brief hour, insight thresholds.
+- **Budget and insights:** late-salary day and amount, insight thresholds.
 - **Features:** switch balances, app lock, CSV import, insights, badges or haptics off for everyone.
 - **Announcement banner** on Today, and a **new version notice** with a download link.
 
-How it reaches phones: the app downloads the config when it opens and when it comes back to the foreground, checks every field (anything invalid falls back to the built-in default), and keeps the last good copy for offline use. A new config version re-reads the SMS inbox once, so changed rules apply to past transactions people haven't edited. Publishing runs the **same validation as the app**, so you can't publish something the app would ignore.
+How it reaches phones: the app downloads the config when it opens and when it comes back to the foreground, checks every field (anything invalid falls back to the built-in default), and keeps the last good copy for offline use. Config updates never reread the SMS inbox. Rules affect future imports by default. Each rule can explicitly opt into historical updates within twelve months; a history revision can request another pass. Jobs operate on stored transactions, never user edits or matching personal rules, and are not repeated for unrelated config updates. Personal rules always outrank global rules and are never removed by publishing. These controls require the updated client; older clients must be upgraded. Publishing runs the **same validation as the app**, so you can't publish something the app would ignore.
 
 **Security:** apps only accept signed configs, never go back to older versions, and only allow links into this repo. The backend signs on publish (key in the `SIGNING_KEY` secret), so the admin password is what guards publishing. Full threat model: [SECURITY.md](SECURITY.md).
 

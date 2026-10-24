@@ -31,7 +31,7 @@ describe("tracking and mode changes", () => {
   it("does not call a bills-only tracking day a zero-spend day", () => {
     const txns = [txn({ date: "2026-09-01", amountPaise: 20_000_00, category: "Bills" })];
     const l = computeLedger({ plans: [tracking], profile: profile("2026-09-01"), txns, today: "2026-09-02" });
-    expect(eveningReport(l, txns, [tracking], "2026-09-01")).toMatchObject({ noSpend: false, hasBudget: false, spentPaise: 0 });
+    expect(eveningReport(l, txns, [tracking], "2026-09-01")).toMatchObject({ noSpend: false, hasBudget: false, spentPaise: 20_000_00 });
     expect(monthCalendar(l, l.today).days[0].state).toBe("spent");
   });
 

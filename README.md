@@ -7,8 +7,8 @@
 Bills and savings are set aside first; the rest becomes a daily allowance that refills at midnight IST. Underspend and it rolls over. Overspend and it becomes a deficit that later days pay back. On Android, your bank's transaction SMS are read automatically, on the phone, so spending shows up without typing anything.
 
 <p>
-  <img src="docs/screenshots/today.png" width="19%" alt="Today: left to spend, base, carried balance, spent today">
-  <img src="docs/screenshots/briefing.png" width="19%" alt="Morning briefing">
+  <img src="docs/screenshots/today.png" width="19%" alt="Today: actual spend, 28-day average and period comparison">
+  <img src="docs/screenshots/today-calendar.png" width="19%" alt="Rolling seven-day trend and spending calendar">
   <img src="docs/screenshots/activity.png" width="19%" alt="Activity list with filters">
   <img src="docs/screenshots/stats.png" width="19%" alt="Stats: outgoings split and spend vs budget">
   <img src="docs/screenshots/welcome.png" width="19%" alt="Welcome screen">
@@ -17,6 +17,8 @@ Bills and savings are set aside first; the rest becomes a daily allowance that r
 <sub>Screenshots use the built-in demo mode: fictional transactions, not real bank data.</sub>
 
 ## Install on Android
+
+Latest verified phone build: **0.8.4 (16)**, installed 24 Oct 2026 with existing data retained.
 
 <img src="docs/install-qr.png" width="180" align="right" alt="QR code: download the latest PaisaPulse.apk">
 
@@ -45,7 +47,7 @@ Scan the QR (or open [the latest release](https://github.com/rohan9405/paisa-pul
 **B. Pause Play Protect briefly**: Play Store → profile → Play Protect → ⚙️ → turn off *Scan apps with Play Protect*, install the downloaded APK, then turn it straight back on.
 
 **First run**
-1. Tap **Allow** when asked to read SMS. SMS are read on the phone only; the app's internet access is download-only, for its settings file.
+1. SMS access is optional. After budget setup, tap **Set up SMS import**, read the disclosure and choose **Agree and continue** before Android asks for permission. Manual entries and CSV import work without SMS access.
 2. **Set up my budget**: choose tracking, planned set-aside (income and planned amounts), or actual set-aside (no budget amounts; uses recorded income/payments), then the **tracking start date**. Bank SMS from that date onwards are imported.
 3. Need older history later? Settings → Tracking → move **Tracking start** earlier and save; the app reads your SMS back to that date.
 
@@ -86,6 +88,10 @@ npx playwright install chromium && npm run test:e2e   # E2E on Pixel 7 + desktop
 
 Production web build: `npm run build && npm start`.
 
+### Google Play preparation
+
+See [docs/PLAY_STORE.md](docs/PLAY_STORE.md) for signed App Bundle builds, versioning, store assets, permission declarations, and the remaining account/testing gates. `npm run android:bundle` generates `android/build/drip.aab` alongside the update-compatible APK. The public [privacy policy](https://rohan-tripathi-product.vercel.app/drip-privacy.html) is also bundled offline and linked from welcome and Settings.
+
 ### Build the Android app
 
 ```bash
@@ -99,7 +105,7 @@ The shell (`android/src`) is a WebView that serves the export from the APK on a 
 Update safety, enforced by `build.py`:
 - The APK must be signed by the certificate pinned in `android/signing-cert.sha256`. If the keystore is missing the build stops rather than making a new key. Only the very first build uses `--new-key`.
 - **Secrets never live in the repo.** The APK keystore, the config signing key and the admin password are kept in `~/.drip-private/` on the developer's machine (override with `DRIP_PRIVATE_DIR`), outside the working tree, so they can't be committed even by accident. Back that folder up somewhere offline.
-- `versionCode` (in `android/AndroidManifest.xml`) can't go below the last build; bump it for each release.
+- `package.json` is the version source: `version` and `androidVersionCode`. Run `npm run release:bump -- patch` (or `minor` / `major`) for each new release; the build injects both into Android and rejects downgrades.
 - Database changes must add a new Dexie `version()` with an upgrade step and never drop data; `tests/unit/backup.test.ts` fails if a table is missing from the backup.
 
 To serve the APK on your LAN with a QR code: `python3 android/install.py`. Note that Play Protect still blocks browser installs (see above).
@@ -138,11 +144,15 @@ docs/               budget rules, data integration, roadmap, marketing
 
 ## Screens
 
+Category colours are permanent and shared across Today and Stats. They use a muted palette separate from status and comparison charts; category dots, labels and percentages align on one row.
+
+Today compares the selected day with the previous 28 completed days (including zero-spend days). The rolling trend covers the selected day and six days before it; its dotted line is their daily average. Incomplete reference windows show no comparison rather than inventing an average. Week/month cumulative comparisons still use equal calendar periods.
+
 | Screen | What it does |
 |---|---|
 | Onboarding | Budget mode (set-aside, planned or actual, or "just track"), income, bills / investments / savings with due days and "already paid this month", tracking start date, opening adjustment (default ₹0), live pool preview incl. shortfall warning |
-| Today | Sync status, one hero number (base · carried · spent), month pace with month-end projection, weekly insight, latest transactions ("N new from SMS", "Tag?"), coming-up bills and autopays, balances, streak/level, "+ Cash spend" |
-| Briefing | Morning brief until 5 pm, night brief after (switchable): what you can spend, yesterday, what's due, what rolls over; week bars, month calendar (tap a day for its report), badges |
+| Today | Unified spending/income view: selected-day breakdown, week and month cumulative with equal-period comparisons, a rolling 28-day average badge, Week/Month comparison tabs (Month default), category values on tap, one category pattern, tappable rolling seven-day bars and a seven-day average line, fixed calendar, daily transactions, upcoming payments and current balances. |
+| Briefing (legacy link) | Opens the unified Today view; no separate tab or morning/night report. Historical links retain their selected day. |
 | Activity | Search, kind/category/period filters, edit, delete, category correction (optionally saved as a rule), match to bill/savings reservation, link refunds, smart suggestions for bill matches and own-account transfers |
 | Stats | Week/month: total outgoings split into everyday / bills & savings / investments (transfers excluded), cumulative spend vs budget, daily spend, category breakdown, this month's bills with mark-paid |
 | Import CSV | Column mapping, date-format choice, three amount layouts, preview with per-row errors, duplicate detection, per-row include/exclude, undo import |
@@ -160,8 +170,8 @@ docs/               budget rules, data integration, roadmap, marketing
 
 ## Not implemented yet
 
-- **Scheduled notifications.** Briefings are in-app only.
-- **Background SMS sync.** New SMS are read when the app is opened; nothing runs while it's closed (the inbox keeps them, so nothing is missed).
+- **Scheduled notifications.** Not yet implemented; Today combines the former briefing content.
+- **General background SMS sync without a widget.** Foreground imports run while the app is open. With a home-screen widget installed and SMS consent granted, a short on-device job can also import supported bank alerts while the app is closed; Android may delay it.
 - **Account Aggregator bank sync.** See [docs/DATA_INTEGRATION.md](docs/DATA_INTEGRATION.md) for what an AA integration requires.
 - iPhone SMS import (iOS doesn't let apps read SMS), multi-currency, split expenses, multiple budgets.
 
@@ -181,3 +191,11 @@ In Activity, switch to **Recipients** to apply a category and tag to matching pa
 When editing a transaction, drip offers to apply the same category and tag to matching payments in the last 12 months, checked by default. Older payments stay unchanged by bulk edits; they can still be edited individually. **Remember for future payments** is checked by default and saves the choice for new SMS, CSV, and manual transactions. Uncheck it for one-off exceptions. Remembering by itself does not rewrite past payments.
 
 Recipients defaults to **Needs tagging**. Consistently categorized recipients move to **Archived**, where they remain editable. A category is sufficient; finer tags are optional. New untagged or inconsistent payments bring the recipient back into the queue. Archive status checks only the last 12 months, so older untouched history cannot keep a recipient pending.
+
+### Tracking, IPOs and remote changes (0.8.1)
+
+Tracking mode reports actual expenses including bills, with investments/savings shown separately and no daily allowance. IPO/ASBA blocks are separate records: block/release messages never count as spending or income; confirmed allotment debits count as Investments · IPO. Open blocks appear on Today; Activity retains their history. Incomplete confirmations stay flagged.
+
+Remote navigation now offers five actions (Today, Manual log, Activity, Stats, Settings); legacy Brief IDs open Today. It supports and a configurable highlighted primary action. Remote categorisation changes affect future imports by default. A per-rule history checkbox explicitly allows updating untouched matching transactions within twelve months; user edits and personal rules always win. Neither a presentation change nor a parser version change triggers an automatic inbox reread. Empty SMS polls avoid transaction/rule scans and database writes.
+
+Mandate reminders require a confirmed repeating frequency. Old guessed schedules are retained as unconfirmed; confirm frequency/due day in Settings. IPO and one-time mandates do not recur monthly. Backups include IPO holds and completed history-job receipts.

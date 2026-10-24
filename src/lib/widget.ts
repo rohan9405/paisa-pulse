@@ -19,7 +19,7 @@ export function widgetSnapshot(input: { profile: Profile; plans: BudgetPlan[]; t
       available: d.closingPaise,
       allocation: d.allocationPaise,
       dayBudget: Math.max(0, d.carriedInPaise + d.allocationPaise + d.adjustPaise),
-      spent: hasBudget(planForDate(plans, today)) ? d.spentPaise : d.everydayPaise,
+      spent: hasBudget(planForDate(plans, today)) ? d.spentPaise : d.expensePaise,
       under: d.underBudget,
     })),
   };

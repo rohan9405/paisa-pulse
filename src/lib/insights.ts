@@ -1,7 +1,7 @@
 /**
  * Morning briefing / evening report / gamification — derived, pure data.
  */
-import { type CommitmentStatus, type Ledger, discretionaryEntries, everydayEntries, groupSpend, outgoingsInRange } from "./budget";
+import { type CommitmentStatus, type Ledger, discretionaryEntries, expenseEntries, groupSpend, outgoingsInRange } from "./budget";
 import { type DateKey, addDays, diffDays, endOfMonth, parseKey, daysInMonth } from "./dates";
 import type { BudgetPlan, Transaction } from "./types";
 
@@ -59,7 +59,7 @@ export function morningBriefing(ledger: Ledger, statuses: CommitmentStatus[], tx
     availablePaise: ledger.todayRow.carriedInPaise + ledger.todayRow.allocationPaise,
     allocationPaise: ledger.todayRow.allocationPaise,
     carriedPaise: ledger.todayRow.carriedInPaise,
-    yesterday: yRow ? { hasBudget: yRow.hasBudget, spentPaise: yRow.spentPaise, allocationPaise: yRow.allocationPaise, underBudget: yRow.underBudget } : null,
+    yesterday: yRow ? { hasBudget: yRow.hasBudget, spentPaise: yRow.hasBudget ? yRow.spentPaise : yRow.expensePaise, allocationPaise: yRow.allocationPaise, underBudget: yRow.underBudget } : null,
     billsSoon: statuses.filter((s) => s.state !== "paid" && s.state !== "overdue" && diffDays(today, s.dueDate) <= 7),
     overdue: statuses.filter((s) => s.state === "overdue"),
     reviewCount: txns.filter((t) => t.needsReview).length,
@@ -90,7 +90,7 @@ export interface EveningReport {
 
 export function eveningReport(ledger: Ledger, txns: Transaction[], plans: BudgetPlan[], day: DateKey): EveningReport {
   const row = ledger.days.find((d) => d.date === day) ?? ledger.todayRow;
-  const entries = row.hasBudget ? discretionaryEntries(txns, plans, ledger.today).filter((e) => e.date === day) : everydayEntries(txns, day, ledger.today).filter((e) => e.date === day);
+  const entries = row.hasBudget ? discretionaryEntries(txns, plans, ledger.today).filter((e) => e.date === day) : expenseEntries(txns, day, ledger.today).filter((e) => e.date === day);
   const biggest = entries.reduce<{ merchant: string; amountPaise: number } | null>(
     (b, e) => (!b || e.amountPaise > b.amountPaise ? { merchant: e.merchant, amountPaise: e.amountPaise } : b),
     null,
@@ -98,7 +98,7 @@ export function eveningReport(ledger: Ledger, txns: Transaction[], plans: Budget
   return {
     date: day,
     hasBudget: row.hasBudget,
-    spentPaise: row.spentPaise,
+    spentPaise: row.hasBudget ? row.spentPaise : row.expensePaise,
     allocationPaise: row.allocationPaise,
     closingPaise: row.closingPaise,
     underBudget: row.underBudget,

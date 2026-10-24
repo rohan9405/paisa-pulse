@@ -25,14 +25,16 @@ final class SmsBridge {
 
     @JavascriptInterface
     public boolean hasPermission() {
-        return activity.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+        return activity.getSharedPreferences("privacy", 0).getInt("smsConsent", 0) >= 1
+            && activity.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+            && activity.checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
     }
 
     @JavascriptInterface
     public void requestPermission() {
-        if (activity instanceof Activity) {
-            Activity screen = (Activity) activity;
-            screen.runOnUiThread(() -> screen.requestPermissions(new String[] {Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS}, MainActivity.SMS_REQUEST));
+        if (activity instanceof MainActivity) {
+            MainActivity screen = (MainActivity) activity;
+            screen.runOnUiThread(screen::requestSmsAccess);
         }
     }
 

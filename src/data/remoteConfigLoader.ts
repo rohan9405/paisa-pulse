@@ -24,7 +24,10 @@ export async function loadCachedConfig() {
     const payload = raw ? await verifyEnvelope(JSON.parse(raw)) : null;
     if (payload) {
       const { config } = parseRemoteConfig(payload);
-      if (config.version > getConfig().version) setConfig(config);
+      if (config.version > getConfig().version) {
+        setConfig(config);
+        window.dispatchEvent(new Event("drip-config"));
+      }
     }
   } catch {
     /* no cache: defaults */

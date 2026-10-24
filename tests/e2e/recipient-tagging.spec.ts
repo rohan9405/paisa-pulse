@@ -4,7 +4,7 @@ import { toISTKey } from "../../src/lib/dates";
 test("tag by recipient, remember future payments, and nudge for past payments", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("start-demo").click();
-  await expect(page.getByTestId("available")).toBeVisible();
+  await expect(page.getByTestId("spent-today")).toBeVisible();
   await page.evaluate(async (today) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open("paisa-pulse-demo");

@@ -25,7 +25,7 @@ describe("parsing", () => {
     });
     expect(config.version).toBe(3);
     // Order from the config, unknown ids dropped, missing tabs appended, Today can't be hidden.
-    expect(config.tabs.map((t) => [t.id, t.label, t.visible])).toEqual([["stats", "Insights", true], ["today", "Home", true], ["briefing", "Briefing", true], ["activity", "Activity", true]]);
+    expect(config.tabs.map((t) => [t.id, t.label, t.visible])).toEqual([["stats", "Insights", true], ["today", "Home", true], ["briefing", "Brief", false], ["manual", "Manual log", true], ["activity", "Activity", true], ["settings", "Settings", true]]);
     expect(config.rules).toEqual([{ contains: "pharmacy", category: "Health", tag: undefined, kind: undefined, direction: undefined, priority: 5 }]);
     expect(config.banks).toEqual([{ sender: "YESBNK", bank: "Yes Bank" }]);
     expect(config.budget).toMatchObject({ lateSalaryDay: 25, nightBriefHour: 20 });
