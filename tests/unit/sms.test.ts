@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_RULES } from "@/lib/categorize";
+import { DEFAULT_CONFIG, parseRemoteConfig, setConfig } from "@/lib/remoteConfig";
 import { bankForSender, parseBalance, parseBankSms, smsToCandidate } from "@/lib/sms";
 import type { CategoryRule } from "@/lib/types";
 
@@ -70,6 +71,28 @@ describe("ICICI", () => {
   it("refund credit", () => {
     const c = smsToCandidate(sms("VM-ICICIT", "Dear Customer, Acct XX567 is credited with Rs 499.00 on 20-Oct-26 from FLIPKART towards refund. UPI:629355556666"), rules)!;
     expect(c).toMatchObject({ direction: "in", kind: "refund", category: "Refunds", merchant: "Flipkart" });
+  });
+});
+
+describe("ICICI debit card, merchant markers from the config", () => {
+  afterEach(() => setConfig(DEFAULT_CONFIG));
+  const google = "Rs. 1,250.00 debited from ICICI Bank Acc XX567 on 21-Oct-26 VIN*Google Pl. Bal Rs. 10,000.00. If not you call 18002662 or SMS BLOCK 567 to 9215676766";
+
+  it("has no built-in markers: without config the bank name is used", () => {
+    expect(smsToCandidate(sms("JD-ICICIT-S", google), rules)!.merchant).toBe("ICICI debit");
+  });
+
+  it("reads the merchant after a configured marker, and the config names it", () => {
+    setConfig(parseRemoteConfig({ version: 5, merchantMarkers: ["VIN*"], merchants: [{ contains: "googlepl", name: "Google Play" }] }).config);
+    const c = smsToCandidate(sms("JD-ICICIT-S", google), rules)!;
+    expect(c.merchant).toBe("Google Play");
+    expect(c.amountPaise).toBe(1_250_00);
+    const d = smsToCandidate(sms("JD-ICICIT-S", "Rs. 199.00 debited from ICICI Bank Acc XX567 on 21-Oct-26 vin*NETFLIX COM. Bal Rs. 9,801.00."), rules)!;
+    expect(d.merchant).toBe("Netflix");
+  });
+
+  it("drops invalid and duplicate markers", () => {
+    expect(parseRemoteConfig({ version: 5, merchantMarkers: ["VIN*", "vin*", "x", 3, "  "] }).config.merchantMarkers).toEqual(["VIN*"]);
   });
 });
 

@@ -25,7 +25,7 @@ export const SECTION_FIELDS: Record<Section, (keyof RemoteConfig)[]> = {
   tabs: ["tabs", "primaryAction"],
   screens: ["screens"],
   rules: ["rules", "disabledRules", "replaceBuiltInRules"],
-  merchants: ["merchants", "replaceBuiltInMerchants"],
+  merchants: ["merchants", "replaceBuiltInMerchants", "merchantMarkers"],
   banks: ["banks"],
   smsIgnore: ["smsIgnore"],
   budget: ["budget"],
@@ -87,6 +87,7 @@ export function describeChanges(a: RemoteConfig, b: RemoteConfig): string[] {
         const bits: string[] = [];
         if (!same(a.merchants, b.merchants)) bits.push(listDiff(a.merchants, b.merchants, (m) => m.contains, "names"));
         if (a.replaceBuiltInMerchants !== b.replaceBuiltInMerchants) bits.push(b.replaceBuiltInMerchants ? "now replaces built-ins" : "built-ins back on");
+        if (!same(a.merchantMarkers, b.merchantMarkers)) bits.push(`markers ${listDiff(a.merchantMarkers, b.merchantMarkers, (x) => x, "reordered")}`);
         out.push(`${label}: ${bits.join("; ")}`);
         break;
       }

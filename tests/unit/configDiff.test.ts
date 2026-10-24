@@ -36,4 +36,11 @@ describe("version history summaries", () => {
     b.merchants = [{ contains: "abc", name: "ABC Co" }, { contains: "ghi", name: "Ghi" }];
     expect(describeChanges(a, b)).toEqual(["Merchant names: 1 added, 1 removed, 1 edited"]);
   });
+
+  it("reports merchant markers under merchant names", () => {
+    const b = base();
+    b.merchantMarkers = ["VPS*"];
+    expect(changedSections(base(), b)).toEqual(["merchants"]);
+    expect(describeChanges(base(), b)).toEqual(["Merchant names: markers 1 added"]);
+  });
 });

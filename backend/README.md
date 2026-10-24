@@ -12,7 +12,7 @@ A Cloudflare Worker that serves drip's **remote config**: global settings you ca
 - **Navigation:** five actions (Today, Manual log, Activity, Stats, Settings); Brief is merged into Today, with legacy IDs retained for compatibility, order, names, show / hide, and one highlighted primary action (Today always shows).
 - **Screen titles and subtitles:** Today, Activity, Stats, Settings, Import. Legacy Briefing titles and night-brief settings remain in stored configs for older clients, but are hidden in the editor.
 - **Categorisation rules:** "contains → category / tag / kind", money in or out only, priority; switch built-in rules off.
-- **Merchant names:** text contains → clean name.
+- **Merchant names:** text contains → clean name. **Merchant markers** (same section): text right before a merchant name in a debit SMS, e.g. `VIN*` in “on 21-Oct-26 VIN*Google Pl.”. Config only; the app has none built in.
 - **Bank SMS senders:** add a bank by its sender ID (e.g. `YESBNK`).
 - **Ignore phrases:** SMS containing them are never read as transactions.
 - **Budget and insights:** late-salary day and amount, insight thresholds.

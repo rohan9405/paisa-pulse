@@ -54,6 +54,8 @@ export interface RemoteConfig {
   merchants: { contains: string; name: string; word?: boolean }[];
   /** True: `merchants` is the complete list and the app's built-in names are not used. */
   replaceBuiltInMerchants: boolean;
+  /** Text that comes right before the merchant name in a debit SMS (e.g. "VIN*"). Plain text, not a pattern. Config only: the app has none built in. */
+  merchantMarkers: string[];
   /** More bank SMS senders: sender ID core (e.g. "YESBNK") → bank name. */
   banks: { sender: string; bank: string }[];
   /** Extra phrases that mean "not a transaction" (offers, OTPs…). */
@@ -100,6 +102,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   replaceBuiltInRules: false,
   merchants: [],
   replaceBuiltInMerchants: false,
+  merchantMarkers: [],
   banks: [],
   smsIgnore: [],
   budget: { lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
@@ -207,6 +210,13 @@ export function parseRemoteConfig(input: unknown): ParseResult {
   }
 
   c.replaceBuiltInMerchants = input.replaceBuiltInMerchants === true && c.merchants.length > 0;
+
+  if (Array.isArray(input.merchantMarkers)) {
+    for (const m of input.merchantMarkers.slice(0, 50)) {
+      const marker = str(m, 20, 2);
+      if (marker && !c.merchantMarkers.some((x) => x.toLowerCase() === marker.toLowerCase())) c.merchantMarkers.push(marker);
+    }
+  }
 
   if (Array.isArray(input.banks)) {
     for (const b of input.banks.slice(0, 100)) {

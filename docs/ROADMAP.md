@@ -2,6 +2,12 @@
 
 Current checkout: **0.8.4** (24 Oct 2026). Core money tracking, recipient tagging/archive, widgets and the signed config backend are implemented. Play Store packaging is being prepared; publication/approval is not implied by a local build.
 
+## Config-owned merchant markers (0.8.5, build 17)
+
+- Parser, rule and merchant-name fixes are made in the config store and published, not hardcoded in the app.
+- New config field `merchantMarkers` (editor: Merchant names → Merchant markers): plain text that comes right before the merchant name in a debit SMS. The app only has the mechanism; the list is config-only. Config v5 adds `VIN*` (ICICI debit card: “on 21-Oct-26 VIN*Google Pl.”) and the merchant name `googlepl` → Google Play, replacing `googleplay`.
+- Clients older than 0.8.5 ignore the markers field, and their merchants are still named by the config's name list.
+
 ## Category alignment fix (0.8.4, build 16)
 
 - Category dots, names and percentages share one grid row; tap-to-show amounts occupy a reserved second row.
