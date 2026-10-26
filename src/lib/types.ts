@@ -72,6 +72,8 @@ export interface Prefs {
   appLock: boolean;
   /** Light haptic taps on buttons and confirmations. */
   haptics: boolean;
+  /** Lowercase interface copy; merchant names keep their original case. */
+  lowercase?: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = { balances: true, appLock: false, haptics: true };

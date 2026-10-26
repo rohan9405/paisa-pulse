@@ -93,6 +93,8 @@ export interface RemoteConfig {
     insightMinRupees: number;
     insightRisePct: number;
   };
+  /** Defaults used until someone chooses their own appearance preference. */
+  defaults: { lowercase: boolean };
   features: {
     balances: boolean;
     appLock: boolean;
@@ -133,6 +135,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   replaceBuiltInBanks: false,
   smsIgnore: [],
   budget: { setAsideModes: ["planned", "actual"], lateSalaryDay: 25, bigCreditRupees: 10_000, nightBriefHour: 17, insightMinRupees: 300, insightRisePct: 25 },
+  defaults: { lowercase: false },
   features: { balances: true, appLock: true, csvImport: true, insights: true, badges: true, haptics: true, analytics: true },
   announcement: null,
   update: null,
@@ -283,6 +286,10 @@ export function parseRemoteConfig(input: unknown): ParseResult {
       insightMinRupees: int(b.insightMinRupees, 0, 1_00_000) ?? DEFAULT_CONFIG.budget.insightMinRupees,
       insightRisePct: int(b.insightRisePct, 5, 500) ?? DEFAULT_CONFIG.budget.insightRisePct,
     };
+  }
+
+  if (isObj(input.defaults)) {
+    c.defaults.lowercase = bool(input.defaults.lowercase) ?? DEFAULT_CONFIG.defaults.lowercase;
   }
 
   if (isObj(input.features)) {

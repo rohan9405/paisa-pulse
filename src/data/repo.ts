@@ -44,6 +44,11 @@ export async function ensureConnections(db: FinanceDB, mode: AppMode) {
 
 export async function seedDemo(db: FinanceDB, today: DateKey) {
   const { profile, plan, txns, recurring } = generateDemoData(today);
+  // The website showcase starts (and resets) in tracking mode; normal demos retain their budget.
+  if (process.env.NEXT_PUBLIC_SHOWCASE_DEMO === "1") {
+    plan.budgetMode = "tracking";
+    plan.incomePaise = null;
+  }
   await db.transaction("rw", [db.profile, db.plans, db.txns, db.connections, db.rules, db.recurring, db.holds], async () => {
     await db.profile.clear();
     await db.plans.clear();

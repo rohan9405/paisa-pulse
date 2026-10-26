@@ -9,6 +9,8 @@ const nextConfig = {
   // The Android app bundles a static export (android/build.py sets this).
   ...(process.env.NEXT_STATIC_EXPORT === "1" ? { output: "export", trailingSlash: true } : {}),
   poweredByHeader: false,
+  // Only the standalone marketing demo uses a subdirectory; Android stays at /.
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || "",
   devIndicators: false,
 };
 export default nextConfig;

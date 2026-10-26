@@ -5,6 +5,12 @@ import { DEFAULT_CONFIG, type RemoteConfig } from "@/lib/remoteConfig";
 const base = (): RemoteConfig => structuredClone(DEFAULT_CONFIG);
 
 describe("version history summaries", () => {
+  it("reports changes to the global lowercase default", () => {
+    const next = base();
+    next.defaults.lowercase = true;
+    expect(changedSections(base(), next)).toEqual(["defaults"]);
+    expect(describeChanges(base(), next)).toEqual(["App defaults: lowercase on"]);
+  });
   it("says nothing when nothing changed", () => {
     expect(describeChanges(base(), base())).toEqual([]);
   });

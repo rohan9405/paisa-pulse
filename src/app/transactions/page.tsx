@@ -204,7 +204,7 @@ function Transactions() {
             {suggestions.matches.slice(0, 3).map(({ t, c, key }) => (
               <Card key={key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                 <span className="min-w-0">
-                  <b>{t.merchant}</b> {formatINR(t.amountPaise)} looks like <b className="text-sky">{c!.commitment.name}</b>
+                  <b><span data-preserve-case>{t.merchant}</span></b> {formatINR(t.amountPaise)} looks like <b className="text-sky">{c!.commitment.name}</b>
                   <span className="block text-xs text-ink-400">{c!.reason} · matching stops it counting against your daily budget</span>
                 </span>
                 <span className="flex gap-1.5">
@@ -220,7 +220,7 @@ function Transactions() {
             {suggestions.pairs.slice(0, 3).map((p) => (
               <Card key={p.key} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
                 <span className="min-w-0">
-                  {formatINR(p.out.amountPaise)} out ({p.out.merchant}) and in ({p.in.merchant}) — <b>own-account transfer?</b>
+                  {formatINR(p.out.amountPaise)} out (<span data-preserve-case>{p.out.merchant}</span>) and in (<span data-preserve-case>{p.in.merchant}</span>) — <b>own-account transfer?</b>
                   <span className="block text-xs text-ink-400">Transfers are excluded from spending and income</span>
                 </span>
                 <span className="flex gap-1.5">
@@ -257,7 +257,7 @@ function Transactions() {
           const recent = all.filter((other) => withinTaggingWindow(other, today));
           const labels = new Set((recent.length ? recent : all).map((other) => `${other.category}${other.tag ? ` · ${other.tag}` : ""}`));
           return <button key={key} className="card flex w-full items-center justify-between gap-3 p-4 text-left" onClick={() => setRecipient(all)} data-testid="recipient-row">
-            <span className="min-w-0"><span className="block truncate font-semibold">{t.merchant}</span>{t.payee && <span className="block truncate text-xs text-ink-400">{t.payee}</span>}<span className="block text-xs text-ink-300">{ts.length} transaction{ts.length === 1 ? "" : "s"} · {labels.size === 1 ? [...labels][0] : "Mixed categories / tags"}</span></span>
+            <span className="min-w-0"><span className="block truncate font-semibold"><span data-preserve-case>{t.merchant}</span></span>{t.payee && <span className="block truncate text-xs text-ink-400">{t.payee}</span>}<span className="block text-xs text-ink-300">{ts.length} transaction{ts.length === 1 ? "" : "s"} · {labels.size === 1 ? [...labels][0] : "Mixed categories / tags"}</span></span>
             <span className="shrink-0 text-sm text-lime">{recipientTab === "pending" ? "Tag all →" : "Edit tags →"}</span>
           </button>;
         })}

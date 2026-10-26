@@ -29,7 +29,7 @@ export function RecipientTagger({ txns, onClose }: { txns: Transaction[]; onClos
   };
   return <Sheet open onClose={onClose} title="Tag recipient" footer={<button className="btn-primary w-full" disabled={saving} onClick={save} data-testid="recipient-save">{saving ? "Saving…" : `Apply to ${changed} transaction${changed === 1 ? "" : "s"}`}</button>}>
     <div className="space-y-4">
-      <div><p className="font-semibold">{txn.merchant}</p>{txn.payee && <p className="break-all text-sm text-ink-400">{txn.payee}</p>}<p className="mt-1 text-sm text-ink-300">Updates matching {txn.kind === "income" ? "incoming" : "outgoing"} transactions in the last 12 months ({eligible.length} eligible). Only payments needing a category or tag change are updated. Older payments stay unchanged.</p></div>
+      <div><p className="font-semibold"><span data-preserve-case>{txn.merchant}</span></p>{txn.payee && <p className="break-all text-sm text-ink-400">{txn.payee}</p>}<p className="mt-1 text-sm text-ink-300">Updates matching {txn.kind === "income" ? "incoming" : "outgoing"} transactions in the last 12 months ({eligible.length} eligible). Only payments needing a category or tag change are updated. Older payments stay unchanged.</p></div>
       <Field label="Category"><select className="input" value={category} onChange={(e) => { setCategory(e.target.value); setTag(""); }} data-testid="recipient-category">
         {[...new Set([...(txn.kind === "income" ? ["Income"] : CATEGORIES.filter((c) => !["Income", "Refunds", "Settlement", "Transfers"].includes(c))), category])].map((c) => <option key={c} value={c}>{categoryEmoji(c)} {displayCategory(c)}</option>)}
       </select></Field>

@@ -179,7 +179,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
             <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label="Merchant">
-            <input className="input" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
+            <input data-preserve-case className="input" value={merchant} onChange={(e) => setMerchant(e.target.value)} />
           </Field>
         </div>
 
@@ -207,7 +207,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
             <select className="input" value={refundOf} onChange={(e) => setRefundOf(e.target.value)} data-testid="txn-original-expense">
               <option value="">Not linked (flag for review)</option>
               {refundOpts.map(({ t, suggested }) => (
-                <option key={t.id} value={t.id}>
+                <option data-preserve-case key={t.id} value={t.id}>
                   {suggested ? "★ " : ""}
                   {formatDay(t.date)} · {t.merchant} · {formatINR(t.amountPaise)}
                 </option>

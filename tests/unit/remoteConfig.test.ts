@@ -8,6 +8,12 @@ import { currentBuiltInRules } from "@/data/migrate";
 afterEach(() => setConfig(DEFAULT_CONFIG));
 
 describe("parsing", () => {
+  it("validates configurable lowercase defaults", () => {
+    expect(parseRemoteConfig({ version: 1 }).config.defaults.lowercase).toBe(false);
+    expect(parseRemoteConfig({ version: 1, defaults: { lowercase: true } }).config.defaults.lowercase).toBe(true);
+    expect(parseRemoteConfig({ version: 1, defaults: { lowercase: false } }).config.defaults.lowercase).toBe(false);
+    expect(parseRemoteConfig({ version: 1, defaults: { lowercase: "true" } }).config.defaults.lowercase).toBe(false);
+  });
   it("falls back to defaults for anything that isn't a valid config", () => {
     expect(parseRemoteConfig(null).config).toEqual(DEFAULT_CONFIG);
     expect(parseRemoteConfig("hello").errors).toHaveLength(1);

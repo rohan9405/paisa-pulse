@@ -18,6 +18,7 @@ A Cloudflare Worker that serves drip's **remote config**: global settings you ca
 - **Ignore phrases:** SMS containing them are never read as transactions.
 - **Budget and insights:** late-salary day and amount, insight thresholds.
 - **Features:** switch balances, app lock, CSV import, insights, badges, haptics or anonymous usage stats (`analytics`) off for everyone.
+- **App defaults:** set `defaults.lowercase` for people who have not chosen an appearance preference. Settings → App → Lowercase copy overrides the default; vendor names keep their original case in both modes. Requires version 0.8.14 or newer. The built-in default is off.
 - **Analytics** (editor page, read-only): anonymous, aggregate usage: real-time active users, installs, daily / weekly / monthly users, sessions and time spent, screens, app versions, features in use, config downloads (traffic) and GitHub release downloads, over 24 hours to a year. See "Anonymous usage" below.
 - **Announcement banner** on Today, and a **new version notice** with a download link.
 

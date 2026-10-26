@@ -214,7 +214,7 @@ export default function ImportPage() {
                     </td>
                     <td className="num whitespace-nowrap p-2 text-xs">{r.date ? formatDay(r.date, { year: true }) : <span className="text-coral">{r.raw[mapping.date] || "—"}</span>}</td>
                     <td className="max-w-[220px] p-2">
-                      <div className="truncate font-medium">{r.merchant}</div>
+                      <div className="truncate font-medium"><span data-preserve-case>{r.merchant}</span></div>
                       <div className="truncate text-xs text-ink-400">{r.description}</div>
                     </td>
                     <td className={cx("num whitespace-nowrap p-2 text-right", r.direction === "in" && "text-lime")}>{r.amountPaise !== undefined ? `${r.direction === "in" ? "+" : "−"}${formatINR(r.amountPaise)}` : "—"}</td>

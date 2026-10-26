@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { useAppData, useStore } from "@/data/store";
+import { SHOWCASE_DEMO, useAppData, useStore } from "@/data/store";
 import { useSmsSync } from "@/data/useSmsSync";
 import { useAutoBackup } from "@/data/useAutoBackup";
 import { useHomeWidget } from "@/data/useHomeWidget";
@@ -138,9 +138,9 @@ function InteractiveShell({ children }: { children: ReactNode }) {
           {mode === "demo" && (
             <div className="sticky top-0 z-30 flex items-center justify-between gap-2 bg-violet px-4 py-1.5 text-[12px] font-semibold text-ink-950" data-testid="demo-banner">
               <span>DEMO MODE · fictional transactions, not real bank data</span>
-              <button className="underline underline-offset-2" onClick={() => setMode(null)}>
+              {SHOWCASE_DEMO ? <a href="/" target="_top" className="underline underline-offset-2">Website ↗</a> : <button className="underline underline-offset-2" onClick={() => setMode(null)}>
                 Switch
-              </button>
+              </button>}
             </div>
           )}
           {/* Mobile top bar */}
@@ -242,9 +242,9 @@ function ModeBadge({ mode, onSwitch }: { mode: string; onSwitch: () => void }) {
     <div className="rounded-2xl bg-white/[0.04] p-3 text-xs text-ink-400">
       <div className="mb-1 font-semibold text-white">{mode === "demo" ? "🎭 Demo mode" : "🔒 Personal mode"}</div>
       {mode === "demo" ? "Fictional data. Nothing here is real." : "Data stays in this browser only."}
-      <button onClick={onSwitch} className="mt-2 block font-semibold text-lime">
+      {SHOWCASE_DEMO ? <a href="/" target="_top" className="mt-2 block font-semibold text-lime">Back to website →</a> : <button onClick={onSwitch} className="mt-2 block font-semibold text-lime">
         Switch mode →
-      </button>
+      </button>}
     </div>
   );
 }

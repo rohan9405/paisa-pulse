@@ -19,7 +19,7 @@ import { deviceBridge } from "@/data/device";
 import { useBudget } from "@/data/useBudget";
 import { CommitmentList, type CommitmentDraft, draftFromCommitment, validateDrafts } from "@/components/CommitmentEditor";
 import { AmountInput, Card, Field, Money, PageHeader, Pill, Segmented, Toast, cx } from "@/components/ui";
-import { useStore } from "@/data/store";
+import { SHOWCASE_DEMO, useStore } from "@/data/store";
 import { useRemoteConfig } from "@/data/remoteConfigLoader";
 
 type Tab = "budget" | "data" | "app";
@@ -48,7 +48,7 @@ export default function SettingsPage() {
 
   if (!data || !derived || !data.profile) return null;
   const { profile, plans } = data;
-  const prefs = { ...DEFAULT_PREFS, ...profile.prefs };
+  const prefs = { ...DEFAULT_PREFS, lowercase: config.defaults.lowercase, ...profile.prefs };
   const pool = derived.pool;
   const userRules = data.rules.filter((r) => !r.builtIn).length;
   const sms = data.connections.find((c) => c.providerId === "sms");
@@ -161,15 +161,15 @@ export default function SettingsPage() {
           </Group>
           <Group>
             <Section icon="🔔" title="Notifications" summary="In-app briefings">
-              <p className="text-sm text-ink-300">Morning and night briefs are in the Briefing tab for now. Scheduled notifications are on the roadmap.</p>
+              <p className="text-sm text-ink-300">Today combines the daily spending summary. Scheduled notifications are on the roadmap.</p>
             </Section>
             <Section icon="🎭" title="Mode" summary={mode === "demo" ? "Demo (fictional data)" : "Personal"}>
               <div className="space-y-3 text-sm">
                 <p className="text-ink-300">Demo and personal data are stored in separate databases and never mix.</p>
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn-ghost" onClick={() => setMode(mode === "demo" ? "personal" : "demo").then(() => router.replace("/"))}>
+                  {SHOWCASE_DEMO ? <a className="btn-ghost" href="/" target="_top">Back to website</a> : <button className="btn-ghost" onClick={() => setMode(mode === "demo" ? "personal" : "demo").then(() => router.replace("/"))}>
                     Switch to {mode === "demo" ? "personal" : "demo"} mode
-                  </button>
+                  </button>}
                   {mode === "demo" && db && (
                     <button className="btn-ghost" onClick={async () => (await seedDemo(db, today), setToast("Demo data regenerated"))}>
                       Reset demo data
@@ -178,6 +178,13 @@ export default function SettingsPage() {
                 </div>
               </div>
             </Section>
+            <Toggle
+              icon="🔤"
+              title="Lowercase copy"
+              hint="Show app copy in lowercase. Vendor names keep their original case."
+              checked={prefs.lowercase}
+              onChange={async (on) => db && (await setPrefs(db, { lowercase: on }))}
+            />
           </Group>
         </>
       )}

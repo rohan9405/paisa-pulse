@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { StoreProvider } from "@/data/store";
 import { AppShell } from "@/components/AppShell";
+import { Appearance } from "@/components/Appearance";
 import "./globals.css";
 
 const sans = Space_Grotesk({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en-IN" className={`${sans.variable} ${mono.variable}`}>
       <body className="font-sans antialiased">
         <StoreProvider>
+          <Appearance />
           <AppShell>{children}</AppShell>
         </StoreProvider>
       </body>

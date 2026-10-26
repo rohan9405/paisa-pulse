@@ -99,9 +99,9 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
           <AmountInput big value={amount} onChange={(v) => (setAmount(v), setError(null))} data-autofocus aria-label="Amount in rupees" data-testid="qa-amount" />
           {error && <p className="-mt-2 text-sm text-coral">{error}</p>}
           <Field label="Merchant / what">
-            <input className="input" value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="Swiggy, auto, chai…" maxLength={60} data-testid="qa-merchant" />
+            <input data-preserve-case className="input" value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="Swiggy, auto, chai…" maxLength={60} data-testid="qa-merchant" />
           </Field>
-          {category === "Settlement" && <Field label="Settles which payment?"><select className="input" value={originalId} onChange={e => setOriginalId(e.target.value)} data-testid="qa-original-expense"><option value="">Link later · review</option>{settlementCandidates({ id: "new", date, amountPaise: paise ?? 0 }, data?.txns ?? []).map(t => <option value={t.id} key={t.id}>{t.date} · {t.merchant} · {formatINR(t.amountPaise)}</option>)}</select></Field>}
+          {category === "Settlement" && <Field label="Settles which payment?"><select className="input" value={originalId} onChange={e => setOriginalId(e.target.value)} data-testid="qa-original-expense"><option value="">Link later · review</option>{settlementCandidates({ id: "new", date, amountPaise: paise ?? 0 }, data?.txns ?? []).map(t => <option data-preserve-case value={t.id} key={t.id}>{t.date} · {t.merchant} · {formatINR(t.amountPaise)}</option>)}</select></Field>}
           <div>
             <span className="label">Category {suggestion && !catTouched && <span className="normal-case tracking-normal text-lime">· auto</span>}</span>
             <div className="-mx-1 flex flex-wrap gap-1.5">

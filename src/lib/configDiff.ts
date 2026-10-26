@@ -4,7 +4,7 @@
  */
 import type { RemoteConfig } from "./remoteConfig";
 
-export const SECTIONS = ["tabs", "screens", "rules", "merchants", "smsParsing", "banks", "smsIgnore", "budget", "features", "announcement", "update"] as const;
+export const SECTIONS = ["tabs", "screens", "rules", "merchants", "smsParsing", "banks", "smsIgnore", "budget", "defaults", "features", "announcement", "update"] as const;
 export type Section = (typeof SECTIONS)[number];
 
 export const SECTION_LABEL: Record<Section, string> = {
@@ -16,6 +16,7 @@ export const SECTION_LABEL: Record<Section, string> = {
   banks: "Bank senders",
   smsIgnore: "Ignore phrases",
   budget: "Budget and insights",
+  defaults: "App defaults",
   features: "Features",
   announcement: "Announcement",
   update: "New version notice",
@@ -31,6 +32,7 @@ export const SECTION_FIELDS: Record<Section, (keyof RemoteConfig)[]> = {
   banks: ["banks", "replaceBuiltInBanks"],
   smsIgnore: ["smsIgnore"],
   budget: ["budget"],
+  defaults: ["defaults"],
   features: ["features"],
   announcement: ["announcement"],
   update: ["update"],
@@ -109,6 +111,9 @@ export function describeChanges(a: RemoteConfig, b: RemoteConfig): string[] {
         break;
       case "budget":
         out.push(`${label}: ${(Object.keys(b.budget) as (keyof RemoteConfig["budget"])[]).filter((k) => JSON.stringify(a.budget[k]) !== JSON.stringify(b.budget[k])).map((k) => `${k} ${a.budget[k]} → ${b.budget[k]}`).join(", ")}`);
+        break;
+      case "defaults":
+        out.push(`${label}: lowercase ${b.defaults.lowercase ? "on" : "off"}`);
         break;
       case "features":
         out.push(`${label}: ${(Object.keys(b.features) as (keyof RemoteConfig["features"])[]).filter((k) => a.features[k] !== b.features[k]).map((k) => `${k} ${b.features[k] ? "on" : "off"}`).join(", ")}`);

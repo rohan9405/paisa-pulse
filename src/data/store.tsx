@@ -8,8 +8,10 @@ import { type FinanceDB, getDB } from "./db";
 import { ensureRules, seedDemo } from "./repo";
 
 const MODE_KEY = "paisa-pulse:mode";
+export const SHOWCASE_DEMO = process.env.NEXT_PUBLIC_SHOWCASE_DEMO === "1";
 
 function readMode(): AppMode | null {
+  if (SHOWCASE_DEMO) return "demo";
   try {
     const v = window.localStorage.getItem(MODE_KEY);
     return v === "demo" || v === "personal" ? v : null;
@@ -55,7 +57,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (m: AppMode) => {
       const db = getDB(m);
       await db.open();
-      if (m === "demo" && (await db.profile.count()) === 0) await seedDemo(db, toISTKey());
+      if (m === "demo" && (await db.profile.count()) === 0) {
+        await seedDemo(db, toISTKey());
+      }
       await ensureRules(db);
     },
     [],
@@ -80,6 +84,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setMode = useCallback(
     async (m: AppMode | null) => {
+      if (SHOWCASE_DEMO) m = "demo";
       if (m) await prepare(m);
       writeMode(m);
       setModeState(m);
