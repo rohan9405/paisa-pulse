@@ -2,12 +2,12 @@ import { expenseEntries } from "./budget";
 import { addDays, addMonths, diffDays, eachDay, endOfMonth, monthKey, startOfWeek } from "./dates";
 import type { Transaction } from "./types";
 
-export function spendHeatmap(txns: Transaction[], trackingStart: string, today: string, endMonth = monthKey(today)) {
+export function spendHeatmap(txns: Transaction[], trackingStart: string, today: string, endMonth = monthKey(today), includeInvestments = false) {
   const from = `${addMonths(endMonth, -11)}-01`;
   const to = endOfMonth(`${endMonth}-01`);
   const cutoff = to < today ? to : today;
   const values = new Map<string, number>();
-  for (const entry of expenseEntries(txns, from > trackingStart ? from : trackingStart, cutoff)) {
+  for (const entry of expenseEntries(txns, from > trackingStart ? from : trackingStart, cutoff, { includeInvestments })) {
     values.set(entry.date, (values.get(entry.date) ?? 0) + entry.amountPaise);
   }
   // One scale for the whole displayed year. Quantiles keep a large rent day

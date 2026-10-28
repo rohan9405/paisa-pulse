@@ -47,7 +47,16 @@ export interface BudgetPlan {
   createdAt: number;
 }
 
+export interface SmsFormatRule {
+  id: string; bank: string; sender?: string; pattern: string; kind: "account" | "card";
+  direction: "in" | "out"; createdAt: number;
+}
+export interface TemplateRequest {
+  id: string; sample: string; bank?: string; status: "queued" | "sent"; createdAt: number;
+}
 export interface Profile {
+  acceptedSmsRules?: SmsFormatRule[];
+  templateRequests?: TemplateRequest[];
   id: "me";
   name?: string;
   trackingStart: DateKey;
@@ -66,6 +75,8 @@ export interface Profile {
 }
 
 export interface Prefs {
+  /** Include investment payments in Today and Stats spending views. */
+  includeInvestments?: boolean;
   /** Read "Avl bal" / "Avl limit" from bank SMS and show balances. */
   balances: boolean;
   /** Ask for fingerprint / screen lock when opening the Android app. */
@@ -76,11 +87,15 @@ export interface Prefs {
   lowercase?: boolean;
 }
 
-export const DEFAULT_PREFS: Prefs = { balances: true, appLock: false, haptics: true };
+export const DEFAULT_PREFS: Prefs = { balances: true, appLock: false, haptics: true, includeInvestments: true };
 
 /** Latest known balance of a bank account or available limit of a card, from SMS. */
 export interface Account {
-  /** `${bank}-${last digits}` */
+  ownerConfirmed?: boolean;
+  alias?: string;
+  balanceKnown?: boolean;
+  balanceSource?: "sms" | "manual";
+  /** `${bank}-${kind}-${last digits}` in the local preview */
   id: string;
   bank: string;
   last4: string;
@@ -103,6 +118,7 @@ export type TxnKind = "expense" | "commitment" | "investment" | "transfer" | "re
 export type PaymentMethod = "upi" | "card" | "cash" | "netbanking" | "wallet" | "other";
 
 export interface Provenance {
+  sender?: string;
   /** Which provider created the row: demo, manual, csv, or a future aggregator id. */
   providerId: string;
   importBatchId?: string;
@@ -114,6 +130,15 @@ export interface Provenance {
 }
 
 export interface Transaction {
+  accountMappingEdited?: boolean;
+  accountingPending?: boolean;
+  accountId?: string;
+  direction?: "in" | "out";
+  occurredAt?: number;
+  transferGroupId?: string;
+  transferPeerId?: string;
+  transferStatus?: "confirmed" | "rejected";
+  transferEvidence?: string;
   id: string;
   date: DateKey;
   /** Always positive. Direction comes from `kind`. */
@@ -167,6 +192,7 @@ export interface CategoryRule {
 export type ConnectionStatus = "connected" | "disconnected" | "syncing" | "error" | "not_available";
 
 export interface ProviderConnection {
+  accountMetadataVersion?: number;
   providerId: string;
   status: ConnectionStatus;
   lastSyncAt?: number;

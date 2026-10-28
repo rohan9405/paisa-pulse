@@ -52,9 +52,10 @@ describe("HDFC", () => {
     expect(c).toMatchObject({ amountPaise: 85_000_00, kind: "income", category: "Income" });
   });
 
-  it("credit card bill payment is a transfer", () => {
+  it("credit card bill payment awaits ownership review", () => {
     const c = smsToCandidate(sms("VM-HDFCBK", "Payment of Rs.12,500.00 has been received towards your HDFC Bank Credit Card ending 4321. Thank you."), rules)!;
-    expect(c.kind).toBe("transfer");
+    expect(c.kind).toBe("income");
+    expect(c.accountingPending).toBe(true);
   });
 });
 

@@ -21,6 +21,7 @@ const METHODS: { value: PaymentMethod; label: string }[] = [
 export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; onClose: () => void; presetDate?: string }) {
   const { db, today } = useStore();
   const data = useAppData();
+  const [accountId, setAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState<string>("");
@@ -38,6 +39,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
       setOriginalId("");
       setAmount("");
       setMerchant("");
+      setAccountId("");
       setCategory("");
       setCatTouched(false);
       setDate(presetDate ?? today);
@@ -64,7 +66,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
     if (date > today) return setError("Date can't be in the future");
     setSaving(true);
     try {
-      await addManualTxn(db, { amountPaise: paise, merchant: merchant || category || "Expense", category: category || undefined, kind: category === "Settlement" ? "settlement" : category === "Income" ? "income" : undefined, refundOf: category === "Settlement" ? originalId || undefined : undefined, date, method, note });
+      await addManualTxn(db, { accountId: accountId || undefined, amountPaise: paise, merchant: merchant || category || "Expense", category: category || undefined, kind: category === "Settlement" ? "settlement" : category === "Income" ? "income" : undefined, refundOf: category === "Settlement" ? originalId || undefined : undefined, date, method, note });
       const warn = trackingStart && date < trackingStart ? " (before tracking start — outside tracking summaries)" : "";
       setToast(`Added ${formatINR(paise)}${warn}`);
       onClose();
@@ -98,6 +100,7 @@ export function QuickAddSheet({ open, onClose, presetDate }: { open: boolean; on
         >
           <AmountInput big value={amount} onChange={(v) => (setAmount(v), setError(null))} data-autofocus aria-label="Amount in rupees" data-testid="qa-amount" />
           {error && <p className="-mt-2 text-sm text-coral">{error}</p>}
+          <Field label="Account"><select aria-label="Manual entry account" className="input" value={accountId} onChange={e=>setAccountId(e.target.value)}><option value="">Account unknown</option>{data?.accounts.map(a=><option key={a.id} value={a.id}>{a.bank} {a.kind} ··{a.last4}</option>)}</select></Field>
           <Field label="Merchant / what">
             <input data-preserve-case className="input" value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="Swiggy, auto, chai…" maxLength={60} data-testid="qa-merchant" />
           </Field>

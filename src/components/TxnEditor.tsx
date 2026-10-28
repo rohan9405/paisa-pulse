@@ -38,6 +38,7 @@ const flowOf = (k: TxnKind): Flow => (k === "transfer" ? "transfer" : k === "set
 export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: () => void }) {
   const { db, today } = useStore();
   const data = useAppData();
+  const [accountId, setAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
   const [merchant, setMerchant] = useState("");
@@ -55,6 +56,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
 
   useEffect(() => {
     if (!txn) return;
+    setAccountId(txn.accountId ?? "");
     setAmount(paiseToRupeeInput(txn.amountPaise));
     setDate(txn.date);
     setMerchant(txn.merchant);
@@ -123,6 +125,12 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
     if (!isReimbursementKind(kind) && txn.needsReview) Object.assign(patch, { needsReview: false, reviewReason: undefined });
     setSaving(true);
     try {
+      if (txn.transferGroupId && (accountId !== (txn.accountId ?? "") || patch.kind !== txn.kind || patch.amountPaise !== txn.amountPaise)) throw new Error("Unlink a confirmed transfer before changing its account, type or amount.");
+      if (flow === "transfer" && !txn.transferGroupId) throw new Error("Use Transfer review to confirm both owned accounts and link the two sides.");
+      patch.accountingPending = false;
+      patch.direction = kind === "income" || kind === "refund" || kind === "settlement" ? "in" : kind === "transfer" ? txn.direction : "out";
+      if (accountId !== (txn.accountId ?? "")) patch.accountMappingEdited = true;
+      patch.accountId = accountId || undefined;
       await updateTxn(db, txn.id, patch);
       const saved = { ...txn, ...patch } as Transaction;
       if (classChanged && (flow === "out" || flow === "income")) await applyCategory(db, saved, cat, tag, { remember, scope: applyPast && matching.length > 0 ? "all" : "one" });
@@ -175,6 +183,7 @@ export function TxnEditor({ txn, onClose }: { txn: Transaction | null; onClose: 
         })()}
         <AmountInput big value={amount} onChange={setAmount} aria-label="Amount" />
         <div className="grid grid-cols-2 gap-3">
+          <Field label="Account"><select aria-label="Transaction account" className="input" value={accountId} onChange={e=>setAccountId(e.target.value)}><option value="">Account unknown</option>{data?.accounts.map(a=><option key={a.id} value={a.id}>{a.bank} {a.kind} ··{a.last4}</option>)}</select></Field>
           <Field label="Date">
             <input type="date" className="input" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
           </Field>

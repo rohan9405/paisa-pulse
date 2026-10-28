@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { BalanceOverview } from "@/features/accounts/Accounts";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { computeLedger } from "@/lib/budget";
+import { expenseEntries } from "@/lib/budget";
 import { addDays, addMonths, diffDays, formatDay, formatMonth, isDateKey, monthKey, toISTKey } from "@/lib/dates";
 import { calendarSlots, dailyAnalytics, type MoneyFlow } from "@/lib/dailyAnalytics";
 import { weeklyInsight } from "@/lib/overview";
@@ -41,7 +42,8 @@ export default function TodayPage() {
     }
   }, [today, data?.profile?.trackingStart]);
 
-  const stats = useMemo(() => data?.profile ? dailyAnalytics(data.txns, data.profile.trackingStart, day, flow) : null, [data?.txns, data?.profile?.trackingStart, day, flow]);
+  const includeInvestments = data?.profile?.prefs?.includeInvestments ?? DEFAULT_PREFS.includeInvestments ?? true;
+  const stats = useMemo(() => data?.profile ? dailyAnalytics(data.txns, data.profile.trackingStart, day, flow, includeInvestments) : null, [data?.txns, data?.profile?.trackingStart, day, flow, includeInvestments]);
   const insight = useMemo(() => config.features.insights && data?.profile && diffDays(data.profile.trackingStart, day) >= 35 ? weeklyInsight(data.txns, data.plans, day, { categoryOnly: true }) : null, [data?.txns, data?.plans, day, config.features.insights]);
   const slots = useMemo(() => calendarSlots(calendarMonth), [calendarMonth]);
   const calendarValues = useMemo(() => {
@@ -49,10 +51,10 @@ export default function TodayPage() {
     // Calendar is a date picker; no amounts from later dates enter the selected snapshot.
     const values = new Map<string, number>();
     // Calendar intensity uses confirmed entries, not budget performance.
-    const entries = flow === "spent" ? computeLedger({ plans: data.plans, profile: data.profile, txns: data.txns, today }).days.map((r) => ({ date: r.date, value: r.expensePaise })) : data.txns.filter((t) => t.kind === "income" && t.date <= today).map((t) => ({ date: t.date, value: t.amountPaise }));
+    const entries = flow === "spent" ? expenseEntries(data.txns, data.profile.trackingStart, today, { includeInvestments }).map((t) => ({ date: t.date, value: t.amountPaise })) : data.txns.filter((t) => !t.accountingPending && t.kind === "income" && t.date <= today).map((t) => ({ date: t.date, value: t.amountPaise }));
     for (const e of entries) values.set(e.date, (values.get(e.date) ?? 0) + e.value);
     return values;
-  }, [data?.txns, data?.plans, data?.profile, flow, today]);
+  }, [data?.txns, data?.plans, data?.profile, flow, today, includeInvestments]);
 
   const heatReference = useMemo(() => {
     const values = [...calendarValues].filter(([date, amount]) => monthKey(date) === calendarMonth && amount > 0).map(([, amount]) => amount).sort((a, b) => a - b);
@@ -113,7 +115,7 @@ export default function TodayPage() {
 
       {flow === "spent" && insight && <div className="my-3" data-testid="pattern-insights"><InsightCard insight={insight} /></div>}
 
-      <TrendExplorer key={`${day}:${flow}`} txns={data.txns} trackingStart={trackingStart} asOf={day} today={today} flow={flow} />
+      <TrendExplorer includeInvestments={includeInvestments} key={`${day}:${flow}`} txns={data.txns} trackingStart={trackingStart} asOf={day} today={today} flow={flow} />
 
       <div ref={calendarRef} className="mt-3 [overflow-anchor:none]" data-testid="calendar-anchor">
         <Card className="p-4" data-testid="calendar">
@@ -130,7 +132,7 @@ export default function TodayPage() {
 
     <SectionTitle action={<Link href="/transactions" className="text-xs text-ink-400">{reviewCount ? `Review ${reviewCount}` : "Activity"} →</Link>}>Upcoming · now</SectionTitle>
     <Card className="divide-y divide-white/5 py-1" data-testid="coming-up">{upcoming.length ? upcoming.slice(0, 5).map((u) => <div key={u.key} className="flex min-h-14 items-center justify-between gap-3 py-2 text-sm" data-testid="due-item"><span className="min-w-0"><span className="block truncate">{u.name}</span><span className={cx("text-[11px]", ["overdue", "missed"].includes(u.state) ? "text-amber" : "text-ink-400")}>{u.state === "missed" ? "Payment not seen" : u.state === "overdue" ? "Overdue" : u.dueDate === today ? "Today" : diffDays(today, u.dueDate) === 1 ? "Tomorrow" : formatDay(u.dueDate)}</span></span><Money paise={u.amountPaise} decimals="never" className="num shrink-0" /></div>) : <p className="py-3 text-xs text-ink-400">No upcoming payments.</p>}{upcoming.length > 5 && <Link className="block py-3 text-xs text-lime" href="/settings">All {upcoming.length} reminders →</Link>}</Card>
-    {showBalances && <><SectionTitle>Current balances</SectionTitle><Card className="divide-y divide-white/5 py-1" data-testid="balances">{data.accounts.length ? data.accounts.map((a) => <div key={a.id} className="flex min-h-14 items-center justify-between gap-3 py-2 text-sm" data-testid="balance"><span>{a.bank} ··{a.last4}<span className="block text-[11px] text-ink-400">{a.kind === "card" ? "Available limit" : "Balance"} · {formatDay(toISTKey(a.asOf))}</span></span><Money paise={a.balancePaise} decimals="never" className="num shrink-0" /></div>) : <p className="py-3 text-xs text-ink-400">No balances reported yet.</p>}</Card></>}
+    {showBalances && <BalanceOverview compact />}
     <HoldList holds={data.holds} />
     <div className="mt-4 flex justify-end"><button className="btn-ghost text-xs" onClick={() => open()} data-testid="today-add">+ Cash spend</button></div>
     <TxnEditor txn={editing} onClose={() => setEditing(null)} />

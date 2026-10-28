@@ -8,8 +8,8 @@ import { Card, Money, cx } from "./ui";
 
 // Low spend is pale; high spend is darker, all within the same neon-green hue.
 const SHADES = ["#e2f4c5", "#c6ff3d", "#9bd11c", "#6c9518", "#405c12"];
-export function SpendHeatmap({ txns, trackingStart, today, endMonth }: { txns: Transaction[]; trackingStart: string; today: string; endMonth: string }) {
-  const view = useMemo(() => spendHeatmap(txns, trackingStart, today, endMonth), [txns, trackingStart, today, endMonth]);
+export function SpendHeatmap({ txns, trackingStart, today, endMonth, includeInvestments = false }: { txns: Transaction[]; trackingStart: string; today: string; endMonth: string; includeInvestments?: boolean }) {
+  const view = useMemo(() => spendHeatmap(txns, trackingStart, today, endMonth, includeInvestments), [txns, trackingStart, today, endMonth, includeInvestments]);
   const scroller = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const selected = view.days.find(d => d.date === picked && d.state === "tracked");

@@ -1,3 +1,4 @@
+import { accountKey, recoverAccountMetadata } from "@/features/accounts/metadata";
 import { validateSettlement } from "@/lib/reimbursements";
 import { isReimbursementKind } from "@/lib/reimbursements";
 /**
@@ -14,6 +15,7 @@ import type { AppMode, SetAsideMode, BudgetPlan, CategoryRule, Commitment, Impor
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 import { type FinanceDB, uid } from "./db";
 import { applyRemoteHistory, applySmsReread, isUserEdited } from "./remoteRules";
+import { demoAccounts, assignDemoAccount } from "./providers/demoAccounts";
 import { generateDemoData } from "./providers/demo";
 
 /** Keeps the built-in rules in step with this version of the app; your own rules are untouched. */
@@ -44,12 +46,16 @@ export async function ensureConnections(db: FinanceDB, mode: AppMode) {
 
 export async function seedDemo(db: FinanceDB, today: DateKey) {
   const { profile, plan, txns, recurring } = generateDemoData(today);
+  const mapped = txns.map(assignDemoAccount);
+  txns.splice(0,txns.length,...mapped);
   // The website showcase starts (and resets) in tracking mode; normal demos retain their budget.
   if (process.env.NEXT_PUBLIC_SHOWCASE_DEMO === "1") {
     plan.budgetMode = "tracking";
     plan.incomePaise = null;
   }
-  await db.transaction("rw", [db.profile, db.plans, db.txns, db.connections, db.rules, db.recurring, db.holds], async () => {
+  await db.transaction("rw", [db.profile, db.plans, db.txns, db.connections, db.rules, db.recurring, db.holds, db.accounts], async () => {
+    await db.accounts.clear();
+    await db.accounts.bulkPut(demoAccounts());
     await db.profile.clear();
     await db.plans.clear();
     await db.txns.clear();
@@ -110,6 +116,7 @@ export async function addPlanVersion(db: FinanceDB, p: Omit<BudgetPlan, "id" | "
 }
 
 export interface NewTxnInput {
+  accountId?: string;
   date: DateKey;
   amountPaise: number;
   merchant: string;
@@ -135,6 +142,8 @@ export async function addManualTxn(db: FinanceDB, input: NewTxnInput): Promise<T
   const category = input.category || guess?.category || "Other";
   const kind: TxnKind = input.kind ?? (category === "Settlement" ? "settlement" : category === "Income" ? "income" : !input.category && guess?.kind === "transfer" ? "transfer" : outflowKind(category));
   let t: Transaction = {
+    accountId: input.accountId,
+    direction: kind === "income" || kind === "refund" || kind === "settlement" ? "in" : "out",
     id: uid("t-"),
     date: input.date,
     amountPaise: input.amountPaise,
@@ -470,7 +479,12 @@ export async function importBackup(db: FinanceDB, data: unknown) {
       await db.connections.bulkPut(d.connections);
     }
     await db.accounts.clear();
-    await db.accounts.bulkPut(d.accounts ?? []);
+    const accounts=(d.accounts??[]).map(a=>({...a,id:accountKey(a)}));
+    if(accounts.length)await db.accounts.bulkPut(accounts);
+    await db.txns.toCollection().modify(t=>{
+      if(t.accountId){const old=(d.accounts??[]).find(a=>a.id===t.accountId);if(old)t.accountId=accountKey(old);}
+      Object.assign(t,recoverAccountMetadata(t,accounts));
+    });
   });
   await ensureRules(db);
 }
@@ -493,6 +507,6 @@ export async function setPrefs(db: FinanceDB, patch: Partial<Prefs>) {
   if (!p) return;
   await db.profile.update("me", { prefs: { ...p.prefs, ...patch } });
   // Balances off: forget the ones already read. Back on: re-read the inbox once to find them again.
-  if (patch.balances === false) await db.accounts.clear();
+  if (patch.balances === false) await db.accounts.toCollection().modify(a=>{a.balancePaise=0;a.asOf=0;a.balanceKnown=false;});
   if (patch.balances === true) await db.connections.update("sms", { balancesRescan: true });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AccountPicker } from "@/features/accounts/Scope";
 import { usePathname, useRouter } from "next/navigation";
 import { type ComponentType, createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { SHOWCASE_DEMO, useAppData, useStore } from "@/data/store";
@@ -35,7 +36,6 @@ const TAB_ROUTES: Record<TabId, { href: string; icon: ComponentType }> = {
   settings: { href: "/settings", icon: IconSettings },
 };
 const NAV_EXTRA_ALL = [
-  { href: "/import", label: "Import CSV", icon: IconUpload },
   { href: "/settings", label: "Settings", icon: IconSettings },
 ];
 
@@ -146,14 +146,9 @@ function InteractiveShell({ children }: { children: ReactNode }) {
           {/* Mobile top bar */}
           <div className="flex items-center justify-between px-4 pt-[max(12px,env(safe-area-inset-top))] md:hidden">
             <Brand small />
-            <div className="flex gap-1">
-              {NAV_EXTRA.map((n) => (
-                <Link key={n.href} href={n.href} aria-label={n.label} className={cx("grid h-10 w-10 place-items-center rounded-full", isActive(pathname, n.href) ? "bg-lime/15 text-lime" : "text-ink-300 hover:bg-white/5")}>
-                  <n.icon />
-                </Link>
-              ))}
-            </div>
+            <AccountPicker />
           </div>
+          <div className="hidden justify-end px-8 pt-4 md:flex"><AccountPicker /></div>
           <main className="mx-auto w-full max-w-5xl px-4 pb-32 md:px-8 md:pb-12 md:pt-6">
             {mode === "personal" && <SmsSetupNotice />}
             {children}

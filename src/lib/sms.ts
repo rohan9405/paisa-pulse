@@ -110,7 +110,7 @@ export function parseBankSms(sms: Pick<RawSms, "address" | "body">): ParsedSms |
   if (!amountPaise) return null;
 
   // A bank-account alert that merely mentions a card (e.g. paying the card bill) isn't a card spend.
-  const isCard = /\bcard\b/i.test(body) && !/\b(a\/c|acct|account)\b/i.test(body);
+  const isCard = /\bcard\b/i.test(body) && !/\b(a\/c|acc|acct|account)\b/i.test(body);
   const cardBillPayment = /(credit card|card) (bill|payment)|payment (of|for) .{0,30}received .{0,30}(credit )?card|towards your .{0,20}card|\bcc (bill|payment)\b|creditcard/i.test(body);
   const refund = direction === "in" && /\b(refund(ed)?|revers(ed|al)|cashback|chargeback)\b/i.test(body);
 
@@ -152,7 +152,7 @@ export function parseBalance(sms: Pick<RawSms, "address" | "body">): ParsedBalan
   if (!m || !last4) return null;
   const balancePaise = parseAmountToPaise(m[2]);
   if (balancePaise === null) return null;
-  const card = /lmt|limit/i.test(m[1]) || (/\bcard\b/i.test(body) && !/\b(a\/c|acct|account)\b/i.test(body));
+  const card = /lmt|limit/i.test(m[1]) || (/\bcard\b/i.test(body) && !/\b(a\/c|acc|acct|account)\b/i.test(body));
   return { bank, last4, kind: card ? "card" : "account", balancePaise };
 }
 
@@ -170,7 +170,7 @@ function findAmount(body: string): Paise | null {
 
 function findAccount(body: string): string | undefined {
   // "A/c XX1234", "A/cX1234" (SBI), "Acct XX567", "Card ending 4321", "A/C *1234"
-  const m = body.match(/\b(?:a\/c|acct|account|card)(?:\s*(?:no\.?|number|ending(?:\s*with)?))?[\s:.*x]*(\d{3,6})\b/i);
+  const m = body.match(/\b(?:a\/c|acc|acct|account|card)(?:\s*(?:no\.?|number|ending(?:\s*with)?))?[\s:.*x]*(\d{3,6})\b/i);
   return m?.[1];
 }
 
@@ -225,7 +225,7 @@ function findCounterparty(body: string, direction: "out" | "in"): string | undef
     const raw = body.match(re)?.[1]?.trim();
     if (!raw) continue;
     // "to HDFC Bank A/C", "from your a/c" — that's the user's own account, not a counterparty.
-    if (/\b(a\/c|acct|account|your|card|bank a)\b|^(hdfc|icici|sbi|axis|kotak)( bank)?$/i.test(raw)) continue;
+    if (/\b(a\/c|acc|acct|account|your|card|bank a)\b|^(hdfc|icici|sbi|axis|kotak)( bank)?$/i.test(raw)) continue;
     const name = cleanCounterparty(raw);
     if (name) return name;
   }
@@ -257,6 +257,12 @@ function cleanCounterparty(raw: string): string | undefined {
 }
 
 export interface SmsCandidate {
+  accountId?: string;
+  bank?: string;
+  accountDigits?: string;
+  accountKind?: "account" | "card";
+  occurredAt?: number;
+  accountingPending?: boolean;
   date: DateKey;
   amountPaise: Paise;
   direction: "out" | "in";
@@ -289,7 +295,7 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
   // A rule that only sets Investments / Savings still makes the payment an investment.
   if (p.direction === "out" && kind === "expense" && rule && !rule.kind) kind = outflowKind(rule.category);
   // Paying a card bill: the card spends were already counted when they happened.
-  if (p.cardBillPayment) kind = "transfer";
+  // Card-bill wording alone does not establish ownership; review it before counting.
 
   let category = kind === "transfer" ? "Transfers" : kind === "settlement" ? "Settlement" : kind === "refund" ? "Refunds" : kind === "income" && !rule ? "Income" : (rule?.category ?? "Other");
   let tag = kind === "transfer" || kind === "refund" || kind === "settlement" ? undefined : rule?.tag;
@@ -297,6 +303,9 @@ export function smsToCandidate(sms: RawSms, rules: CategoryRule[]): SmsCandidate
   if (p.upiLiteTopUp) [kind, category, tag] = ["expense", "Other", "UPI Lite"];
 
   return {
+    accountId: p.account ? `${p.bank}-${p.isCard ? "card" : "account"}-${p.account}` : undefined,
+    bank: p.bank, accountDigits: p.account, accountKind: p.isCard ? "card" : "account", occurredAt: sms.date,
+    accountingPending: p.cardBillPayment || undefined,
     date: toISTKey(sms.date),
     amountPaise: p.amountPaise,
     direction: p.direction,

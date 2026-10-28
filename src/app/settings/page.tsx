@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import SmsRecovery from "@/features/accounts/SmsLab";
+import { resetTracking } from "@/features/accounts/resetTracking";
 import { isIpoMandate } from "@/lib/ipo";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -18,7 +21,7 @@ import { addPlanVersion, exportAll, importBackup, recategorizeAll, saveRule, see
 import { deviceBridge } from "@/data/device";
 import { useBudget } from "@/data/useBudget";
 import { CommitmentList, type CommitmentDraft, draftFromCommitment, validateDrafts } from "@/components/CommitmentEditor";
-import { AmountInput, Card, Field, Money, PageHeader, Pill, Segmented, Toast, cx } from "@/components/ui";
+import { AmountInput, Card, Field, Money, PageHeader, Pill, Segmented, Sheet, Toast, cx } from "@/components/ui";
 import { SHOWCASE_DEMO, useStore } from "@/data/store";
 import { useRemoteConfig } from "@/data/remoteConfigLoader";
 
@@ -35,6 +38,20 @@ export default function SettingsPage() {
   const { setMode } = useStore();
   const router = useRouter();
   const [toast, setToast] = useState<string | null>(null);
+  const [smsOpen, setSmsOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const confirmReset = async () => {
+    if (!db || resetBusy) return;
+    setResetBusy(true);setResetError("");
+    try {
+      if(!mode)throw new Error("Choose a tracking mode first.");
+      await resetTracking(db,mode,today);
+      localStorage.clear();sessionStorage.clear();localStorage.setItem("paisa-pulse:mode",mode);
+      window.location.href="/";
+    } catch (error) {setResetError(error instanceof Error?error.message:"Reset failed. Try again.");setResetBusy(false);}
+  };
   // The tab lives in the URL hash so back/forward and reloads keep it.
   const [tab, setTabState] = useState<Tab>("budget");
   useEffect(() => {
@@ -55,11 +72,17 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader screen="settings" title="Settings" subtitle={mode === "demo" ? "Demo mode — changes affect fictional data only" : "Personal mode"} />
+      <PageHeader screen="settings" title="Settings" />
       <div className="sticky top-0 z-20 -mx-4 mb-4 bg-ink-950/90 px-4 py-2 backdrop-blur md:static md:mx-0 md:bg-transparent md:px-0">
         <Segmented value={tab} onChange={setTab} options={TABS} className="w-full" />
       </div>
 
+      <Sheet open={smsOpen} onClose={()=>setSmsOpen(false)} title="Missing a transaction?">{smsOpen&&<SmsRecovery />}</Sheet>
+      <Sheet open={resetOpen} onClose={()=>!resetBusy&&setResetOpen(false)} title="Reset Tracking?">
+        <p className="text-sm leading-relaxed text-ink-300">{mode === "demo" ? "Restore the original demo and remove your edits, imports, account changes and saved SMS rules?" : "Reset tracking on this phone? This removes transactions, imports, account mappings, saved SMS rules and tracking settings. Your bank SMS and exported backups stay unchanged."}</p>
+        {resetError&&<p role="alert" className="mt-3 text-sm text-coral">{resetError}</p>}
+        <div className="mt-5 flex gap-3"><button className="btn-ghost flex-1" data-autofocus disabled={resetBusy} onClick={()=>setResetOpen(false)}>Cancel</button><button className="btn-danger flex-1" disabled={resetBusy} onClick={confirmReset}>{resetBusy?"Resetting…":"Reset tracking"}</button></div>
+      </Sheet>
       {tab === "budget" && (
         <Group>
           <Section
@@ -80,6 +103,13 @@ export default function SettingsPage() {
               onSaved={(n) => setToast(n ? `Saved · ${n} earlier transactions read from SMS` : "Tracking settings saved")}
             />
           </Section>
+          <Toggle
+            icon="📈"
+            title="Include investments in spending"
+            hint="Include investment payments in spending totals and charts on Today and Stats."
+            checked={prefs.includeInvestments ?? true}
+            onChange={async (on) => { if (db) await setPrefs(db, { includeInvestments: on }); }}
+          />
           <Section icon="🏷️" title="Categorisation rules" summary={userRules ? `${userRules} of yours + global rules` : "Global rules"}>
             <RulesEditor onToast={setToast} />
           </Section>
@@ -108,6 +138,8 @@ export default function SettingsPage() {
         <>
           <Group>
             <BankSms onToast={setToast} />
+            <button type="button" onClick={()=>setSmsOpen(true)} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm"><span aria-hidden="true">💬</span><span>Missing a transaction?</span></button>
+            <div className="flex flex-col divide-y divide-white/5 text-sm"><Link href="/accounts" className="flex min-h-14 items-center justify-between px-4"><span>Accounts & cards</span><span>→</span></Link><Link href="/transfer-review" className="flex min-h-14 items-center justify-between px-4"><span>Transfer review</span><span>→</span></Link></div>
             {smsBridge() && mode === "personal" && config.features.balances && (
               <Toggle
                 icon="🏦"
@@ -122,9 +154,11 @@ export default function SettingsPage() {
             </Section>
           </Group>
           <Group>
+            <Link href="/import" className="flex min-h-14 items-center gap-3 px-4 text-sm"><span aria-hidden="true">📄</span><span>Import CSV</span></Link>
             <Section icon="💾" title="Backup & export" summary={backupSummary(mode)} defaultOpen={!!filesBridge() && !filesBridge()!.backupFolder()}>
               <DataPanel part="backup" onToast={setToast} />
             </Section>
+            <button type="button" onClick={()=>{setResetError("");setResetOpen(true);}} className="flex min-h-14 w-full items-center gap-3 px-4 text-left text-sm"><span aria-hidden="true">↺</span><span>Reset Tracking</span></button>
             <Section icon="🗑️" title="Delete data" summary={`All ${mode} data on this device`}>
               <DataPanel part="danger" onToast={setToast} />
             </Section>

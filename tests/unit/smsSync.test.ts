@@ -120,16 +120,43 @@ describe("SMS sync", () => {
     installBridge([hdfc("1", "2026-10-02", 9, "5,000.00"), hdfc("2", "2026-10-02", 18, "4,900.00")]);
     await start("2026-10-01");
     await syncSms(db);
-    expect(await db.accounts.toArray()).toEqual([expect.objectContaining({ id: "HDFC-1234", kind: "account", balancePaise: 4_900_00 })]);
+    expect(await db.accounts.toArray()).toEqual([expect.objectContaining({ id: "HDFC-account-1234", kind: "account", balancePaise: 4_900_00 })]);
 
     await setPrefs(db, { balances: false });
-    expect(await db.accounts.count()).toBe(0);
+    expect((await db.accounts.toArray()).every(a=>a.balanceKnown===false&&a.balancePaise===0)).toBe(true);
     await syncSms(db);
-    expect(await db.accounts.count()).toBe(0);
+    expect((await db.accounts.toArray()).every(a=>a.balanceKnown===false&&a.balancePaise===0)).toBe(true);
 
     await setPrefs(db, { balances: true }); // re-reads once to find them again
     await syncSms(db);
-    expect((await db.accounts.get("HDFC-1234"))?.balancePaise).toBe(4_900_00);
+    expect((await db.accounts.get("HDFC-account-1234"))?.balancePaise).toBe(4_900_00);
     expect(await db.txns.count()).toBe(2); // no duplicates from the re-read
   });
+  it("enriches legacy history once without changing classifications or importing missed old rows",async()=>{
+    const first=debit('31','2026-10-10',200,'SWIGGY');const missed=debit('32','2026-10-11',300,'ZOMATO');installBridge([first,missed]);await start('2026-10-01');
+    await db.txns.put({id:'legacy',date:'2026-10-10',amountPaise:20000,kind:'expense',category:'Health',merchant:'Personal correction',method:'upi',userEdited:true,fingerprint:`sms|${first.date}|out|20000`,source:{providerId:'sms',raw:first.body,importedAt:1},createdAt:1,updatedAt:2});
+    await db.connections.put({providerId:'sms',status:'connected',cursor:String(at('2026-10-20')),syncedFrom:'2026-10-01'});
+    expect(await syncSms(db)).toBe(0);expect(await db.txns.count()).toBe(1);expect(await db.txns.get('legacy')).toMatchObject({accountId:'SBI-account-1234',category:'Health',merchant:'Personal correction',userEdited:true});
+    expect((await db.connections.get('sms'))?.accountMetadataVersion).toBe(2);
+  });
+  it("repairs Acc-format mappings from the previous metadata release without changing user edits",async()=>{
+    const sms={id:'acc-format',address:'JD-ICICIT-S',body:'Rs. 1,234.50 debited from ICICI Bank Acc XX6789 on 24-Oct-26 VIN*SAMPLE SHOP. Bal Rs. 87,654.32. If not you call 18002662 or SMS BLOCK 6789 to 9215676766',date:at('2026-10-24')};
+    installBridge([sms]);await start('2026-10-01');
+    const original={id:'acc-old',date:'2026-10-24',amountPaise:123450,kind:'expense' as const,category:'Education',merchant:'ICICI debit',note:'Fictional service fee',method:'other' as const,userEdited:true,fingerprint:`sms|${sms.date}|out|123450|unknown|${sms.id}`,source:{providerId:'sms',raw:sms.body,importedAt:1},createdAt:1,updatedAt:2};
+    await db.txns.put(original);
+    await db.connections.put({providerId:'sms',status:'connected',cursor:String(at('2026-10-25')),syncedFrom:'2026-10-01',accountMetadataVersion:1});
+    expect(await syncSms(db)).toBe(0);expect(await db.txns.count()).toBe(1);
+    expect(await db.txns.get(original.id)).toMatchObject({...original,accountId:'ICICI-account-6789'});
+    expect(await db.accounts.get('ICICI-account-6789')).toMatchObject({balancePaise:8765432});
+    await db.txns.update(original.id,{accountId:undefined,accountMappingEdited:true});
+    await db.connections.update('sms',{accountMetadataVersion:1});await syncSms(db);
+    expect((await db.txns.get(original.id))?.accountId).toBeUndefined();
+  });
+  it("retains two sides sharing a bank reference and never restores a deleted new-format row",async()=>{
+    const a={id:'debit-side',address:'VM-HDFCBK-S',body:'Rs.5000 debited from HDFC Bank A/c XX1234 to SELF Ref 628800000001',date:at('2026-10-10')};
+    const b={id:'credit-side',address:'JD-ICICIT-S',body:'Rs.5000 credited to ICICI Bank Acct XX5678 from SELF Ref 628800000001',date:at('2026-10-10',13)};
+    installBridge([a,b]);await start('2026-10-01');expect(await syncSms(db)).toBe(2);const rows=await db.txns.toArray();expect(new Set(rows.map(t=>t.accountId)).size).toBe(2);
+    await deleteTxn(db,rows[0].id);await db.profile.update('me',{trackingStart:'2026-09-01'});await syncSms(db);expect(await db.txns.count()).toBe(1);
+  });
+
 });

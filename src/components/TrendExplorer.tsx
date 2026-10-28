@@ -11,10 +11,10 @@ import { Card } from "./ui";
 /** Keyed by selected snapshot/flow in Today: calendar changes reset the range,
  * while inspecting older chart ranges leaves the daily snapshot untouched.
  */
-export function TrendExplorer({ txns, trackingStart, asOf, today, flow }: { txns: Transaction[]; trackingStart: string; asOf: string; today: string; flow: MoneyFlow }) {
+export function TrendExplorer({ txns, trackingStart, asOf, today, flow, includeInvestments = true }: { txns: Transaction[]; trackingStart: string; asOf: string; today: string; flow: MoneyFlow; includeInvestments?: boolean }) {
   const [end, setEnd] = useState(asOf);
   const [bar, setBar] = useState<string | null>(asOf);
-  const stats = useMemo(() => dailyAnalytics(txns, trackingStart, end, flow), [txns, trackingStart, end, flow]);
+  const stats = useMemo(() => dailyAnalytics(txns, trackingStart, end, flow, includeInvestments), [txns, trackingStart, end, flow, includeInvestments]);
   const first = stats.trend7[0].date;
   const selected = stats.trend7.find(d => d.date === bar);
   const move = (next: string) => { const clamped = next > today ? today : next; setEnd(clamped); setBar(clamped); };

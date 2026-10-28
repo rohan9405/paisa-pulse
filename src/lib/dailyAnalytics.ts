@@ -8,10 +8,10 @@ export interface AnalyticsEntry { id: string; date: DateKey; amountPaise: number
 /** Every figure is a snapshot as of the selected date. Later income, payments
  * and refunds cannot leak into a historical day or its cumulative totals.
  */
-export function dailyAnalytics(txns: Transaction[], trackingStart: DateKey, asOf: DateKey, flow: MoneyFlow) {
+export function dailyAnalytics(txns: Transaction[], trackingStart: DateKey, asOf: DateKey, flow: MoneyFlow, includeInvestments = true) {
   const entries: AnalyticsEntry[] = flow === "spent"
-    ? expenseEntries(txns, trackingStart, asOf).map((t) => ({ id: t.txnId, date: t.date, amountPaise: t.amountPaise, label: t.category, merchant: t.merchant }))
-    : txns.filter((t) => t.kind === "income" && t.date >= trackingStart && t.date <= asOf).map((t) => ({ id: t.id, date: t.date, amountPaise: t.amountPaise, label: t.tag || "Other income", merchant: t.merchant }));
+    ? expenseEntries(txns, trackingStart, asOf, { includeInvestments }).map((t) => ({ id: t.txnId, date: t.date, amountPaise: t.amountPaise, label: t.category, merchant: t.merchant }))
+    : txns.filter((t) => !t.accountingPending && t.kind === "income" && t.date >= trackingStart && t.date <= asOf).map((t) => ({ id: t.id, date: t.date, amountPaise: t.amountPaise, label: t.tag || "Other income", merchant: t.merchant }));
   const sum = (from: DateKey, to: DateKey) => entries.reduce((total, t) => total + (t.date >= from && t.date <= to ? t.amountPaise : 0), 0);
   const monthStart = startOfMonth(asOf);
   const lastMonthStart = `${addMonths(monthKey(asOf), -1)}-01`;

@@ -15,14 +15,34 @@ const rows = [
 ];
 
 describe("unified daily snapshots", () => {
-  it("includes bills, excludes retained money and uses only refunds known by the selected date", () => {
+  it("uses the saved spending scope for totals, categories, trends and payment lists without affecting income", () => {
+    const without=dailyAnalytics(rows,"2026-09-01","2026-10-20","spent",false);
+    const withInvestments=dailyAnalytics(rows,"2026-09-01","2026-10-20","spent",true);
+    expect(without.dayPaise).toBe(50000);
+    expect(withInvestments.dayPaise).toBe(850000);
+    expect(without.dayEntries.map(t=>t.id)).toEqual(["food"]);
+    expect(withInvestments.dayEntries.map(t=>t.id)).toEqual(["food","invest"]);
+    expect(without.breakdown.some(c=>c.label==="Investments")).toBe(false);
+    expect(withInvestments.trend7.at(-1)?.amountPaise).toBe(850000);
+    expect(without.trend7.at(-1)?.amountPaise).toBe(50000);
+    expect(dailyAnalytics(rows,"2026-09-01","2026-10-20","income",false)).toEqual(dailyAnalytics(rows,"2026-09-01","2026-10-20","income",true));
+  });
+  it("includes investment refunds only when known, and excludes savings and pending payments", () => {
+    const date = "2026-10-20";
+    const payments = [txn({id:"investment",date,amountPaise:3000000,kind:"investment",category:"Investments"}),txn({date,amountPaise:200000,category:"Savings"}),txn({date,amountPaise:500000,kind:"investment",category:"Investments",accountingPending:true}),txn({date:"2026-10-21",amountPaise:100000,kind:"refund",refundOf:"investment"})];
+    const current=dailyAnalytics(payments,date,date,"spent");
+    expect(current.dayPaise).toBe(3000000);expect(current.dayEntries.map(t=>t.id)).toEqual(["investment"]);
+    expect(current.trend7.at(-1)?.amountPaise).toBe(3000000);
+    expect(dailyAnalytics(payments,date,"2026-10-21","spent").monthPaise).toBe(2900000);
+  });
+  it("includes bills and investments, excludes transfers and uses only refunds known by the selected date", () => {
     const early = dailyAnalytics(rows, "2026-09-01", "2026-10-20", "spent");
-    expect(early.dayPaise).toBe(50000); expect(early.monthPaise).toBe(2050000);
+    expect(early.dayPaise).toBe(850000); expect(early.monthPaise).toBe(2850000);
     expect(early.lastMonthPaise).toBe(30000);
-    expect(early.breakdown).toEqual([{ label: "Food & Dining", amountPaise: 50000 }]);
+    expect(early.breakdown).toEqual([{ label: "Investments", amountPaise: 800000 }, { label: "Food & Dining", amountPaise: 50000 }]);
     const after = dailyAnalytics(rows, "2026-09-01", "2026-10-23", "spent");
-    expect(after.monthPaise).toBe(2040000);
-    expect(after.weekPaise).toBe(40000);
+    expect(after.monthPaise).toBe(2840000);
+    expect(after.weekPaise).toBe(840000);
     expect(after.week.find((d) => d.date === "2026-10-24")).toMatchObject({ amountPaise: 0, future: true });
   });
   it("reports actual income with the same periods, excluding refunds, transfers and later credits", () => {
@@ -34,7 +54,7 @@ describe("unified daily snapshots", () => {
   it("averages completed tracked days including zero days and does not invent a comparison", () => {
     expect(dailyAnalytics(rows, "2026-10-20", "2026-10-20", "spent").usualPaise).toBeNull();
     const s = dailyAnalytics(rows, "2026-10-19", "2026-10-21", "spent");
-    expect(s.usualPaise).toBe(25000); expect(s.lastMonthPaise).toBeNull();
+    expect(s.usualPaise).toBe(425000); expect(s.lastMonthPaise).toBeNull();
     const feb = dailyAnalytics([], "2025-01-01", "2026-03-31", "spent");
     expect(feb.lastMonthTo).toBe("2026-02-28"); expect(feb.lastMonthPaise).toBe(0);
   });

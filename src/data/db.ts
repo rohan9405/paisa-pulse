@@ -1,5 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type { Account, AppMode, BudgetPlan, CategoryRule, ImportBatch, Profile, ProviderConnection, Recurring, Transaction, FundHold } from "@/lib/types";
+import { demoAccounts, assignDemoAccount } from "./providers/demoAccounts";
+import { accountKey, recoverAccountMetadata } from "@/features/accounts/metadata";
 import { currentBuiltInRules, migratePlan, migrateRule, migrateTxn } from "./migrate";
 
 /**
@@ -56,6 +58,26 @@ export class FinanceDB extends Dexie {
       await tx.table<Recurring, string>("recurring").toCollection().modify((r) => {
         if (r.source === "mandate" && !r.startDate && !r.userEdited) r.frequency = "unknown";
       });
+    });
+    // v5: preserve amounts, categories, edits, sync position and all existing rows.
+    this.version(5).stores({txns:"id, date, kind, category, fingerprint, commitmentId, refundOf, payee, accountId"}).upgrade(async tx=>{
+      const table=tx.table<Account,string>('accounts');const old=await table.toArray();
+      const ids=new Map(old.map(a=>[a.id,accountKey(a)]));
+      const accounts:Account[]=old.map(a=>({...a,id:accountKey(a),ownerConfirmed:a.ownerConfirmed??false,balanceKnown:a.balanceKnown??true,balanceSource:a.balanceSource??'sms' as const}));
+      if(this.name==='paisa-pulse-demo')for(const a of demoAccounts())if(!accounts.some(k=>k.id===a.id))accounts.push(a);
+      const merged=new Map<string,Account>();for(const a of accounts){const prior=merged.get(a.id);if(!prior||a.asOf>prior.asOf)merged.set(a.id,a);}
+      await table.clear();if(merged.size)await table.bulkPut([...merged.values()]);
+      let demoIndex=0;
+      await tx.table<Transaction,string>('txns').toCollection().modify(t=>{
+        if(this.name==='paisa-pulse-demo'&&t.source.providerId==='demo'&&!t.accountMappingEdited)Object.assign(t,assignDemoAccount(t,demoIndex++));
+        if(t.accountId&&ids.has(t.accountId))t.accountId=ids.get(t.accountId);
+        Object.assign(t,recoverAccountMetadata(t,[...merged.values()]));
+        if(t.accountId&&!merged.has(t.accountId)){
+          const [bank,kind,last4]=t.accountId.split('-');
+          if(bank&&last4&&(kind==='account'||kind==='card'))merged.set(t.accountId,{id:t.accountId,bank,kind,last4,balancePaise:0,asOf:0,balanceKnown:false,ownerConfirmed:false});
+        }
+      });
+      if(merged.size)await table.bulkPut([...merged.values()]);
     });
   }
 }

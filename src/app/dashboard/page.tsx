@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, previousMonthCumulative, spendVsBudgetSeries } from "@/lib/budget";
+import { netInHandInRange, categoryBreakdown, commitmentCategory, commitmentStatuses, hasBudget as planHasBudget, modeOf, manualPaidKey, planForDate, spendVsBudgetSeries } from "@/lib/budget";
+import { DEFAULT_PREFS } from "@/lib/types";
+import { statsSpending } from "@/lib/statsSpending";
 import { tagEmoji } from "@/lib/categorize";
-import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfMonth, startOfWeek } from "@/lib/dates";
+import { type DateKey, addDays, addMonths, endOfMonth, formatDay, formatMonth, monthKey, startOfWeek } from "@/lib/dates";
 import { formatINR } from "@/lib/money";
 import { markCommitmentPaid } from "@/data/repo";
 import { useBudget } from "@/data/useBudget";
@@ -21,6 +23,7 @@ export default function DashboardPage() {
   const { data, derived, today, db } = useBudget();
   const [period, setPeriod] = useState<Period>("month");
   const [offset, setOffset] = useState(0);
+  const includeInvestments = data?.profile?.prefs?.includeInvestments ?? DEFAULT_PREFS.includeInvestments ?? true;
   const cumulativeHaptics = useChartHaptics();
   const dailyHaptics = useChartHaptics();
 
@@ -38,29 +41,16 @@ export default function DashboardPage() {
     if (!data || !derived) return null;
     const position = netInHandInRange(data.txns, from, toClamped);
     const cats = categoryBreakdown(data.txns, data.plans, from, toClamped);
-    const avgFrom = [startOfMonth(toClamped), data.profile!.trackingStart].sort().at(-1)!;
-    const avgTo = toClamped;
-    const monthDays = spendVsBudgetSeries(derived.ledger, avgFrom, avgTo);
-    const spendingAverage = monthDays.reduce((sum, d) => sum + d.spentPaise, 0) / Math.max(1, monthDays.length) / 100;
-    const dailySeries = spendVsBudgetSeries(derived.ledger, from, toClamped);
-    const previousMonth = previousMonthCumulative(derived.ledger, dailySeries.map(d => d.date), data.profile!.trackingStart);
-    const series = dailySeries.map((d, i) => ({
-      "Last month": previousMonth[i] === null ? null : previousMonth[i]! / 100,
-      label: formatDay(d.date),
-      Spent: d.cumSpentPaise / 100,
-      Budget: d.cumBudgetPaise / 100,
-      daySpent: d.spentPaise / 100,
-      dayBudget: d.budgetPaise / 100,
-    }));
+    const {spendingAverage,series:actualSeries}=statsSpending(data.txns,data.profile!.trackingStart,from,toClamped,includeInvestments);
+    const budgetDays=new Map(spendVsBudgetSeries(derived.ledger,from,toClamped).map(d=>[d.date,d]));
+    const series=actualSeries.map(d=>({...d,Budget:(budgetDays.get(d.date)?.cumBudgetPaise??0)/100,dayBudget:(budgetDays.get(d.date)?.budgetPaise??0)/100}));
     const periodHasBudget = derived.ledger.hasBudget && derived.ledger.days.filter((d) => d.date >= from && d.date <= toClamped).every((d) => d.hasBudget);
-    const budgetTotal = series.at(-1)?.Budget ?? 0;
-    const budgetSpent = Math.round((series.at(-1)?.Spent ?? 0) * 100);
-    return { spendingAverage, position, cats, series, periodHasBudget, budgetTotal, budgetSpent };
-  }, [data, derived, from, toClamped]);
+    return { spendingAverage, position, cats, series, periodHasBudget };
+  }, [data, derived, from, toClamped, includeInvestments]);
 
   if (!data || !derived || !view) return null;
-  const { spendingAverage, position, cats, series, budgetTotal, budgetSpent } = view;
-  const hasBudget = view.periodHasBudget;
+  const { spendingAverage, position, cats, series } = view;
+  const hasBudget = view.periodHasBudget && !includeInvestments;
   const future = from > today;
   const mk = monthKey(today);
   const todayPlan = planForDate(data.plans, today);
@@ -94,16 +84,15 @@ export default function DashboardPage() {
             <div className="mb-2 flex items-center justify-between gap-2"><h2 className="text-xs font-semibold uppercase tracking-widest text-ink-400">Net In-Hand</h2><InfoTip label="About Net In-Hand">Income minus expenses and investments. Income includes all income buckets; refunds and settlements reduce their linked payment and are never counted as income. Legacy savings are included under investments.</InfoTip></div>
             <div className="num text-4xl font-bold" data-testid="net-in-hand"><Money paise={position.netPaise} /></div>
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <Split label="Income" paise={position.incomePaise} dot="bg-lime" testId="out-income" />
-              <Split label="Expenses" paise={position.expensesPaise} dot="bg-sky" testId="out-expenses" />
+              <Split label="Income" paise={position.incomePaise} dot="bg-sky" testId="out-income" />
+              <Split label="Expenses" paise={position.expensesPaise} dot="bg-lime" testId="out-expenses" />
               <Split label="Investments" paise={position.investmentsPaise} dot="bg-violet" testId="out-investments" />
             </div>
           </Card>
 
           <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">{hasBudget ? "Spend vs budget (cumulative)" : "Cumulative expenses"}</h2>
-              <InfoTip label="About spend vs budget">{hasBudget ? "Below the dashed line = on track." : "Dotted grey: last month’s cumulative spending at the same day of the month."}</InfoTip>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1"><h2 className="font-semibold">Cumulative spends</h2><InfoTip label="About cumulative spends">{includeInvestments ? "Expenses plus investments. " : "Expenses only. "}Dotted grey: last month using the same selection.{hasBudget ? " Dashed grey: budget allowance." : ""}</InfoTip></div>
             </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>
@@ -126,9 +115,8 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">Daily spending</h2>
-              <InfoTip label="About daily chart">Recorded spending per day; budget periods include payments that count against the budget. The dotted line is the month’s average across tracked calendar days, including zero days, up to this period’s end.</InfoTip>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1"><h2 className="font-semibold">Daily spending</h2><InfoTip label="About daily chart">Expenses per day in green; include investments to add the purple segment. The dotted average uses the same selection across tracked calendar days, including zero days.</InfoTip></div>
             </div>
             {series.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">No tracked days in this period.</p>
@@ -139,9 +127,11 @@ export default function DashboardPage() {
                     <CartesianGrid stroke="#ffffff10" vertical={false} />
                     <XAxis dataKey="label" {...AXIS} interval="preserveStartEnd" minTickGap={24} />
                     <YAxis {...AXIS} tickFormatter={(v) => formatINR(v * 100, { compact: true })} width={52} />
-                    <Tooltip content={<DayTip hasBudget={hasBudget} />} cursor={{ fill: "#ffffff08" }} />
+                    <Tooltip content={<DayTip hasBudget={hasBudget} includeInvestments={includeInvestments} />} cursor={{ fill: "#ffffff08" }} />
                     <ReferenceLine y={spendingAverage} stroke="#b4b4c4" strokeDasharray="2 4" ifOverflow="extendDomain" />
-                    <Bar dataKey="daySpent" name="Spent" fill="#c6ff3d" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                    <Bar dataKey="dayExpenses" name="Expenses" stackId="spending" fill="#c6ff3d" radius={includeInvestments ? [0, 0, 0, 0] : [4, 4, 0, 0]} isAnimationActive={false} />
+                    {includeInvestments && <Bar dataKey="dayInvestments" name="Investments" stackId="spending" fill="#a78bfa" radius={[4, 4, 0, 0]} isAnimationActive={false} />}
+                    <Legend wrapperStyle={{fontSize:12}} iconType="circle" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -189,7 +179,7 @@ export default function DashboardPage() {
 
           <MerchantAnalytics txns={data.txns} from={from} to={toClamped} trackingStart={data.profile!.trackingStart} categories={cats} />
 
-          <SpendHeatmap txns={data.txns} trackingStart={data.profile!.trackingStart} today={today} endMonth={monthKey(toClamped)} />
+          <SpendHeatmap includeInvestments={includeInvestments} txns={data.txns} trackingStart={data.profile!.trackingStart} today={today} endMonth={monthKey(toClamped)} />
 
         </div>
       )}
@@ -228,7 +218,7 @@ function ChartTip({ active, payload, label }: TipProps) {
   );
 }
 
-function DayTip({ active, payload, label, hasBudget }: TipProps & { hasBudget: boolean }) {
+function DayTip({ active, payload, label, hasBudget, includeInvestments }: TipProps & { hasBudget: boolean; includeInvestments: boolean }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -238,6 +228,10 @@ function DayTip({ active, payload, label, hasBudget }: TipProps & { hasBudget: b
         <span>Spent</span>
         <span className="num text-white">{formatINR(Math.round(Number(d.daySpent) * 100))}</span>
       </div>
+      {includeInvestments && <>
+        <div className="flex justify-between gap-4 text-ink-300"><span>Expenses</span><span className="num text-white">{formatINR(Math.round(Number(d.dayExpenses)*100))}</span></div>
+        <div className="flex justify-between gap-4 text-ink-300"><span>Investments</span><span className="num text-white">{formatINR(Math.round(Number(d.dayInvestments)*100))}</span></div>
+      </>}
       {hasBudget && (
         <div className="flex justify-between gap-4 text-ink-300">
           <span>Base allowance</span>

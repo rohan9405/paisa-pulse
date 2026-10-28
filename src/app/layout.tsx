@@ -4,6 +4,7 @@ import { StoreProvider } from "@/data/store";
 import { AppShell } from "@/components/AppShell";
 import { Appearance } from "@/components/Appearance";
 import "./globals.css";
+import { ScopeProvider } from "@/features/accounts/Scope";
 
 const sans = Space_Grotesk({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
@@ -27,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans antialiased">
         <StoreProvider>
           <Appearance />
-          <AppShell>{children}</AppShell>
+          <ScopeProvider><AppShell>{children}</AppShell></ScopeProvider>
         </StoreProvider>
       </body>
     </html>

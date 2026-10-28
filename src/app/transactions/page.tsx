@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
+import { accountFlows } from "@/features/accounts/logic";
+import { useScope } from "@/features/accounts/Scope";
 import { HoldList } from "@/components/HoldList";
 import { RecipientTagger } from "@/components/RecipientTagger";
 import { recipientKey, taggingFlow, recipientNeedsTagging, withinTaggingWindow } from "@/lib/recipients";
@@ -41,6 +43,7 @@ function TransactionsWithFilters() {
 
 function Transactions() {
   const config = useRemoteConfig();
+  const { accountId, selectedIds } = useScope();
   const params = useSearchParams();
   const { data, derived, today, db } = useBudget();
   const { open } = useQuickAdd();
@@ -71,12 +74,13 @@ function Transactions() {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
     return data.txns
+      .filter((t) => !(t.transferGroupId && t.direction === "in" && data.txns.some(peer => peer.id === t.transferPeerId)))
       .filter((t) => t.date >= range[0] && t.date <= range[1])
       .filter((t) => (kind === "all" ? true : kind === "review" ? t.needsReview : t.kind === kind))
       .filter((t) => !cat || displayCategory(t.category) === cat)
       .filter((t) => !needle || [t.merchant, t.payee, t.category, t.note, t.source.raw, (t.amountPaise / 100).toString()].some((s) => s?.toLowerCase().includes(needle)))
       .sort((a, b) => (a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1));
-  }, [data, q, kind, cat, range]);
+  }, [data, q, kind, cat, range, accountId]);
 
   const groups = useMemo(() => {
     const m = new Map<DateKey, Transaction[]>();
@@ -122,7 +126,7 @@ function Transactions() {
     if (!data) return { pairs: [], matches: [] };
     const dismissed = new Set(data.profile?.dismissedSuggestions ?? []);
     const recent = data.txns.filter((t) => t.date >= addDays(today, -62));
-    const pairs = transferPairs(recent)
+    const pairs = transferPairs(recent).filter(() => false)
       .map((p) => ({ ...p, key: `transfer:${p.out.id}:${p.in.id}` }))
       .filter((p) => !dismissed.has(p.key));
     // Planned lines only matter in planned set-aside mode. One card per payee and line;
@@ -152,13 +156,7 @@ function Transactions() {
         screen="activity"
         title="Activity"
         subtitle={`${filtered.length} transaction${filtered.length === 1 ? "" : "s"}`}
-        right={
-          config.features.csvImport ? (
-            <Link href="/import" className="btn-ghost">
-              Import CSV
-            </Link>
-          ) : undefined
-        }
+
       />
 
       <div className="mb-3 flex gap-2" aria-label="Activity view">
@@ -282,7 +280,7 @@ function Transactions() {
           <EmptyState emoji="🔍" title="Nothing matches" body="Try a different search, filter or period." action={<button className="btn-ghost" onClick={() => (setQ(""), setKind("all"), setCat(""), setPeriod("all"))}>Clear filters</button>} />
         ) : (
           groups.map(([date, ts]) => {
-            const spent = ts.filter((t) => t.kind === "expense").reduce((s, t) => s + t.amountPaise, 0);
+            const spent = accountFlows(ts).spend;
             return (
               <section key={date} className="mb-3">
                 <div className="flex items-baseline justify-between px-2 pb-1 pt-2">

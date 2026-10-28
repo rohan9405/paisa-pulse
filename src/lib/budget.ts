@@ -131,7 +131,7 @@ export function allocationForDay(plans: BudgetPlan[], day: DateKey): Paise {
 
 // ------------------------------------------------------ matching plan lines
 
-const isOutflow = (t: Transaction) => t.kind === "expense" || t.kind === "commitment" || t.kind === "investment";
+const isOutflow = (t: Transaction) => !t.accountingPending && (t.kind === "expense" || t.kind === "commitment" || t.kind === "investment");
 
 /**
  * The planned line a payment belongs to: the one you linked, else the best
@@ -218,7 +218,7 @@ export interface BudgetEntries {
  * payment). Transfers, income and unlinked refunds never count.
  */
 export function budgetEntries(txns: Transaction[], plans: BudgetPlan[], asOf: DateKey): BudgetEntries {
-  const live = txns.filter((t) => t.date <= asOf);
+  const live = txns.filter((t) => !t.accountingPending && t.date <= asOf);
   const refunds = new Map<string, Paise>();
   for (const t of live) if (isReimbursementKind(t.kind) && t.refundOf) refunds.set(t.refundOf, (refunds.get(t.refundOf) ?? 0) + t.amountPaise);
 
@@ -317,7 +317,8 @@ export function computeLedger(input: {
   txns: Transaction[];
   today: DateKey;
 }): Ledger {
-  const { plans, profile, txns, today } = input;
+  const { plans, profile, today } = input;
+  const txns = input.txns.filter(t=>!t.accountingPending);
   const start = profile.trackingStart;
   const started = today >= start;
   const todayPlan = planForDate(plans, today);
@@ -529,13 +530,17 @@ export function everydayEntries(txns: Transaction[], from: DateKey, to: DateKey)
     .map(({ t, net }) => ({ date: t.date, amountPaise: net, category: t.category, txnId: t.id, merchant: t.merchant, source: "expense" }));
 }
 
-/** Tracking expenses include bills and exclude money retained as investments/savings. */
-export function expenseEntries(txns: Transaction[], from: DateKey, to: DateKey): SpendEntry[] {
-  return netOutflows(txns, from, to).filter(({ t }) => !(t.kind === "investment" || ["Investments", "Savings"].includes(t.category)))
+/** Expense reporting excludes retained money; Today can include investment payments in Spent. */
+export function expenseEntries(txns: Transaction[], from: DateKey, to: DateKey, options: { includeInvestments?: boolean } = {}): SpendEntry[] {
+  return netOutflows(txns, from, to).filter(({ t }) => t.category !== "Savings" && (options.includeInvestments || !(t.kind === "investment" || t.category === "Investments")))
     .map(({ t, net }) => ({ date: t.date, amountPaise: net, category: t.category, txnId: t.id, merchant: t.merchant, source: "expense" }));
 }
 
 /** Net outflows (after linked refunds) in a date range, by what they're for. */
+export function spendingEntries(txns: Transaction[], from: DateKey, to: DateKey) {
+  return netOutflows(txns, from, to).map(({t, net}) => ({date:t.date, amountPaise:net, investment:t.kind === "investment" || ["Investments", "Savings"].includes(t.category)}));
+}
+
 function netOutflows(txns: Transaction[], from: DateKey, to: DateKey) {
   const refunds = new Map<string, Paise>();
   for (const t of txns) if (isReimbursementKind(t.kind) && t.refundOf && t.date <= to) refunds.set(t.refundOf, (refunds.get(t.refundOf) ?? 0) + t.amountPaise);
@@ -560,7 +565,7 @@ export function outgoingsInRange(txns: Transaction[], from: DateKey, to: DateKey
     savingsPaise: savings,
     totalPaise: total,
     transfersExcludedPaise: sum(ts.filter((t) => t.kind === "transfer").map((t) => t.amountPaise)),
-    incomePaise: sum(ts.filter((t) => t.kind === "income").map((t) => t.amountPaise)),
+    incomePaise: sum(ts.filter((t) => !t.accountingPending && t.kind === "income").map((t) => t.amountPaise)),
   };
 }
 
@@ -629,7 +634,7 @@ export function netInHandInRange(txns: Transaction[], from: DateKey, to: DateKey
   const out = netOutflows(txns, from, to);
   const investmentsPaise = sum(out.filter(({ t }) => t.kind === "investment" || ["Investments", "Savings"].includes(t.category)).map(x => x.net));
   const moneyOutPaise = sum(out.map(x => x.net));
-  const incomePaise = sum(txns.filter(t => t.kind === "income" && !["Refunds", "Settlement"].includes(t.category) && t.date >= from && t.date <= to).map(t => t.amountPaise));
+  const incomePaise = sum(txns.filter(t => !t.accountingPending && t.kind === "income" && !["Refunds", "Settlement"].includes(t.category) && t.date >= from && t.date <= to).map(t => t.amountPaise));
   return { incomePaise, expensesPaise: moneyOutPaise - investmentsPaise, investmentsPaise, moneyOutPaise, netPaise: incomePaise - moneyOutPaise };
 }
 

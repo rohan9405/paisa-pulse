@@ -1,6 +1,6 @@
 {
   "name": "daily-finance",
-  "version": "0.8.14",
+  "version": "0.8.19",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3100",
@@ -36,5 +36,5 @@
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
   },
-  "androidVersionCode": 26
+  "androidVersionCode": 31
 }
